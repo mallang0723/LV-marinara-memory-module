@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0-lv.1",
+  "name": "기억 서재 (Lumiverse)",
+  "identifier": "anon_memory_lv",
+  "author": "mallang0723 (비공식 Lumiverse 이식); 원작 기억 서재 / marinara-memory-module: tlsiddl",
+  "github": "https://github.com/mallang0723/marinara-memory-module",
+  "homepage": "https://github.com/tlsiddl/marinara-memory-module",
+  "description": "루미버스용 비공식 이식 · 원작 기억 서재(tlsiddl, MIT) 작성자의 허락을 받아 옮김. 긴 RP를 장면·사실·장부로 정리해 답변 직전에 프롬프트에 넣습니다.",
+  "minimum_lumiverse_version": "1.2.5",
+  "interceptorTimeoutMs": 30000,
+  "permissions": ["generation", "chats", "chat_mutation", "characters", "interceptor"],
+  "entry_backend": "dist/backend.js",
+  "entry_frontend": "dist/frontend.js"
+}

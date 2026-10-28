@@ -1,0 +1,35 @@
+/* 기억 서재 — override sheet appended after the original's ui.css / theme.css (inside its shadow root).
+   AGENTS 3/4: text >= 15px, secondary text >= 13px, tap targets >= 44px, no sideways overflow, contrast >= 4.5:1.
+   The original sheets use !important a lot, so these rules do too, with a more specific selector (#panel + :is()). */
+#panel *:not(svg):not(svg *){font-size:max(15px,1em)!important}
+#panel :is(small,.hint,.eyebrow,.nav-label,.brand small,.crumb small,.file-code,.file-range,.file-spine,.chip-id,.event-no,.editor-number,.pill,.stamp,.count,.metric small,.metric span,.rail-note p,.side-bottom small,.intro small,#status),
+#panel :is(small,.hint,.eyebrow,.nav-label,.brand small,.crumb small,.file-code,.file-range,.file-spine,.chip-id,.event-no,.editor-number,.pill,.stamp,.count,.metric small,.metric span,.rail-note p,.side-bottom small,.intro small,#status) *:not(svg):not(svg *){font-size:13px!important;letter-spacing:.02em!important}
+#panel :is(button,select,summary,[role=button],input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea){min-height:44px!important}
+#panel :is(button,[role=button]){min-width:44px!important}
+#panel :is(label.room-switch,label.setting-switch,label.check,label:has(input[type=checkbox]),label:has(input[type=radio])){min-height:44px!important;display:flex;align-items:center}
+#panel .nav-label{color:var(--im-ink)!important;opacity:.8}
+#panel .theme-toggle,#panel #close{width:44px!important;height:44px!important}
+#roomSelect{max-width:100%!important}
+#panel .record-link.chip{min-height:44px!important;display:inline-flex!important;align-items:center}
+#panel .record-link .chip-id{color:#37354a!important;opacity:1!important}
+:host([data-theme=dark]) #panel .record-link .chip-id{color:#ece8df!important}
+/* narrow screens: the 8 tabs wrap onto two rows instead of a sideways-scrolling strip (no nested scroll box) */
+@media(max-width:720px){
+  #panel{padding-top:env(safe-area-inset-top,0px)!important;height:100dvh!important}
+  /* the shell's floating close button (src/overlay-guard.js) replaces the in-panel one, which can sit under a status bar / notch */
+  #panel #close{visibility:hidden!important}
+  #panel .sidebar{overflow:visible!important}
+  #panel .sidebar nav{flex-wrap:wrap!important;overflow:visible!important;gap:4px!important}
+  #panel .sidebar nav button{flex:1 1 calc(25% - 4px)!important;min-width:0!important;justify-content:center!important;white-space:normal!important;text-align:center;line-height:1.25;padding:6px 4px!important}
+  #panel .sidebar nav .icon{display:none!important}
+  #panel .topbar{flex-wrap:wrap}
+  #panel .crumb{max-width:100%!important}
+  #panel .file-shelf:not(.chapter-grid){flex-wrap:wrap!important;overflow:visible!important;gap:10px!important}
+  #panel .file-index{flex:1 1 130px!important;max-width:none!important}
+}
+/* desktop: the left rail (tabs + room switch + refresh at the bottom) is taller than a short window; it must scroll on its own.
+   (the original gives .sidebar no overflow, so everything below the panel edge was unreachable) */
+@media(min-width:721px){
+  #panel .sidebar{min-height:0!important;max-height:100%!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:#ece8df55 transparent}
+  #panel .sidebar:after{right:0!important}
+}

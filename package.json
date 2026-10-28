@@ -1,0 +1,13 @@
+{
+  "name": "memory-library-lv",
+  "version": "1.0.0-lv.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js tests/upstream/*.cjs",
+    "build": "node scripts/build.mjs",
+    "verify:original": "node scripts/verify-original.mjs",
+    "qa:browser": "node scripts/browser-qa.mjs",
+    "qa:insecure": "QA_ONLY=insecure node scripts/browser-qa.mjs"
+  }
+}

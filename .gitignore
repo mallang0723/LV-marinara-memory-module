@@ -1,0 +1,7 @@
+node_modules/
+BLOCKED.md
+qa/screens/
+qa-shots/
+.env
+.env.*
+src/**/*.generated.js
