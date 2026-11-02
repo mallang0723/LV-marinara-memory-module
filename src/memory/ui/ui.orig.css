@@ -191,3 +191,5 @@ a.record-row .chip-arrow{color:var(--im-accent)}
 .routine-row button{padding:7px 12px;font-size:11px}
 details.paper>summary{font-size:13px;font-weight:600;color:var(--im-ink)}
 .routine-row .warn{flex-basis:100%;color:#b0623f}:host([data-theme=dark]) .routine-row .warn{color:#ffb08a}
+
+

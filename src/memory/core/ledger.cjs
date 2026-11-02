@@ -376,14 +376,15 @@ const SYSTEM_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 새 �
 - 인물 이름은 본문에 쓰인 그대로 적어. 수위 높은 장면도 의미 있는 변화는 기록하되 설명은 짧게.
 
 생활 기록(routine):
-- 이 메시지들에서 누가(모든 인물) 실제로 끼니를 먹었거나(meal), 씻었거나(wash), 잠들었거나(sleep), 깼거나(wake), 약을 먹었으면(medicine) 적어.
+- 이 메시지들에서 누가(모든 인물) 실제로 끼니를 먹었거나(meal), 씻었거나(wash), 꾸몄거나(groom), 잠들었거나(sleep), 깼거나(wake), 약을 먹었으면(medicine) 적어.
   meal은 배를 채우는 끼니(밥, 요리, 빵, 죽 등)만이야. 물·커피·술·음료·담배·사탕이나 간식 한 입은 meal이 아니야.
   who는 먹은 사람이야. 남에게 먹여 주기만 한 사람은 먹은 게 아니야.
   함께 잠들거나 함께 깬 사람도 who에 모두 적어(예: 셋이 소파에서 같이 잠듦 → "서아·도윤·하준"). 같은 식탁에 앉았거나 함께 식사 시간을 가졌다고 나오면, 안 먹었다는 서술이 없는 한 같이 먹은 걸로 쳐. 그럴 땐 who에 함께 먹은 사람을 "서아·도윤·하준"처럼 모두 적어.
   예외: 끼니 대신 음료나 간식으로 '때웠다'면 meal로 적고 how를 "substitute"로 해. 제대로 먹었으면 how는 "ate".
   먹는 장면 없이 누가 "먹었어", "커피로 때웠어"라고 말로만 했으면 claimed를 true로 해(거짓말일 수도 있으니까).
   하기로 한 것, 권하기만 한 것은 아니야. 이 메시지 안에서 실제로 하는 장면만. 예전에 먹었다·잤다고 다시 말하는 건 아니야(예: "그래도 스테이크는 먹고 잠갔잖아"). 먹은 것이나 한 일은 text에 짧게.
-  '씻었다'는 말이 없어도 씻은 게 당연히 들어 있는 일이면 wash로 적어: 외출 준비를 마침, 단장함, 세수·양치, 머리를 감음, 몸단장. text에 그 일을 써(예: "외출 준비").
+  특히 막 깨어나는 장면에서 '두 시간 낮잠을 잤다'처럼 이미 끝난 수면을 회상하면 wake만 적어. 이전에 잠든 기록이 있든 없든 깬 시각을 새 잠든 시각으로 기록하지 마. 이전 잠든 기록은 건드리지 마. 실제로 다시 잠드는 행동이 나오면 별도의 sleep으로 적어.
+  외출 준비를 마쳤거나 씻기·샤워·세수·양치·머리 감기를 했으면 wash로 적어(외출 준비는 사용자가 요청한 씻기 추정 규칙). 화장·마스카라·립스틱·향수·헤어스타일만 손본 것은 groom으로 따로 적고 wash로 적지 마. 샤워와 화장을 둘 다 했다면 각각 기록해. text에 실제 한 일을 써.
   시간 계산(몇 시간 잤는지, 몇 끼째인지)은 하지 마. 프로그램이 해.
 - 이건 장부 항목이 아니라 '언제 했는지' 기록이야. 없으면 [].
 
@@ -392,7 +393,7 @@ const SYSTEM_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 새 �
  "update":[{"id":"T3","now":"새로 생긴 일 한 문장","at":"작중 시간 또는 null","detail":"지금 남은 내용으로 고쳐 쓴 설명 또는 null","period":null,"due":null,"learned":[],"evidence":[{"n":"15.2","q":"핵심 구절"}]}],
  "close":[{"id":"T3","how":"어떻게 끝났는지","at":"작중 시간 또는 null","evidence":[{"n":"20.1","q":"핵심 구절"}]}],
  "reopen":[{"id":"T7","why":"아직 끝나지 않은 이유","evidence":[{"n":"21.4","q":"핵심 구절"}]}],
- "routine":[{"who":"인물","what":"meal|wash|sleep|wake|medicine","text":"스테이크 반 접시","how":"ate|substitute (meal일 때만)","claimed":false,"evidence":[{"n":"22.3","q":"핵심 구절"}]}]}
+ "routine":[{"who":"인물","what":"meal|wash|groom|sleep|wake|medicine","text":"스테이크 반 접시","how":"ate|substitute (meal일 때만)","claimed":false,"evidence":[{"n":"22.3","q":"핵심 구절"}]}]}
 바뀐 게 없으면 {"open":[],"update":[],"close":[],"reopen":[],"routine":[]}.`;
 
 const TIDY_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 지금 장부의 열린 항목을 점검해.
@@ -737,6 +738,22 @@ function indexBatch(batch) {
   return index;
 }
 
+// A duration describing a nap in a wake-up message is not a fresh bedtime at the wake timestamp.
+// Keep real new sleep onsets, and skip only when both the recap and waking are explicit.
+function pastSleepAtWake(item, evidence, message, who) {
+  const source = String(message?.content || '');
+  const cited = evidence.map((p) => p.text).join(' ');
+  const summary = String(item?.text || '');
+  const duration = /(?:두어|한두|한|두|세|네|몇|여러|\d+)\s*(?:시간|분)|(?:an? |\d+ |a few |several )?(?:hours?|minutes?)/i;
+  const sleep = /(낮잠|잠을?\s*(?:잤|자고|잔)|수면|잠에서|slept|sleeping|nap)/i;
+  const waking = /(잠에서\s*깨|잠에서\s*깼|깨(?:어|었|고|니|는|다|기)|깨어|깼|눈을?\s*뜨|일어났|woke|wakes?\s+up|awaken)/i;
+  const newSleep = /(다시\s*잠들|다시\s*잠에|다시\s*눈을?\s*감|잠들(?:었|어|고|기|다)|잠에\s*(?:빠|들)|잠이\s*들|fell\s+asleep|falls?\s+asleep|back\s+to\s+sleep)/i;
+  const name = String(who || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const namedWake = name && new RegExp(`${name}[^.!?。？！\\n]{0,35}(?:깨|깼|눈을?\\s*뜨|일어났|woke|awaken)`, 'i').test(source);
+  const userWake = message?.role === 'user' && message.speaker === who && waking.test(cited);
+  return duration.test(cited + ' ' + summary) && sleep.test(cited + ' ' + summary) && (namedWake || userWake) && !newSleep.test(cited);
+}
+
 /** Apply one validated model result to the ledger. Bad items are dropped one by one, never the whole result. */
 function applyResult(ledger, result, batch, now = new Date().toISOString()) {
   const stats = { opened: 0, updated: 0, closed: 0, dropped: 0 };
@@ -855,6 +872,7 @@ function applyResult(ledger, result, batch, now = new Date().toISOString()) {
       const message = batch.find((m) => m.number === evidence[0].number);
       const at = storyTime([message].filter(Boolean)) || storyTime(batch);
       const text = cleanText(item.text, 80);
+      if (what === 'sleep' && pastSleepAtWake(item, evidence, message, who)) continue;
       // "도윤이 먹여 준 스테이크" filed under 도윤: he fed it, he did not eat it.
       if (what === 'meal' && text && new RegExp(`${who.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(이|가)?\\s*(떠)?먹여`).test(text)) continue;
       const substitute = what === 'meal' && item.how === 'substitute';
@@ -1126,7 +1144,7 @@ function isoDate(text, base = null) {
   const year = m[1] ? (m[1].length === 2 ? 2000 + Number(m[1]) : Number(m[1])) : base ? Number(base.slice(0, 4)) : null;
   if (!year) return null;
   const d = new Date(Date.UTC(year, Number(m[2]) - 1, Number(m[3])));
-  return Number.isNaN(d.getTime()) || d.getUTCDate() !== Number(m[3]) ? null : d.toISOString().slice(0, 10);
+  return Number.isNaN(d.getTime()) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3]) ? null : d.toISOString().slice(0, 10);
 }
 
 function addDays(iso, days) {
@@ -1159,9 +1177,11 @@ function dateLine(line, base = null) {
   if (!raw || raw.length > 90 || /[.!?…。]["”’」』)]*$/.test(raw)) return null;
   const t = raw.replace(/^[^\p{L}\p{N}"“'‘「『]+/u, '');
   if (/["“”「」『』]/.test(t)) return null;
-  if (!/\d{4}\s*년|\d{2,4}[-./]\d{1,2}[-./]\d{1,2}/.test(t) && !WEEKDAY_WORD.test(t)) return null;
+  if (!/(?<!\d)\d{8}(?!\d)|\d{4}\s*년|\d{2,4}[-./]\d{1,2}[-./]\d{1,2}|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{4}|\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s*\d{4}/i.test(t) && !WEEKDAY_WORD.test(t)) return null;
   // "14일에", "14일까지", "18일이었다": a date inside a sentence.
   if (/\d\s*일\s*(?:에|엔|까지|부터|쯤|께|이었|이야|이다|이라|이니|인데|로|은|는|의)/.test(t) || /요일\s*(?:에|엔|까지|부터|이었|이야|이다|인데|은|는|의)/.test(t)) return null;
+  // An English line with many words around the date is a sentence that mentions it, not a date line.
+  if ((t.match(/\b[a-z]{2,}\b/g) || []).filter((w) => !/^(?:am|pm|at|of|the|on|and|in|st|nd|rd|th)$/.test(w)).length > 4) return null;
   const c = parseClock(t, base);
   return c?.date ? c : null;
 }
@@ -1173,6 +1193,10 @@ function dateInText(content, base = null) {
     if (c?.date && (!best || `${c.date}T${c.time || ''}` > `${best.date}T${best.time || ''}`)) best = c;
   };
   const text = String(content || '');
+  // Compact dates in an explicit RP header can appear inline with prose.
+  for (const hit of text.matchAll(/§\s*RP\s*\|\s*(\d{8})(?=\s*\|)([^§]*)/gi)) {
+    take(parseClock(`${hit[1]} ${hit[2]}`, base));
+  }
   // A numeric date with its weekday in brackets is a header wherever it stands, even inline before a line of
   // dialogue ("§RP | 24-10-18 (금) | 02:32 | 서재§ 하루 | …").
   for (const hit of text.matchAll(/(\d{2,4}-\d{1,2}-\d{1,2})\s*\([월화수목금토일]\)(?:\s*\|?\s*(\d{1,2}:\d{2}))?/g)) {
@@ -1188,12 +1212,24 @@ function dateInText(content, base = null) {
  * "10월 18일" or "10/18" (year from `base`), "14:30", "오후 2시 30분", "2:30 PM". Returns { date, time } or null.
  * "Day 3" or "3일차" is not a calendar date: null (the story then keeps order only).
  */
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
 function parseClock(text, base = null) {
   const raw = String(text || '').trim();
   if (!raw) return null;
   let date = null;
+  const compact = raw.match(/(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)/);
+  if (compact) date = isoDate(`${compact[1]}-${compact[2]}-${compact[3]}`);
   const ko = raw.match(/(?:(\d{2}|\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일(?!\s*차)/);
-  if (ko) date = isoDate(`${ko[1] ? `${ko[1]}-` : ''}${ko[2]}-${ko[3]}`, base);
+  if (!date && ko) date = isoDate(`${ko[1] ? `${ko[1]}-` : ''}${ko[2]}-${ko[3]}`, base);
+  if (!date) {
+    // English: "October 18, 2024", "Oct 18th", "18 October 2024", "Fri, Oct 18 2024".
+    const month = (m) => MONTHS.findIndex((x) => m.toLowerCase().startsWith(x)) + 1;
+    const mdy = raw.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s*(\d{4}))?/i);
+    const dmy = raw.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?(?:,?\s*(\d{4}))?/i);
+    if (mdy) date = isoDate(`${mdy[3] ? `${mdy[3]}-` : ''}${month(mdy[1])}-${mdy[2]}`, base);
+    else if (dmy) date = isoDate(`${dmy[3] ? `${dmy[3]}-` : ''}${month(dmy[2])}-${dmy[1]}`, base);
+  }
   if (!date) {
     const num = raw.match(/(?<![\d:])(?:(\d{4}|\d{2})[-./]\s*)?(\d{1,2})[-./]\s*(\d{1,2})(?![\d:])/);
     if (num) date = isoDate(`${num[1] ? `${num[1]}-` : ''}${num[2]}-${num[3]}`, base);
@@ -1228,9 +1264,12 @@ function clockNote(message) {
   return parts.length ? ` (${parts.join(' · ')})` : '';
 }
 
-const ROUTINE = ['meal', 'wash', 'sleep', 'wake', 'medicine'];
+const ROUTINE = ['meal', 'wash', 'groom', 'sleep', 'wake', 'medicine'];
 const ROUTINE_KEEP = 40;
 const PAST_DAYS = 3;
+const COSMETICS = /(화장(?!실)|메이크업|마스카라|립스틱|립\s*마무리|향수|헤어스타일|make\s?up|mascara|lipstick|perfume)/i;
+const WASHING = /(샤워|목욕|세수|양치|씻|머리\s*감|클렌징|외출\s*준비|shower|bath|wash)/i;
+const routineDisplayKind = (r) => r.what === 'wash' && COSMETICS.test(r.text || '') && !WASHING.test(r.text || '') ? 'groom' : r.what;
 const DRINK_OR_SMOKE = /(담배|시가|궐련|커피|라떼|술|맥주|와인|버번|위스키|보드카|칵테일|음료|주스|우유|콜라|탄산|녹차|홍차|(?:^|\s)물(?:\s|을|만|$)|얼음물|생수|사탕|껌)/;
 const FOOD = /(밥|식사|끼니|아침|점심|저녁|야식|브런치|스테이크|고기|빵|토스트|샌드위치|죽|국|찌개|요리|면|라면|파스타|샐러드|피자|햄버거|계란|달걀|과일|수프|스프|도시락|김밥|떡)/;
 
@@ -1267,6 +1306,61 @@ function ago(at, now) {
   return `${Math.round(minutes / 1440)}일 전`;
 }
 
+/** How much of a dish was eaten ("한 입", "몇 점", "반 접시", "마저" …): not part of what the dish is. */
+// Whole words only ("반" but not "반찬", "더" but not "더덕").
+const PORTION = /(?<=^|\s)(?:(?:한|두|세|네|몇|여러)\s*(?:입|점|조각|숟갈|숟가락|술|젓가락|포크)(?:\s*(?:더|째))?|반\s*(?:접시|그릇|공기|쪽)?|절반|조금|약간|일부|남은|나머지|마저|더|다\s*먹음|(?:\d+|한|두|세)\s*(?:입|점|조각))(?=\s|$)/g;
+// The same in English: "a bite of steak", "a few pieces of steak", "the rest of the steak", "more steak".
+const PORTION_EN = /\b(?:(?:a|one|two|three|a few|few|several|some|\d+)\s+(?:bites?|pieces?|forkfuls?|spoonfuls?|slices?|mouthfuls?)\s+of|(?:half|the rest|rest|most|some|more)\s+of|finished|more|half)\b\s*(?:(?:the|a|an|her|his|their)\b\s*)?/gi;
+// Split explicit food lists, including particles attached to a portion ("몇 조각과").
+// Keep "사과" intact: its last syllable is not a list particle.
+function foodParts(text) {
+  const separated = String(text || '')
+    .replace(/(입|점|조각|숟갈|숟가락|술|젓가락|포크)(?:과|와)(?=\s)/g, '$1,')
+    .replace(/([가-힣]+)(와|과)(?=\s)/g, (whole, noun) => noun === '사' ? whole : noun + ',');
+  return separated.split(/\s*[,，]\s*/).map((part) => part.trim()).filter(Boolean);
+}
+
+function foodLabel(text) {
+  return String(text || '')
+    .replace(/(?:을|를)\s*(?:더\s*)?(?:먹음|먹었다|먹는다|먹으며|먹고|마셨다|마심)\s*$/u, '')
+    .replace(/\s*(?:먹음|먹었다|마심|마셨다)\s*$/u, '')
+    .replace(PORTION, ' ').replace(PORTION_EN, ' ').replace(/\s+/g, ' ')
+    .replace(/[.!?。]+$/u, '').trim();
+}
+const foodKey = (text) => foodLabel(text).toLowerCase();
+
+// Match a named pasta to its generic noodle/pasta reference without equating different pasta types.
+function sameNamedPasta(a, b) {
+  const pastaName = (s) => s.match(/(?:페투치네|펫투치네|fettuccine|스파게티|spaghetti|링귀니|linguine)/i)?.[0]?.toLowerCase();
+  const first = pastaName(a), second = pastaName(b);
+  if (!first || !second) return false;
+  const canonical = (s) => s === '펫투치네' || s === 'fettuccine' ? '페투치네' : s === 'spaghetti' ? '스파게티' : s === 'linguine' ? '링귀니' : s;
+  if (canonical(first) !== canonical(second)) return false;
+  const generic = (s, name) => s.replace(name, '').replace(/(?:파스타|면|pasta|noodles?)/gi, '').trim() === '';
+  return generic(a, first) || generic(b, second);
+}
+
+/**
+ * What a sitting was, from the entries filed turn by turn ("스테이크 한 입", "스테이크 몇 점", "스테이크"):
+ * one name per dish, the latest wording of it; different dishes are listed in the order they came.
+ */
+function sittingText(entries) {
+  const dishes = [];
+  for (const r of entries) {
+    for (const text of foodParts(r.text)) {
+      const dish = foodKey(text) || text;
+      const same = dishes.find((d) => d.dish === dish || d.dish.includes(dish) || dish.includes(d.dish) || sameNamedPasta(d.dish, dish));
+      if (!same) dishes.push({ dish, texts: [text] });
+      else {
+        same.texts.push(text);
+        if (dish.length > same.dish.length) same.dish = dish;
+      }
+    }
+  }
+  // Eaten over several turns: the plain name of the dish ("스테이크"), not the first bite ("스테이크 한 입").
+  return dishes.map((d) => (d.texts.length > 1 ? foodLabel(d.texts.findLast((t) => foodKey(t) === d.dish) || d.texts.at(-1)) || d.dish : d.texts[0])).join(', ');
+}
+
 /** Meals less than two hours after the start of the previous one are the same sitting (one 끼니). */
 function oneSitting(meals) {
   const out = [];
@@ -1275,40 +1369,144 @@ function oneSitting(meals) {
     const gap = first?.at && r.at ? (Date.parse(`${r.at}:00Z`) - Date.parse(`${first.at}:00Z`)) / 60000 : Infinity;
     if (first && gap >= 0 && gap < 120) {
       first.last = r.at;
+      first.parts.push(r);
+      first.text = sittingText(first.parts);
+      first.claimed = first.parts.every((p) => p.claimed);
       continue;
     }
-    out.push({ ...r });
+    out.push({ ...r, text: sittingText([r]) || r.text, parts: [r] });
   }
   return out;
 }
 
+// Display-only semantic groupings are keyed to all source records. An edit or rollback changes the key,
+// so an old model result cannot silently overwrite a new user edit or alter the raw routine history.
+function mealDisplayKey(meal) {
+  return hashText(JSON.stringify(meal.parts.map((p) => [p.who, p.at, p.number, p.text, !!p.edited])));
+}
+
+function pendingMealDisplays(ledger, limit = 20) {
+  const meals = (ledger?.routine || []).filter((r) => r.what === 'meal' && !r.substitute && r.at);
+  const result = [];
+  for (const who of [...new Set(meals.map((r) => r.who))]) {
+    for (const meal of oneSitting(meals.filter((r) => r.who === who))) {
+      const parts = meal.parts.flatMap((p) => foodParts(p.text));
+      if (parts.length < 2 || parts.length > 30) continue;
+      const key = mealDisplayKey(meal);
+      if (ledger.mealDisplays?.[key]) continue;
+      result.push({ key, who, at: meal.at, parts });
+      if (result.length >= limit) return result;
+    }
+  }
+  return result;
+}
+
+// Each input part must occur exactly once; model-selected labels must be existing input parts.
+function applyMealDisplays(ledger, candidates, answers) {
+  if (!Array.isArray(answers)) return 0;
+  const expected = new Map(candidates.map((x) => [x.key, x]));
+  let saved = 0;
+  for (const answer of answers) {
+    const candidate = expected.get(answer?.key);
+    if (!candidate || !Array.isArray(answer.groups) || !answer.groups.length) continue;
+    const used = new Set();
+    let valid = true;
+    for (const group of answer.groups) {
+      if (!Array.isArray(group?.parts) || !group.parts.length || !Number.isInteger(group.label) || !group.parts.includes(group.label)) { valid = false; break; }
+      for (const i of group.parts) {
+        if (!Number.isInteger(i) || i < 0 || i >= candidate.parts.length || used.has(i)) { valid = false; break; }
+        used.add(i);
+      }
+      if (!valid) break;
+    }
+    if (!valid || used.size !== candidate.parts.length) continue;
+    ledger.mealDisplays ||= {};
+    ledger.mealDisplays[candidate.key] = answer.groups.map((g) => ({ parts: [...g.parts], label: g.label }));
+    const keys = Object.keys(ledger.mealDisplays);
+    for (const old of keys.slice(0, Math.max(0, keys.length - 300))) delete ledger.mealDisplays[old];
+    saved++;
+  }
+  return saved;
+}
+
+function semanticMealText(meal, cache) {
+  const parts = meal.parts.flatMap((p) => foodParts(p.text));
+  const groups = cache?.[mealDisplayKey(meal)];
+  if (!Array.isArray(groups) || !groups.length) return null;
+  const used = new Set();
+  for (const group of groups) {
+    if (!Array.isArray(group?.parts) || !group.parts.includes(group.label)) return null;
+    for (const index of group.parts) {
+      if (!Number.isInteger(index) || index < 0 || index >= parts.length || used.has(index)) return null;
+      used.add(index);
+    }
+  }
+  if (used.size !== parts.length) return null;
+  return groups.map((group) => group.parts.length > 1 ? foodLabel(parts[group.label]) || parts[group.label] : parts[group.label]).join(', ');
+}
+
 const minutesBetween = (a, b) => (Date.parse(`${b}:00Z`) - Date.parse(`${a}:00Z`)) / 60000;
 
+function isNapPeriod(sleep, wake, minutes) {
+  if (/낮잠|쪽잠|\bnap(?:ped|ping)?\b/i.test(`${sleep?.text || ''} ${wake?.text || ''}`)) return true;
+  return Number(wake.at.slice(11, 13)) >= 14 && minutes < 240;
+}
+
+// Count only complete, non-overlapping naps with no recorded activity during them.
+function completedNaps(sleeps, wakes, awake = []) {
+  const results = [];
+  let previousWake = null;
+  const starts = [...sleeps].filter((s) => s.at).sort((a, b) => a.at.localeCompare(b.at));
+  for (const wake of [...wakes].filter((w) => w.at).sort((a, b) => a.at.localeCompare(b.at))) {
+    const sleep = starts.find((s) => s.at < wake.at && (!previousWake || s.at > previousWake) && minutesBetween(s.at, wake.at) < 16 * 60);
+    previousWake = wake.at;
+    if (!sleep || awake.some((at) => at > sleep.at && at < wake.at)) continue;
+    const minutes = minutesBetween(sleep.at, wake.at);
+    if (minutes > 0 && isNapPeriod(sleep, wake, minutes)) results.push({ slept: sleep.at, wake: wake.at, minutes });
+  }
+  return results;
+}
+
 /**
- * Night sleeps, oldest first: a wake after four hours or more of sleep, or (when when they fell asleep is
- * unknown) a wake in the morning hours. Naps don't count. Each: { slept, wake, minutes }.
+ * Night sleeps, oldest first: a waking between midnight and 2 pm, or after four hours or more of sleep. Naps don't
+ * count. `awake` are times they were plainly up (ate, washed, took medicine): a bedtime with one of those before the
+ * next waking ended unrecorded ({ wake: null, awakeBy }). Each: { slept, wake, minutes, partial, awakeBy? }.
  */
-function nightSleeps(sleeps, wakes) {
+function nightSleeps(sleeps, wakes, awake = []) {
   const out = [];
   const used = new Set();
+  const seen = awake.filter(Boolean).sort();
+  const awakeBetween = (from, to) => seen.filter((t) => t > from && t < to);
   let previousWake = null;
   for (const wake of [...wakes].filter((w) => w.at).sort((a, b) => a.at.localeCompare(b.at))) {
     // A bedtime pairs with the first waking after it only.
-    const slept = [...sleeps]
-      .filter((s) => s.at && s.at < wake.at && (!previousWake || s.at >= previousWake) && !used.has(s) && minutesBetween(s.at, wake.at) < 16 * 60)
+    let slept = [...sleeps]
+      .filter((s) => s.at && s.at < wake.at && (!previousWake || s.at > previousWake) && !used.has(s) && minutesBetween(s.at, wake.at) < 16 * 60)
       .sort((a, b) => a.at.localeCompare(b.at))[0];
+    // Ate, washed or took medicine in between: they were up. That bedtime ended some time before (its waking was
+    // not written down), and this waking ends a sleep that started after the last of those.
+    if (slept) {
+      const up = awakeBetween(slept.at, wake.at);
+      if (up.length) {
+        used.add(slept);
+        const h = Number(slept.at.slice(11, 13));
+        if (h >= 19 || h < 7) out.push({ slept: slept.at, wake: null, awakeBy: up[0], minutes: null, partial: true });
+        slept = null;
+      }
+    }
     if (slept) used.add(slept);
-    previousWake = wake.at;
     const minutes = slept ? minutesBetween(slept.at, wake.at) : null;
-    const start = slept ? Number(slept.at.slice(11, 13)) : null;
     const hour = Number(wake.at.slice(11, 13));
-    // Night: fell asleep in the evening or small hours (however short), or slept four hours or more;
-    // with no known bedtime, woke in the morning hours.
-    const night = slept ? start >= 19 || start < 7 || minutes >= 240 : hour >= 4 && hour < 14;
+    // Night: woke between midnight and 2 pm, or slept four hours or more. An evening nap that ends the same evening
+    // ("두 시간 낮잠" after dinner) is not one, whenever it started.
+    const night = hour < 14 || (minutes != null && minutes >= 240);
+    previousWake = wake.at;
+    if (slept && isNapPeriod(slept, wake, minutes)) continue;
     if (!night) continue;
     const last = out.at(-1);
-    // Woke and dozed off again the same night: one night, sleep added up.
-    if (last && minutesBetween(last.wake, wake.at) < 8 * 60) {
+    // Woke and dozed off again the same night: one night, sleep added up. Only when they went back to bed soon after
+    // and did nothing else in between.
+    if (last?.wake && minutesBetween(last.wake, wake.at) < 8 * 60 && (!slept || minutesBetween(last.wake, slept.at) < 3 * 60) && !awakeBetween(last.wake, wake.at).length) {
       last.wake = wake.at;
       last.minutes = (last.minutes || 0) + (minutes || 0) || null;
       last.partial = last.partial || minutes == null;
@@ -1316,11 +1514,23 @@ function nightSleeps(sleeps, wakes) {
     }
     out.push({ slept: slept?.at || null, wake: wake.at, minutes, partial: minutes == null });
   }
-  return out;
+  // A night bedtime that never got its waking written down, with them up and about afterwards.
+  const wakeTimes = wakes.filter((w) => w.at).map((w) => w.at);
+  for (const s of sleeps) {
+    if (!s.at || used.has(s)) continue;
+    const h = Number(s.at.slice(11, 13));
+    if (!(h >= 19 || h < 7)) continue;
+    const up = seen.find((t) => t > s.at && minutesBetween(s.at, t) < 24 * 60);
+    if (!up || wakeTimes.some((w) => w > s.at && w <= up)) continue;
+    if (out.some((n) => n.slept === s.at)) continue;
+    out.push({ slept: s.at, wake: null, awakeBy: up, minutes: null, partial: true });
+  }
+  return out.sort((a, b) => String(a.wake || a.awakeBy).localeCompare(String(b.wake || b.awakeBy)));
 }
-
-function lastNightWake(sleeps, wakes) {
-  return nightSleeps(sleeps, wakes).at(-1)?.wake || null;
+/** When their day started: the last night's waking, or (not written down) the first thing they did after it. */
+function lastNightWake(sleeps, wakes, awake = []) {
+  const n = nightSleeps(sleeps, wakes, awake).at(-1);
+  return n ? n.wake || n.awakeBy || null : null;
 }
 
 function hours(minutes, partial = false) {
@@ -1335,15 +1545,31 @@ function hours(minutes, partial = false) {
  * The last few days before today, a day running from one night's waking to the next:
  * how many meals, and how long the night's sleep that ended it was. "10-17 (목): 1끼, 밤잠 3시간"
  */
-function pastDays(meals, nights) {
-  const out = [];
-  for (let i = nights.length - 1; i >= 1 && out.length < PAST_DAYS; i--) {
-    const from = nights[i - 1].wake;
-    const to = nights[i].wake;
+function pastDays(meals, nights, naps = []) {
+  const days = new Map();
+  for (let i = nights.length - 1; i >= 1; i--) {
+    const from = nights[i - 1].wake || nights[i - 1].awakeBy;
+    const to = nights[i].wake || nights[i].awakeBy;
+    if (!from || !to || from >= to) continue;
+    const date = from.slice(0, 10);
+    if (!days.has(date) && days.size >= PAST_DAYS) break;
     const count = meals.filter((r) => r.at && r.at >= from && r.at < to).length;
-    out.push(`${dayLabel(from.slice(0, 10))}: ${count}끼, 그 뒤 밤잠 ${hours(nights[i].minutes, nights[i].partial)}`);
+    const slept = nights[i].minutes != null ? hours(nights[i].minutes, nights[i].partial) : '시간 모름';
+    const day = days.get(date) || { count: 0, sleeps: [], naps: [] };
+    day.count += count;
+    day.sleeps.push(slept);
+    day.naps.push(...naps.filter((n) => n.slept >= from && n.wake <= to));
+    days.set(date, day);
   }
-  return out;
+  return [...days].map(([date, day]) => {
+    const sleeps = day.sleeps.reverse();
+    const known = sleeps.filter((x) => x !== '시간 모름');
+    const shown = known.length ? known.join(', ') : '시간 미확인';
+    const napText = day.naps.length
+      ? `낮잠 ${day.naps.length}회, 총 ${hours(day.naps.reduce((total, n) => total + n.minutes, 0))}`
+      : '낮잠 시간 확인 가능한 기록 없음';
+    return `${dayLabel(date)}: ${day.count}끼, ${napText}, 그 뒤 밤잠 ${shown}`;
+  });
 }
 
 function clock(at, today) {
@@ -1425,16 +1651,19 @@ function renderRoutine(ledger, now = null) {
   const lines = [];
   for (const who of people) {
     const of = (what) => all.filter((r) => r.who === who && r.what === what);
+    // Times they were plainly up: a sleep can't have run through these.
+    const awake = all.filter((r) => r.who === who && ['meal', 'wash', 'groom', 'medicine'].includes(r.what) && r.at).map((r) => r.at);
     const parts = [];
     const item = (r) => `${r.at ? r.at.slice(11) : ''} ${r.text || ''}${r.claimed ? ' (본인 주장)' : ''}`.trim();
-    const meals = oneSitting(of('meal').filter((r) => !r.substitute));
+    const meals = oneSitting(of('meal').filter((r) => !r.substitute)).map((meal) => ({ ...meal, text: semanticMealText(meal, ledger.mealDisplays) || meal.text }));
     const madeDo = of('meal').filter((r) => r.substitute);
     if (meals.length || madeDo.length) {
       const last = meals.at(-1);
       // The day starts when they got up from a night's sleep (naps don't count); without that, the calendar day.
-      const morning = lastNightWake(of('sleep'), of('wake'));
+      const lastNight = nightSleeps(of('sleep'), of('wake'), awake).at(-1);
+      const morning = lastNight ? lastNight.wake || lastNight.awakeBy : null;
       const since = morning ? (r) => r.at && r.at >= morning : (r) => today && r.at?.slice(0, 10) === today;
-      const label = morning ? `기상(${clock(morning, today)}) 후` : '오늘';
+      const label = !morning ? '오늘' : lastNight.wake ? `기상(${clock(morning, today)}) 후` : '기상(시각 모름) 후';
       const counted = meals.filter(since);
       const countedMadeDo = madeDo.filter(since);
       let line;
@@ -1445,14 +1674,19 @@ function renderRoutine(ledger, now = null) {
       if (countedMadeDo.length) line += `, 끼니 대신 때움 ${countedMadeDo.length}번(${countedMadeDo.map(item).join(', ')})`;
       parts.push(line);
     }
-    const nights = nightSleeps(of('sleep'), of('wake'));
+    const nights = nightSleeps(of('sleep'), of('wake'), awake);
     const slept = of('sleep').at(-1);
     const woke = of('wake').at(-1);
     const night = nights.at(-1);
     // Asleep now only if the last bedtime is after the last waking (by story time when both have one).
-    const asleep = slept && (!woke || (slept.at && woke.at ? slept.at > woke.at : slept.number > woke.number));
+    const asleep = slept && (!woke || (slept.at && woke.at ? slept.at > woke.at : slept.number > woke.number)) && !(slept.at && awake.some((t) => t > slept.at));
     if (asleep) {
       parts.push(`잠 ${clock(slept.at, today)}부터 자는 중${now && slept.at ? `(${span(slept.at, now) || '방금'}째)` : ''}`);
+    } else if (night && !night.wake) {
+      // Went to bed, and the next thing written down is them up and about: when they woke is not known.
+      let line = `밤잠 ${clock(night.slept, today)}에 잠듦(깬 시각 기록 없음, ${clock(night.awakeBy, today)}엔 깨어 있음)`;
+      if (woke?.at && woke.at > night.awakeBy) line += `, 낮잠 ${clock(woke.at, today)}에 깸`;
+      parts.push(line);
     } else if (night) {
       const lasted = night.minutes != null ? `(${hours(night.minutes, night.partial)} 잠)` : '';
       let line = `밤잠 ${night.slept ? `${clock(night.slept, today)}에 잠들어 ` : ''}${clock(night.wake, today)}에 깸${lasted}`;
@@ -1462,10 +1696,17 @@ function renderRoutine(ledger, now = null) {
       const lasted = slept?.at && woke.at ? span(slept.at, woke.at) : null;
       parts.push(`잠 ${slept ? `${clock(slept.at, today)}에 잠들어 ` : ''}${clock(woke.at, today)}에 깸${lasted ? `(${lasted} 잠)` : ''}`);
     }
-    const days = pastDays(meals, nights);
+    const allNaps = completedNaps(of('sleep'), of('wake'), awake);
+    const naps = allNaps.filter((n) => !now || (n.wake <= now && minutesBetween(n.wake, now) <= 24 * 60));
+    if (naps.length) parts.push(`${now ? '최근 24시간' : '기록된'} 낮잠 ${naps.length}회, 총 ${hours(naps.reduce((total, n) => total + n.minutes, 0))}`);
+    else if (now) parts.push('최근 24시간 낮잠: 시간 확인 가능한 기록 없음');
+    const days = pastDays(meals, nights, allNaps);
     if (days.length) parts.push(`지난 며칠: ${days.join(' / ')}`);
-    const lastWash = of('wash').at(-1);
+    const oldWash = of('wash');
+    const lastWash = oldWash.filter((r) => routineDisplayKind(r) === 'wash').at(-1);
     if (lastWash) parts.push(`씻기 마지막 ${clock(lastWash.at, today)}${lastWash.text ? ` ${lastWash.text}` : ''}${ago(lastWash.at, now) ? `(${ago(lastWash.at, now)})` : ''}`);
+    const grooming = [...of('groom'), ...oldWash.filter((r) => COSMETICS.test(r.text || ''))].sort((a, b) => String(a.at || '').localeCompare(String(b.at || ''))).at(-1);
+    if (grooming) parts.push(`꾸밈 마지막 ${clock(grooming.at, today)}${grooming.text ? ` ${grooming.text}` : ''}${ago(grooming.at, now) ? `(${ago(grooming.at, now)})` : ''}`);
     // Each medicine on its own: a pill taken every morning is not hidden by a painkiller taken later.
     const byDrug = new Map();
     for (const r of of('medicine')) byDrug.set(drugName(r.text), r);
@@ -1813,6 +2054,9 @@ function renderCompact(ledger, { maxChars = 2400, query = '', today = ledger?.st
 }
 
 module.exports = {
+  routineDisplayKind,
+  pendingMealDisplays,
+  applyMealDisplays,
   groupCast,
   awarenessIn,
   editRoutine,
@@ -1859,3 +2103,5 @@ module.exports = {
   faded,
   lastSeen,
   SYSTEM_PROMPT, matchName, nameKeys, htmlToText, canonNames };
+
+

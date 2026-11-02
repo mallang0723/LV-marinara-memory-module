@@ -5,10 +5,12 @@ import L from './core/ledger.cjs';
 import S from './core/scenes.cjs';
 import R from './core/recall.cjs';
 import V from './core/vectors.cjs';
+import TR from './core/translate.cjs';
 import { VERSION, safeChatId, nameList, summary, bounded, RECALL_MODES, RECALL_STYLES, CHAPTER_LENGTHS, RECALL_AMOUNTS } from './service.js';
 
 export const PREFIX = 'memory-module/';
 export const ROUTES = [
+    ['POST', 'settings/language'], ['GET', 'chats/:id/translations'], ['POST', 'chats/:id/translations/retry'],
     ['POST', 'chats/:id/threads/:tid/:action'], ['POST', 'chats/:id/routine'], ['GET', 'chats/:id/scene-error'], ['GET', 'status'],
     ['POST', 'chats/:id/search'], ['POST', 'chats/:id/recall-test'], ['POST', 'settings/embedding'], ['POST', 'settings/recall-style'],
     ['POST', 'settings/chapter-length'], ['POST', 'settings/recall-amount'], ['POST', 'settings/recall'], ['POST', 'settings'],
@@ -120,7 +122,7 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         const results = queries.map((query, i) => {
             const subject = normalize(query.subject);
             const firstInside = um.windows.get(chatId) ?? st.window?.firstInside ?? null;
-            const searchable = body?.scope === 'side-b' ? st.scenes : R.candidates(st, firstInside);
+            const searchable = ['side-b', 'ooc-archive'].includes(body?.scope) ? st.scenes : R.candidates(st, firstInside);
             const candidates = subject ? searchable.filter(scene => normalize(JSON.stringify(scene)).includes(subject)) : searchable;
             const hits = V.nearest(index, [vectors[i]], candidates, 8).filter(hit => hit.score > 0).map(hit => ({ id: hit.id, piece: hit.piece, score: hit.score, strong: hit.strong }));
             return { query, hits };
@@ -184,6 +186,60 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         um.saveSettings({ ...um.settings(), recallStyle: style }); await um.flush();
         return { style };
     });
+    add('POST', 'settings/language', async ({ um, body }) => {
+        const next = { ...um.settings() };
+        if (body?.memoryLanguage !== undefined) {
+            const lang = String(body.memoryLanguage || 'auto');
+            if (lang !== 'auto' && !TR.LANGS.includes(lang)) throw Error('기억을 넣을 언어는 auto, ko, en 중 하나여야 합니다.');
+            next.memoryLanguage = lang;
+        }
+        if (body?.writeLanguage !== undefined) {
+            const lang = String(body.writeLanguage || 'auto');
+            if (!['auto', 'en'].includes(lang)) throw Error('기억을 정리할 언어는 auto, en 중 하나여야 합니다.');
+            next.writeLanguage = lang;
+        }
+        if (body?.translateConnection !== undefined) next.translateConnection = String(body.translateConnection || '').trim() || null;
+        if (body?.translateQuotes !== undefined) next.translateQuotes = body.translateQuotes === true;
+        um.saveSettings(next);
+        await um.flush();
+        um.preparing.clear();
+        (async () => {
+            for (const id of Object.keys(um.settings().chats || {})) {
+                if (!um.chatEnabled(id)) continue;
+                await um.ensureChat(id);
+                await um.chatLanguage(id);
+                um.maybePrepareTranslation(id);
+                await um.preparing.get(id)?.run;
+            }
+        })().catch(() => {});
+        return { memoryLanguage: next.memoryLanguage || 'auto', writeLanguage: next.writeLanguage || 'auto', translateConnection: next.translateConnection || null, translateQuotes: next.translateQuotes === true };
+    });
+    add('GET', 'chats/:id/translations', async ctx => {
+        const { um } = ctx, chatId = chatOf(ctx);
+        await um.ensureChat(chatId);
+        await um.chatLanguage(chatId);
+        const lookup = um.translationLookup(chatId, 'ko'), items = {}, missing = [];
+        for (const text of um.displayTranslationTexts(chatId)) {
+            const done = lookup(text);
+            if (done != null) items[text] = done; else missing.push(text);
+        }
+        if (missing.length && um.settings().connection) um.startDisplayTranslation(chatId, missing);
+        const status = um.displayTranslationStatus.get(chatId);
+        return { chatLang: um.chatLangs.get(chatId) || 'ko', items, missing: missing.length, working: um.translating.has(`${chatId}:ko`), error: missing.length ? (status?.error || (!um.settings().connection ? '기억 정리 연결을 설정해 주세요.' : null)) : null };
+    });
+    add('POST', 'chats/:id/translations/retry', async ctx => {
+        const { um } = ctx, chatId = chatOf(ctx);
+        await um.ensureChat(chatId);
+        await um.chatLanguage(chatId);
+        if (um.translating.has(`${chatId}:ko`)) return { working: true, alreadyWorking: true };
+        const lookup = um.translationLookup(chatId, 'ko');
+        const missing = um.displayTranslationTexts(chatId).filter(text => lookup(text) == null);
+        if (!missing.length) return { working: false, missing: 0 };
+        if (!um.settings().connection) throw Error('기억 정리 연결을 설정해 주세요.');
+        um.startDisplayTranslation(chatId, missing, true);
+        return { working: true, missing: missing.length };
+    });
+
     add('POST', 'settings/chapter-length', async ({ um, body }) => {
         const length = String(body?.length || '').trim();
         if (!CHAPTER_LENGTHS[length]) throw Error('지난 이야기 흐름 길이는 short, normal, long, full 중 하나여야 합니다.');
@@ -233,16 +289,19 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         const scenes = um.loadScenes(chatId);
         const index = um.loadVectors(chatId);
         const recallEntry = um.recalls.get(chatId);
+        const chatLang = await um.chatLanguage(chatId);
         const rendered = await um.rendered(chatId);
+        um.maybePrepareTranslation(chatId);
         return {
             version: VERSION,
             health: um.health(),
             enabled: um.chatEnabled(chatId),
+            chatLang, memoryLanguage: um.memoryLanguage(chatId), writeLanguage: um.writeLanguage(chatId), translationPrep: um.prepareStatus(chatId),
             job,
             sceneJob,
             speakerTags: false,
             routine: ledger ? L.renderRoutine(ledger, um.storyNow.get(chatId) || ledger.storyTime || null) : '',
-            routineItems: (ledger?.routine || []).map(r => ({ ...r, key: L.routineKey(r) })),
+            routineItems: (ledger?.routine || []).map(r => ({ ...r, displayWhat: L.routineDisplayKind(r), key: L.routineKey(r) })),
             storyNow: um.storyNow.get(chatId) || ledger?.storyTime || null,
             personas: scenes?.personas || [],
             cast: (scenes?.cast || ledger?.cast || []).filter(n => !(scenes?.personas || []).includes(n)),

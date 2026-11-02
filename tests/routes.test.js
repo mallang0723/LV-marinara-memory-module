@@ -15,10 +15,10 @@ const boot = async (opts = {}) => {
     return { f, stop, rpc, logs };
 };
 
-test('all 30 routes of the original module are registered under memory-module/', async () => {
-    assert.equal(ROUTES.length, 30);
+test('all 33 routes of the original module are registered under memory-module/', async () => {
+    assert.equal(ROUTES.length, 33);
     const { f } = await boot();
-    // an unknown route is 404, the 30 known ones are not
+    // an unknown route is 404, the 33 known ones are not
     const miss = await f.rpc('GET', 'memory-module/nope');
     assert.equal(miss.ok, false); assert.equal(miss.status, 404);
     const fine = await Promise.all(ROUTES.map(async ([method, pattern]) => {
@@ -103,7 +103,7 @@ test('enable / disable / stop / estimate / status / scene-error / trial / recall
     const est = (await rpc('POST', 'chats/chat-a/estimate')).data;
     assert.equal(est.messages, 15);
     const st = (await rpc('GET', 'status')).data;
-    assert.equal(st.version, '0.2.0-lv.1'); assert.ok(st.embedding && st.health);
+    assert.equal(st.version, '1.1.0-lv.1'); assert.ok(st.embedding && st.health);
     assert.deepEqual((await rpc('GET', 'chats/chat-a/scene-error')).data, { text: null });
     assert.deepEqual((await rpc('GET', 'chats/chat-a/trial')).data, { state: 'none' });
     assert.equal((await rpc('POST', 'chats/chat-a/trial', { from: 5, to: 2 })).ok, false);

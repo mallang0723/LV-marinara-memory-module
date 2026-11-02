@@ -5,24 +5,29 @@ Original: 기억 서재 (memory library) / marinara-memory-module by tlsiddl, MI
 
   원 공유글   : https://gall.dcinside.com/mini/board/view/?id=aichatfrontend&no=305
   Repository : https://github.com/tlsiddl/marinara-memory-module
-  Commit     : 09d0699880bb6b3c1f48a42eb604fcee299d8b93  (runtime 0.10.9)
+  Commit     : 3498fd9e267bdb214efe214335245e3b7305ba96  (runtime 0.11.27)
   License    : MIT, Copyright (c) 2026 tlsiddl  (LICENSE)
 
 이 이식은 원작자의 허락을 받아, 원 공유글을 링크하는 조건으로 공개합니다.
 This port is published with the original author's permission, on the condition that the original post is linked.
 
 Used files (byte-identical copies; `npm run verify:original` checks the SHA-256 pins):
-  memory-module/lib/ledger.cjs   sha256 ec3f0dff6eda390de666da7e2a1ec3a82dc373094bb857312d3981d31f4ec543
-  memory-module/lib/scenes.cjs   sha256 a7a35031103308e79db2b5a78cf479eae1ff0e8f5049bcb65dbc5d2a5b24be94
+  memory-module/lib/ledger.cjs   sha256 a5eefedc8a67aadfb04a116e9c30efe842d44890c92902812611c79d71f694b2
+  memory-module/lib/scenes.cjs   sha256 209cda809ed8ec9c2032dfcdf6d4bdf0087be834a4e45659dc58219c6fffee29
   memory-module/lib/recall.cjs   sha256 0a9403102871b888afe98b56aae16a7e4d73ac0de81658095c8c6ea525544fa2
   memory-module/lib/vectors.cjs  sha256 87e898a02bfe08d7cc79bab9279f0544ccb3a2de282313f66d80ddc8afd7b919
-  memory-module/lib/speakers.cjs sha256 8e590e9edf37f3b074cfe0f3613aa1cb3664b701976aecc84594fd017bb0cfc6
+  memory-module/lib/speakers.cjs sha256 e005c5a0801890314b4cb0db70bc84e827433e7cc0f16f3cc8fd32893c7d5ca0
+  memory-module/lib/translate.cjs sha256 019582f8e48f69401e749fc11207e2d330c86ee04dfe38bd15bf570731549df5
 Screen files, kept unmodified as *.orig.* (the shipped UI is produced from them by the patches in src/memory/ui/patch.mjs):
-  extension/runtime.js  sha256 9db79531b4005ddfc286a8bb56dc6a60524581e63452dd7932a9094425cc795a
-  extension/ui.css      sha256 6fe45563b99e54a140e801ae578bb9432ee059e352cd0d6d95db539f30d62124
-  extension/theme.css   sha256 d430d75dbab22b7e28ea9acfdd233cfaccbd41500cad200a2068c66431f676e3
-Tests under tests/upstream/ are copies of the original's test-{ledger,scenes,recall,vectors,details,dialogue-provenance}.cjs
-with only the require() path changed, plus tests/upstream/fixtures/chat-app.html (test data used by test-dialogue-provenance.cjs).
+  extension/runtime.js  sha256 b056fc057f258b4d7ccc892340724ffbd62dd095dd14fb13a5dab80fb3d5700d
+  extension/ui.css      sha256 7ec55c4359c1487da99240fc5b53e016280a9f8b903fda14a247ca1e97a58259
+  extension/theme.css   sha256 de5bced8c35480baf962e2f7b6baf24b6fafe217d5d201d30aa498205621f2db
+Tests under tests/upstream/ preserve the upstream core tests (import paths adjusted); test-compact-date.cjs omits
+Marinara tracker assertions and test-speakers.cjs omits its server-patch assertion. The pure emotional-continuity tests
+are retained; its staged-rebuild case is adapted in tests/memory-sync.test.js.
+tests/upstream-*.test.js adapt the language, translation fit/recovery/split, edit-during-read and library retry UI tests
+to the Lumiverse service, storage, host adapter and patched UI. tests/upstream-harness.js bridges the upstream fixtures
+to the fake Spindle host. CHANGELOG.md lists excluded Marinara-only tests.
 tests/memory-branch.test.js ports the original's test-branches.cjs. tests/fake-model.js adapts the answer scripts (ledgerReply,
 sceneReply and the prompt recognition) of the original's tests/fake-llm.mjs.
 memory-module/lib/service.cjs (Marinara engine glue) is NOT copied: src/memory/service.js is a rewrite for Lumiverse

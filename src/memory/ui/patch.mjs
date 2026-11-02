@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { replaceAnchor } from '../../patch-util.mjs';
 
-export const RUNTIME_SHA256 = '9db79531b4005ddfc286a8bb56dc6a60524581e63452dd7932a9094425cc795a';
+export const RUNTIME_SHA256 = 'b056fc057f258b4d7ccc892340724ffbd62dd095dd14fb13a5dab80fb3d5700d';
 
 export function patchMemory({ runtime, uiCss, themeCss, version }) {
     const sha = createHash('sha256').update(runtime).digest('hex');
@@ -22,14 +22,16 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceAnchor(s, "return localStorage.getItem('marinara-active-chat-id') || '';", "return LV.activeChatId() || '';", { name: 'active chat id' });
     s = replaceAnchor(s, '(document.body || document.documentElement).append(element);', 'LV.mountHost(element);', { name: 'mount host' });
     // launcher: removed (drawer tab / input-bar action / Ctrl+K open the panel); its click handler becomes LV.toggle
-    s = replaceAnchor(s, '      <button id="launch" aria-label="기억 서재 열기" title="기억 서재 (끌어서 옮길 수 있습니다)">${LAUNCH_ICON}</button>\n', '', { name: 'launcher button' });
-    s = replaceAnchor(s, "    makeDraggable(root.querySelector('#launch'));\n    root.querySelector('#launch').onclick = () => {", '    LV.toggle = () => {', { name: 'launcher handler' });
+    s = replaceAnchor(s, "    launcher = makeLauncher();\n    makeDraggable(launcher);\n    launcher.addEventListener('click', () => (open ? closeLibrary() : openLibrary()));", "    LV.toggle = () => (open ? closeLibrary() : openLibrary());", { name: 'launcher handler' });
     s = replaceAnchor(s, '<style>${UI_CSS}${EXTRA_CSS}${THEME_CSS}</style>', '<style>${UI_CSS}${EXTRA_CSS}${THEME_CSS}${LV.css}</style>', { name: 'css order' });
     // speaker tags: a Marinara-only group-bubble feature, not on Lumiverse
     s = replaceAnchor(s, `        <label class="setting-switch"><span>말풍선 태그 되살리기<small>화자 색상이 켜진 '합쳐서' 그룹 RP에서 모델이 원래의 숨은 화자 태그를 출력하도록 지침을 보강합니다. 보이는 이름표 없이 따옴표만 쓰는 대사에도 적용됩니다.</small></span><input type="checkbox" id="setTags" \${info.speakerTags ? 'checked' : ''}></label>\n`, '', { name: 'speaker tags switch' });
+    s = replaceAnchor(s, "        <label class=\"setting-switch\"><span>대사 앞에 이름 표시<small>캐릭터 대사에 '이름 | 대사'를 출력하도록 요청합니다. 말풍선 태그 기능과 독립적으로 설정할 수 있습니다.</small></span><input type=\"checkbox\" id=\"setSpeakerNames\" ${info.speakerNames ? 'checked' : ''}></label>\n", '', { name: 'speaker names switch' });
+    s = replaceAnchor(s, "      if (e.target.id === 'setSpeakerNames') {\n        const on = e.target.checked;\n        void act(() => api('POST', `/chats/${encodeURIComponent(room)}/speaker-names`, { on }), on ? '대사 앞에 이름 표시를 켰습니다.' : '대사 앞에 이름 표시를 껐습니다.');\n      }\n", '', { name: 'speaker names handler' });
     // choosing a connection / recall option saves at once (it used to wait for the 저장 button); no connection yet shows a prompt
     s = replaceAnchor(s, '<select id="setConnection">${connections.map(', '<select id="setConnection"><option value="" ${current ? \'\' : \'selected\'} disabled>— 연결을 고르세요 —</option>${connections.map(', { name: 'connection placeholder' });
-    s = replaceAnchor(s, "      if (e.target.id === 'setTags') {\n        const on = e.target.checked;\n        void act(() => api('POST', `/chats/${encodeURIComponent(room)}/speaker-tags`, { on }), on ? '말풍선 태그 되살리기를 켰습니다.' : '말풍선 태그 되살리기를 껐습니다.');\n      }\n", `      const instant = { setConnection: ['/settings', 'connection', '기억 정리에 쓸 연결을 저장했습니다.'], setRecall: ['/settings/recall', 'mode', '회상 방식을 저장했습니다.'], setRecallAmount: ['/settings/recall-amount', 'amount', '회상 양을 저장했습니다.'], setChapterLength: ['/settings/chapter-length', 'length', '지난 이야기 흐름 길이를 저장했습니다.'], setRecallStyle: ['/settings/recall-style', 'style', '기억을 드러내는 정도를 저장했습니다.'] }[e.target.id];
+    s = replaceAnchor(s, "      if (e.target.id === 'setTags') {\n        const on = e.target.checked;\n        void act(() => api('POST', `/chats/${encodeURIComponent(room)}/speaker-tags`, { on }), on ? '말풍선 태그 되살리기를 켰습니다.' : '말풍선 태그 되살리기를 껐습니다.');\n      }\n", `      if (['setWriteLang', 'setMemLang', 'setTrConn', 'setTrQuotes'].includes(e.target.id)) { void handle('saveLanguage'); return; }
+      const instant = { setConnection: ['/settings', 'connection', '기억 정리에 쓸 연결을 저장했습니다.'], setRecall: ['/settings/recall', 'mode', '회상 방식을 저장했습니다.'], setRecallAmount: ['/settings/recall-amount', 'amount', '회상 양을 저장했습니다.'], setChapterLength: ['/settings/chapter-length', 'length', '지난 이야기 흐름 길이를 저장했습니다.'], setRecallStyle: ['/settings/recall-style', 'style', '기억을 드러내는 정도를 저장했습니다.'] }[e.target.id];
       if (instant && e.target.value) {
         const value = e.target.value;
         void act(async () => { await api('POST', instant[0], { [instant[1]]: value }); serverSettings = (await api('GET', '/status')).settings; }, instant[2]);
@@ -50,7 +52,13 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceAnchor(s, '지나간 대화를 장면·사실·장부로 정리해, 답변할 때마다 필요한 기억을 넣어 주는 서버 기억 모듈입니다.', '지나간 대화를 장면·사실·장부로 정리해, 답변할 때마다 필요한 기억을 넣어 주는 기억 서재입니다.', { name: 'wording intro' });
     // the shell's overlay guard (floating close button, back button, Escape) is told whenever the panel is (re)drawn open or closed
     s = replaceAnchor(s, "    root.querySelector('#panel').hidden = !open;\n    if (!open) return;", "    root.querySelector('#panel').hidden = !open;\n    LV.onOpen?.(open);\n    if (!open) return;", { name: 'open state hook' });
+    s = replaceAnchor(s, "    const sequence = ++roomLoadSequence;\n    if (!id) { info = null; store = null; storeRoom = ''; return; }", "    const sequence = ++roomLoadSequence;\n    if (trRoom !== id) { trMap = {}; trPending = 0; trError = ''; trWorking = false; trRoom = id; }\n    if (!id) { info = null; store = null; storeRoom = ''; return; }", { name: 'clear room translations' });
+    s = replaceAnchor(s, "  async function loadTranslations(id) {\n    try {", "  async function loadTranslations(id) {\n    const sequence = roomLoadSequence;\n    try {", { name: 'translation request sequence' });
+    s = replaceAnchor(s, "      if (room !== id || disposed) return;\n      trMap = t.items || {};", "      if (room !== id || disposed || sequence !== roomLoadSequence) return;\n      trMap = t.items || {};", { name: 'translation response sequence' });
+    s = replaceAnchor(s, "      if (room === id) trError = error?.message || String(error);", "      if (room === id && !disposed && sequence === roomLoadSequence) trError = error?.message || String(error);", { name: 'translation error sequence' });
+    s = replaceAnchor(s, '  let trMap = {};', "  let trMap = {};\n  let trRoom = '';", { name: 'translation room owner' });
+    s = replaceAnchor(s, '  function render() {', "  function render() {\n    if (trRoom !== room) { trMap = {}; trPending = 0; trError = ''; trWorking = false; trRoom = room; }", { name: 'clear translations before room render' });
     // return a handle instead of installing at evaluation time
-    s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: () => { if (open) { open = false; render(); } }, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
+    s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
     return s;
 }

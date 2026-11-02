@@ -501,7 +501,7 @@ function createOverlayGuard({ doc = globalThis.document, win = globalThis.window
 
 // src/memory/ui/runtime.generated.js
 function mountMemory(marinara, LV) {
-  const VERSION = "1.0.0-lv.1";
+  const VERSION = "1.1.0-lv.1";
   const UI_CSS = `:host{all:initial;color:#34374b;font:14px/1.65 "Pretendard","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--im-accent:#7777c8;--im-ink:#34374b;--im-muted:#8e91a6;--im-line:#e9e9f2;--im-paper:#fff;--im-canvas:#f5f5fb;--im-soft:#eeeefa}
 *{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer;color:inherit;border:1px solid var(--im-line);background:var(--im-paper);padding:9px 14px;border-radius:11px;transition:background .15s,transform .15s,box-shadow .15s}button:hover{background:var(--im-soft)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #aaa7e5;outline-offset:3px}.icon{width:19px;height:19px;flex:none;display:inline-block;vertical-align:middle}#launch{position:fixed;right:20px;bottom:126px;z-index:2147483600;display:flex;align-items:center;gap:8px;color:#fff;background:#7777c8;border:0;border-radius:24px;padding:11px 19px;box-shadow:0 7px 20px #7777c84d}#backdrop{position:fixed;inset:0;background:#20233654;z-index:2147483601}#panel{position:fixed;z-index:2147483602;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1320px,96vw);height:min(900px,91vh);display:grid;grid-template-columns:192px minmax(0,1fr) 224px;background:var(--im-paper);border-radius:26px;box-shadow:0 25px 100px #25254435;overflow:hidden}#panel[hidden],[hidden]{display:none!important}
 .sidebar{display:flex;flex-direction:column;padding:30px 18px 20px;border-right:1px solid var(--im-line);min-width:0}.brand{display:flex;align-items:center;gap:10px;padding:0 12px 30px;color:var(--im-accent);font-size:18px;font-weight:750;letter-spacing:-.8px}.brand .icon{width:27px;height:27px}.brand small{display:block;white-space:nowrap;font:7px/1.8 ui-monospace,monospace;letter-spacing:1.3px;color:#a8a6bd}.nav-label{font-size:9px;letter-spacing:1.8px;color:#b2b1c2;padding:13px 14px 9px}nav{display:flex;flex-direction:column;gap:6px}nav button{display:flex;gap:11px;align-items:center;border:0;background:transparent;text-align:left;font-size:12px;padding:11px 13px;border-radius:10px;color:#9291aa}nav button.selected{background:#eeeeFA;color:#6d69b4;font-weight:700}nav button .icon{width:17px;height:17px}.side-bottom{margin-top:auto;padding-top:26px;display:grid;gap:10px}.side-bottom button{font-size:11px;border:0;display:flex;align-items:center;gap:8px;background:#f7f7fb}.side-bottom small{font-size:9px;color:#b0aec0;padding-left:10px}
@@ -695,6 +695,8 @@ a.record-row .chip-arrow{color:var(--im-accent)}
 .routine-row button{padding:7px 12px;font-size:11px}
 details.paper>summary{font-size:13px;font-weight:600;color:var(--im-ink)}
 .routine-row .warn{flex-basis:100%;color:#b0623f}:host([data-theme=dark]) .routine-row .warn{color:#ffb08a}
+
+
 `;
   const THEME_CSS = `/* 기억 서재 — 종이 티켓과 LP 테마 (ui.css 위에 덮어씀) */
 :host{--vinyl:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Cg%20transform%3D%22translate(9%200)%22%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2239%22%20fill%3D%22%23111%22%20stroke%3D%22%23f2efe8%22%20stroke-width%3D%222%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2214%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2217%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2223%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2226%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2229%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2232%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2235%22%20fill%3D%22none%22%20stroke%3D%22%233a3a3a%22%20stroke-width%3D%22.7%22%2F%3E%3Cpolygon%20points%3D%2268.07%2C16.57%2069.91%2C17.63%2065.91%2C22.45%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2270.95%2C18.30%2073.11%2C19.83%2067.38%2C25.59%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2273.66%2C20.26%2076.07%2C22.35%2068.25%2C28.94%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2276.19%2C22.46%2078.75%2C25.15%2067.71%2C33.11%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2278.51%2C24.88%2081.13%2C28.21%2066.40%2C37.10%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2280.61%2C27.49%2083.19%2C31.50%2065.90%2C39.78%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2282.62%2C30.50%2084.80%2C34.74%2062.65%2C43.48%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2284.43%2C33.93%2086.01%2C37.87%2068.63%2C42.54%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2285.89%2C37.53%2086.94%2C41.09%2071.35%2C43.73%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2286.98%2C41.25%2087.58%2C44.38%2074.46%2C45.29%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2287.68%2C45.07%2087.93%2C47.71%2080.65%2C47.07%22%20fill%3D%22%23f2efe8%22%2F%3E%3Cpolygon%20points%3D%2287.99%2C48.94%2087.99%2C51.06%2082.92%2C50.00%22%20fill%3D%22%23f2efe8%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2210%22%20fill%3D%22%23f2efe8%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%221.8%22%20fill%3D%22%23111%22%2F%3E%3C%2Fg%3E%0A%20%20%20%20%20%20%3Crect%20x%3D%224%22%20y%3D%2210%22%20width%3D%2258%22%20height%3D%2280%22%20rx%3D%222%22%20fill%3D%22%23f2efe8%22%20stroke%3D%22%23111%22%20stroke-width%3D%222.4%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M12%2024h28M12%2030h18%22%20stroke%3D%22%23111%22%20stroke-width%3D%221.6%22%2F%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2233%22%20y%3D%2278%22%20text-anchor%3D%22middle%22%20font-family%3D%22Georgia%2Cserif%22%20font-size%3D%229%22%20font-weight%3D%22700%22%20fill%3D%22%23111%22%3EMEMORY%3C%2Ftext%3E%3C%2Fsvg%3E");--vinyl-label:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2249%22%20fill%3D%22%23111%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2225.0%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2227.4%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2229.8%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2232.2%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2234.6%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2237.0%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2239.4%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2241.8%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2244.2%22%20fill%3D%22none%22%20stroke%3D%22%232c2c2c%22%20stroke-width%3D%22.7%22%2F%3E%3Cpath%20d%3D%22M50%204.5A45.5%2045.5%200%200%201%2092.5%2034%22%20fill%3D%22none%22%20stroke%3D%22%23f2efe8%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20opacity%3D%22.85%22%2F%3E%3Cpath%20d%3D%22M50%2012A38%2038%200%200%201%2084%2032%22%20fill%3D%22none%22%20stroke%3D%22%23f2efe8%22%20stroke-width%3D%221.3%22%20stroke-linecap%3D%22round%22%20opacity%3D%22.55%22%2F%3E%3Cpath%20d%3D%22M50%2095.5A45.5%2045.5%200%200%201%207.5%2066%22%20fill%3D%22none%22%20stroke%3D%22%23f2efe8%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20opacity%3D%22.85%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2222%22%20fill%3D%22%23f2efe8%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2219.5%22%20fill%3D%22none%22%20stroke%3D%22%23111%22%20stroke-width%3D%22.5%22%20opacity%3D%22.35%22%2F%3E%3C%2Fsvg%3E")}
@@ -761,6 +763,11 @@ h2,h3{font-family:var(--serif);font-weight:700;color:var(--t-ink)}
 .topbar{border-bottom:1.5px solid var(--t-ink)!important}
 #roomSelect,select,input:not([type=checkbox]),textarea{border-radius:3px!important;background:var(--im-field)!important;border:1px solid var(--im-field-border)!important;color:var(--t-ink)!important}
 #themeToggle,#close{border-radius:50%!important;border:1px solid var(--t-ink)!important;background:transparent!important;color:var(--t-ink)!important}
+/* On mobile these controls overlap a dark sidebar, even in light mode. */
+@media(max-width:720px){
+  #close{z-index:100!important;background:#f3efe7!important;color:#151515!important;border:1.5px solid #151515!important}
+  :host([data-theme=dark]) #close{background:#262522!important;color:#f3efe7!important;border-color:#f3efe7!important}
+}
 
 /* metrics = admission stubs */
 .metric-row{gap:12px!important}
@@ -915,6 +922,12 @@ pre{font-size:12.5px!important;line-height:1.85!important}
 
 /* Lines kept on a scene without a clear event */
 .quote-card.loose { border-style: dashed !important; opacity: .85; }
+
+/* Korean beside memory written in another language */
+.tr-note{margin:-4px 0 6px!important;padding:6px 10px!important;font-size:13px!important;line-height:1.55!important;color:var(--im-muted)!important;border-left:2px solid var(--im-muted)!important;background:transparent!important}
+.tr-note span{display:inline-block;margin-right:8px;font-family:var(--mono)!important;font-size:9px!important;letter-spacing:1.5px;text-transform:uppercase;opacity:.75}
+.quote-card .tr-note{margin:8px 0 0!important}
+
 `;
   const host = typeof marinara === "object" ? marinara : globalThis.marinara || {};
   const BASE = "/api/memory-module";
@@ -940,6 +953,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   let rooms = [];
   let info = null;
   let store = null;
+  let storeRoom = "";
+  let roomLoadSequence = 0;
+  const needsScenes = () => ["scenes", "search", "facts", "ledger"].includes(tab);
+  let scenesLoading = false;
   let selectedScene = "";
   let selectedGroup = null;
   let selectedArc = "";
@@ -949,6 +966,11 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   let connections = [];
   let serverEmbedding = null;
   let serverSettings = null;
+  let trMap = {};
+  let trRoom = "";
+  let trPending = 0;
+  let trError = "";
+  let trWorking = false;
   let notice = "";
   let lastError = "";
   let busy = false;
@@ -1017,23 +1039,92 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     return data;
   }
   async function loadRoom(id) {
+    const sequence = ++roomLoadSequence;
+    if (trRoom !== id) {
+      trMap = {};
+      trPending = 0;
+      trError = "";
+      trWorking = false;
+      trRoom = id;
+    }
     if (!id) {
       info = null;
       store = null;
+      storeRoom = "";
       return;
     }
-    const [i, s] = await Promise.all([api("GET", `/chats/${encodeURIComponent(id)}`), api("GET", `/chats/${encodeURIComponent(id)}/scenes`)]);
+    const i = await api("GET", `/chats/${encodeURIComponent(id)}`);
+    if (sequence !== roomLoadSequence || room !== id || disposed)
+      return;
     info = i;
-    store = s;
+    await loadTranslations(id);
+    if (sequence !== roomLoadSequence || room !== id || disposed)
+      return;
+    if (!needsScenes())
+      return;
+    if (storeRoom !== id || !store) {
+      const scenes = await api("GET", `/chats/${encodeURIComponent(id)}/scenes`);
+      if (sequence !== roomLoadSequence || room !== id || disposed)
+        return;
+      store = scenes;
+      storeRoom = id;
+    }
     if (selectedScene && !store.scenes.some((x) => x.id === selectedScene))
       selectedScene = "";
     if (!selectedScene && selectedGroup === null)
       selectedScene = store.scenes.at(-1)?.id || "";
   }
+  async function loadTranslations(id) {
+    const sequence = roomLoadSequence;
+    try {
+      const t = await api("GET", `/chats/${encodeURIComponent(id)}/translations`);
+      if (room !== id || disposed || sequence !== roomLoadSequence)
+        return;
+      trMap = t.items || {};
+      trPending = t.missing || 0;
+      trError = t.error || "";
+      trWorking = Boolean(t.working);
+    } catch (error) {
+      if (room === id && !disposed && sequence === roomLoadSequence)
+        trError = error?.message || String(error);
+    }
+  }
+  function ko(text) {
+    const t = trMap[String(text ?? "").trim()];
+    return t && t !== text ? t : null;
+  }
+  const trNote = (text) => ko(text) ? `<p class="tr-note full"><span>한국어</span>${esc(ko(text))}</p>` : "";
+  const shown = (text) => ko(text) || text || "";
+  async function ensureScenes() {
+    if (!needsScenes() || !room || store && storeRoom === room || scenesLoading)
+      return;
+    const id = room;
+    scenesLoading = true;
+    render();
+    try {
+      const scenes = await api("GET", `/chats/${encodeURIComponent(id)}/scenes`);
+      if (room !== id || disposed)
+        return;
+      store = scenes;
+      storeRoom = id;
+      if (selectedScene && !store.scenes.some((x) => x.id === selectedScene))
+        selectedScene = "";
+      if (!selectedScene && selectedGroup === null)
+        selectedScene = store.scenes.at(-1)?.id || "";
+    } catch (error) {
+      lastError = error?.message || String(error);
+    } finally {
+      scenesLoading = false;
+      if (!disposed)
+        render();
+    }
+  }
   async function refresh() {
     lastError = "";
     if (!rooms.length)
       rooms = await api("GET", "/chats") || [];
+    store = null;
+    storeRoom = "";
     if (!room)
       room = activeChatId() || rooms[0]?.id || "";
     await loadRoom(room);
@@ -1066,10 +1157,28 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     pollTimer = setTimeout(async () => {
       try {
         if (!busy) {
-          if (was)
+          if (was) {
+            store = null;
+            storeRoom = "";
             await loadRoom(room);
-          else
-            info = await api("GET", `/chats/${encodeURIComponent(room)}`);
+          } else {
+            const wasPreparing = info?.translationPrep?.working;
+            const polledRoom = room;
+            const polledInfo = await api("GET", `/chats/${encodeURIComponent(polledRoom)}`);
+            if (polledRoom !== room || disposed) {
+              schedulePoll();
+              return;
+            }
+            info = polledInfo;
+            if ((wasPreparing || info?.translationPrep?.working) && tab === "settings" && !editing())
+              render();
+            if (trPending) {
+              const before = `${trPending}:${trError}:${trWorking}`;
+              await loadTranslations(room);
+              if (`${trPending}:${trError}:${trWorking}` !== before && !editing())
+                render();
+            }
+          }
           if (was && !running())
             notice = [info?.job?.state, info?.sceneJob?.state].includes("error") ? "정리가 멈췄습니다. 아래 오류를 확인해 주세요." : "정리가 끝났습니다.";
           if (was || running())
@@ -1077,7 +1186,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         }
       } catch {}
       schedulePoll();
-    }, was ? 3000 : 1e4);
+    }, was || info?.translationPrep?.working ? 3000 : 1e4);
   }
   function editing() {
     const el = root?.activeElement;
@@ -1089,7 +1198,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     root.querySelector("#panel").classList.toggle("is-running", Boolean(busy || info && running()));
     root.querySelector("#status").textContent = running() ? "정리 중입니다… 3초마다 새로 확인합니다." : notice;
   }
-  async function act(fn, done) {
+  async function act(fn, done, options = {}) {
     if (busy)
       return;
     busy = true;
@@ -1100,7 +1209,11 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       await fn();
       if (done)
         notice = done;
-      await loadRoom(room);
+      if (options.reload !== false) {
+        store = null;
+        storeRoom = "";
+        await loadRoom(room);
+      }
     } catch (error) {
       lastError = error?.message || String(error);
     } finally {
@@ -1118,13 +1231,26 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const by = q.by || (prefix ? prefix[1].trim() : "");
     if (prefix)
       text = text.slice(prefix[0].length);
-    return { who: by ? `${by}${q.to ? ` → ${q.to}` : ""}` : "서술", text: text.trim() };
+    return { who: by ? `${by}${q.to ? ` → ${q.to}` : ""}` : /^\s*["“'‘「『]/.test(text) ? "대사" : "서술", text: text.trim() };
+  }
+  function prepNote() {
+    const p = info?.translationPrep;
+    if (!p || !p.total)
+      return "";
+    const name = p.target === "en" ? "영어" : "한국어";
+    if (p.working)
+      return `<p class="hint"><b>이 방 기억을 ${name}로 옮기는 중입니다</b> — ${p.total - p.left} / ${p.total}줄. 창을 닫아도 서버에서 계속합니다.</p>`;
+    if (p.error)
+      return `<p class="hint"><b>번역하지 못했습니다.</b> 남은 ${p.left}줄은 원래 언어로 들어가고, 잠시 뒤 다시 시도합니다. (${esc(p.error)})</p>`;
+    if (p.left)
+      return `<p class="hint">이 방 기억 ${p.total}줄 중 ${p.left}줄이 아직 번역되지 않았습니다. 잠시 뒤 다시 시도합니다.</p>`;
+    return `<p class="hint"><b>이 방 기억은 ${name}로 넣을 준비가 끝났습니다</b> (${p.total}줄).</p>`;
   }
   function healthNote() {
     const h = info?.health;
     if (!h)
       return "";
-    const NAMES = { macro: "{{기억}} 자리 채우기", app: "답변 뒤 자동 정리와 이 화면", speakers: "말풍선 태그 되살리기", speakerPrompt: "화자 태그 생성 지침", speakerPreview: "화자 태그 미리보기 지침", speakerDryRun: "화자 태그 미리 생성 지침" };
+    const NAMES = { macro: "{{기억}} 자리 채우기", app: "답변 뒤 자동 정리와 이 화면", speakers: "말풍선 태그 되살리기", speakerNamesPrompt: "대사 이름 표시 지침", speakerPrompt: "화자 태그 생성 지침", speakerPreview: "화자 태그 미리보기 지침", speakerDryRun: "화자 태그 미리 생성 지침" };
     const notes = [];
     for (const b of h.broken || [])
       notes.push(b.reason === "version" ? `기억 파일 ${b.file}은(는) 이 버전의 기억 모듈이 모르는 형식입니다(${b.error}). 더 새 버전에서 만든 파일일 수 있습니다. 덮어쓰지 않도록 이 파일의 저장과 정리를 멈췄습니다. 기억 모듈을 그 파일을 만든 버전 이상으로 업데이트해 주세요.${b.backup ? ` 원본 복사본: ${b.backup}` : ""}` : `기억 파일 ${b.file}이(가) 손상되어 읽지 못했습니다. 덮어쓰지 않도록 이 파일의 저장과 정리를 멈췄습니다.${b.backup ? ` 원본 복사본: ${b.backup}` : ""} 파일을 고치거나 지운 뒤 마리나라를 다시 켜 주세요.`);
@@ -1164,9 +1290,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
           <button class="primary" data-act="start" ${running() ? "disabled" : ""}>${icon("refresh")} 이어서 정리</button>
           <button data-act="tidy" ${running() ? "disabled" : ""}>장부 점검</button>
           <button data-act="fresh" ${running() ? "disabled" : ""}>${armed === "fresh" ? "한 번 더 누르면 처음부터 다시 정리" : "처음부터 다시 정리"}</button>
+          ${info.scenes?.chapters ? `<button data-act="rebuildChapters" ${running() ? "disabled" : ""}>${armed === "chapters" ? "한 번 더 누르면 챕터를 다시 묶습니다" : "챕터만 다시 묶기"}</button>` : ""}
           ${running() ? '<button data-act="stop">멈추기</button>' : ""}
         </div>
-        <small>평소에는 누르지 않으셔도 됩니다. ‘이어서 정리’는 기억을 처음 켰을 때나 밀린 정리를 바로 하고 싶을 때 사용해 주세요. 처음부터 다시 정리하면 장면을 직접 고친 내용은 사라집니다.</small>
+        <small>‘이어서 정리’는 밀린 정리를 바로 처리합니다. ‘챕터만 다시 묶기’는 장면·사실·장부를 유지하고 챕터와 큰 흐름만 새로 만듭니다. 직접 고친 챕터·큰 흐름은 바뀌며, 정리 모델 사용량이 발생합니다. 처음부터 다시 정리하면 직접 고친 장면도 사라집니다.</small>
       </div>
       ${deadlinePaper()}
       <div class="paper">
@@ -1184,11 +1311,13 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const label = (d) => d.state === "shelved" ? `${-d.days}일 지남 · 보관 중` : d.state === "overdue" ? `${-d.days}일 지남` : d.state === "today" ? "오늘" : d.state === "ahead" ? `D-${d.days}` : "작중 날짜 모름";
     return `<div class="paper">
         <div class="paper-toolbar"><h2>기한</h2>${info.storyDate ? `<span class="pill neutral">작중 오늘 ${esc(info.storyDate)}</span>` : ""}</div>
-        ${list.map((d) => `<p class="deadline ${esc(d.state)}"><span class="pill ${d.state === "ahead" || d.state === "unknown" ? "neutral" : ""}">${esc(label(d))}</span> <b>${esc(d.title)}</b><br><small>${esc(d.id)} · ${esc(d.date)}${d.time ? ` ${esc(d.time)}` : ""}${d.who ? ` · ${esc(d.who)}` : ""}</small></p>`).join("")}
+        ${list.map((d) => `<p class="deadline ${esc(d.state)}"><span class="pill ${d.state === "ahead" || d.state === "unknown" ? "neutral" : ""}">${esc(label(d))}</span> <b title="${esc(d.title)}">${esc(shown(d.title))}</b><br><small>${esc(d.id)} · ${esc(d.date)}${d.time ? ` ${esc(d.time)}` : ""}${d.who ? ` · ${esc(d.who)}` : ""}</small></p>`).join("")}
         <small>기한이 가까운 것부터 답변마다 들어갑니다. 기한이 지나고 50개 메시지 동안 언급이 없으면 '보관 중'이 되어, 관련 이야기가 나올 때만 들어갑니다. 날짜는 장부 탭에서 고칠 수 있습니다.</small>
       </div>`;
   }
   function emptyRoom() {
+    if (room && (scenesLoading || busy))
+      return `<div class="empty">${icon("refresh")}불러오는 중입니다…</div>`;
     return `<div class="empty">${icon("library")}채팅방을 선택해 주세요. 루미버스에서 채팅방을 열면 그 방이 먼저 표시됩니다.</div>`;
   }
   function viewScenes() {
@@ -1203,14 +1332,14 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       selectedGroup = chapterOf(selectedScene)?.id || "";
     const chapter = chapters.find((c) => c.id === selectedGroup) || null;
     const inGroup = chapter ? store.scenes.filter((x) => chapter.scenes.includes(x.id)) : store.scenes.filter((x) => !chapterOf(x.id));
-    const bar = chapters.length ? `<div class="chapter-bar">${chapters.map((c) => `<button class="chapter-chip ${c.id === selectedGroup ? "is-selected" : ""}" data-group="${esc(c.id)}"><span class="chip-id">${esc(c.id)}</span>${esc(c.title)}</button>`).join("")}<button class="chapter-chip ${selectedGroup === "" ? "is-selected" : ""}" data-group=""><span class="chip-id">NOW</span>최근 장면</button></div>` : "";
-    const shelf = inGroup.map((s) => {
-      const i = store.scenes.indexOf(s);
-      const outside = firstInside == null || s.start < firstInside;
-      return `<button class="file-index ${s.id === selectedScene ? "is-selected" : ""} ${outside ? "" : "is-current"}" data-scene="${esc(s.id)}">
-          <span class="file-code">${esc(s.id)}<span class="file-range">메시지 ${s.start}~${s.end}</span></span><span class="file-spine">SCENE ${String(i + 1).padStart(3, "0")}</span>
-          <h3>${esc(s.title)}</h3><span class="barcode"></span>
-          <span class="file-foot"><span>${esc((s.time || "").split(/\s+/).slice(0, 2).join(" "))}</span><span>${s.edited ? "고침" : ""}</span></span></button>`;
+    const bar = chapters.length ? `<div class="chapter-bar">${chapters.map((c) => `<button class="chapter-chip ${c.id === selectedGroup ? "is-selected" : ""}" data-group="${esc(c.id)}"><span class="chip-id">${esc(c.id)}</span>${esc(shown(c.title))}</button>`).join("")}<button class="chapter-chip ${selectedGroup === "" ? "is-selected" : ""}" data-group=""><span class="chip-id">NOW</span>최근 장면</button></div>` : "";
+    const shelf = inGroup.map((s2) => {
+      const i = store.scenes.indexOf(s2);
+      const outside = firstInside == null || s2.start < firstInside;
+      return `<button class="file-index ${s2.id === selectedScene ? "is-selected" : ""} ${outside ? "" : "is-current"}" data-scene="${esc(s2.id)}">
+          <span class="file-code">${esc(s2.id)}<span class="file-range">메시지 ${s2.start}~${s2.end}</span></span><span class="file-spine">SCENE ${String(i + 1).padStart(3, "0")}</span>
+          <h3 title="${esc(s2.title)}">${esc(shown(s2.title))}</h3><span class="barcode"></span>
+          <span class="file-foot"><span>${esc((s2.time || "").split(/\s+/).slice(0, 2).join(" "))}</span><span>${s2.edited ? "고침" : ""}</span></span></button>`;
     }).join("");
     const s = inGroup.find((x) => x.id === selectedScene);
     const arcs = store.arcs || [];
@@ -1221,14 +1350,25 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       ${arcBar}${bar}${chapters.length ? `<div class="buttons"><button data-act="rebuildChapters" ${running() ? "disabled" : ""}>${armed === "chapters" ? "한 번 더 누르면 챕터를 다시 묶습니다" : "챕터만 다시 묶기"}</button><small>장면·사실·장부는 그대로 두고 챕터와 큰 흐름만 새로 묶습니다. 챕터·큰 흐름을 직접 고친 내용은 사라집니다.</small></div>` : ""}${chapter ? chapterEditor(chapter) : ""}
       <div class="file-shelf" id="shelf">${shelf || '<p class="hint">이 묶음에는 장면이 없습니다.</p>'}</div>${s ? sceneEditor(s) : ""}`;
   }
+  const SEARCH_TEXT = new Set(["title", "summary", "text", "why", "time", "place", "weather", "what", "kept", "detail", "cause", "need", "about", "who", "toward", "by", "to", "how", "turns", "keep", "present"]);
+  const SEARCH_NESTED = new Set(["events", "quotes", "loose", "recollections", "later", "learned", "latest", "closed", "evidence", "clues"]);
   function searchableText(value) {
     if (value == null)
       return "";
     if (Array.isArray(value))
-      return value.map(searchableText).join(" ");
-    if (typeof value === "object")
-      return Object.values(value).map(searchableText).join(" ");
-    return String(value);
+      return value.map(searchableText).filter(Boolean).join(" ");
+    if (typeof value !== "object")
+      return String(value);
+    const parts = [];
+    for (const [k, v] of Object.entries(value)) {
+      if (v == null)
+        continue;
+      if (SEARCH_TEXT.has(k))
+        parts.push(Array.isArray(v) ? v.filter((x) => typeof x === "string").join(" ") : typeof v === "string" ? v : "");
+      else if (SEARCH_NESTED.has(k))
+        parts.push(searchableText(v));
+    }
+    return parts.filter(Boolean).join(" ").replace(/\s+/g, " ");
   }
   function viewSearch() {
     if (!store)
@@ -1262,8 +1402,8 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     return `<div class="paper chapter-paper" id="arcEditor" data-id="${esc(a.id)}">
       <div class="paper-toolbar"><h2>${esc(a.id)} · ${esc(a.chapters[0])}~${esc(a.chapters.at(-1))}${a.time ? ` · ${esc(a.time)}` : ""}</h2>${a.edited ? '<span class="pill">직접 고침</span>' : ""}</div>
       <div class="form-grid">
-        <label class="full">큰 흐름 제목<input id="aTitle" value="${esc(a.title)}"></label>
-        <label class="full">요약<textarea id="aSummary" class="event-field" style="min-height:110px">${esc(a.summary)}</textarea></label>
+        <label class="full">큰 흐름 제목<input id="aTitle" value="${esc(a.title)}"></label>${trNote(a.title)}
+        <label class="full">요약<textarea id="aSummary" class="event-field" style="min-height:110px">${esc(a.summary)}</textarea></label>${trNote(a.summary)}
         <label class="full">그 시기를 바꾼 일 (한 줄에 하나)<textarea id="aTurns" class="event-field">${esc((a.turns || []).join(`
 `))}</textarea></label>
         <label class="full">지금까지 영향을 주는 세부 사항 (한 줄에 하나)<textarea id="aKeep" class="event-field">${esc((a.keep || []).join(`
@@ -1276,8 +1416,8 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     return `<div class="paper chapter-paper" id="chapterEditor" data-id="${esc(c.id)}">
       <div class="paper-toolbar"><h2>${esc(c.id)} · ${esc(c.scenes[0])}~${esc(c.scenes.at(-1))}${c.time ? ` · ${esc(c.time)}` : ""}</h2>${c.edited ? '<span class="pill">직접 고침</span>' : ""}</div>
       <div class="form-grid">
-        <label class="full">챕터 제목<input id="cTitle" value="${esc(c.title)}"></label>
-        <label class="full">챕터 요약 (기억 칸의 '지난 이야기 흐름'에 들어갑니다)<textarea id="cSummary" class="event-field" style="min-height:120px">${esc(c.summary)}</textarea></label>
+        <label class="full">챕터 제목<input id="cTitle" value="${esc(c.title)}"></label>${trNote(c.title)}
+        <label class="full">챕터 요약 (기억 칸의 '지난 이야기 흐름'에 들어갑니다)<textarea id="cSummary" class="event-field" style="min-height:120px">${esc(c.summary)}</textarea></label>${trNote(c.summary)}
         <label class="full">전환점 (한 줄에 하나)<textarea id="cTurns" class="event-field">${esc((c.turns || []).join(`
 `))}</textarea></label>
         <label class="full">꼭 기억할 세부 사항 (날짜·기한·조건 등, 한 줄에 하나)<textarea id="cKeep" class="event-field">${esc((c.keep || []).join(`
@@ -1290,19 +1430,19 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const personas = info?.personas || [];
     const events = s.events.map((e, i) => `<article data-event="${i}">
         <div class="form-grid">
-          <label class="full">사건 (누가 누구에게 무엇을 어떻게)<textarea class="event-field" data-f="text">${esc(e.text)}</textarea></label>
+          <label class="full">사건 (누가 누구에게 무엇을 어떻게)<textarea class="event-field" data-f="text">${esc(e.text)}</textarea></label>${trNote(e.text)}
           <label>작중 시각<input data-f="time" value="${esc(e.time || "")}" placeholder="예: 02:22"></label>
           <label>중요도<select data-f="importance">${Object.entries(IMPORTANCE).map(([k, v]) => `<option value="${k}" ${(e.importance || "major") === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
-          <label class="full">계기 (원문에 있을 때만)<input data-f="why" value="${esc(e.why || "")}"></label>
+          <label class="full">계기 (원문에 있을 때만)<input data-f="why" value="${esc(e.why || "")}"></label>${trNote(e.why)}
         </div>
-        ${e.quotes.map((q) => {
+        ${e.quotes.map((q, qi) => {
       const l = quoteLine(q);
-      return `<div class="quote-card"><small>${esc(l.who)} · #${q.number}.${q.sentence}</small><blockquote>${esc(l.text)}</blockquote></div>`;
+      return `<div class="quote-card" data-quote="${qi}"><small>${esc(l.who)} · #${q.number}.${q.sentence}</small><blockquote>${esc(l.text)}</blockquote>${trNote(q.text)}<label>들은 사람<input data-quote-to value="${esc(q.to || "")}" placeholder="모르면 비워 두기"></label></div>`;
     }).join("")}
       </article>`).join("");
     const loose = (s.loose || []).map((q) => {
       const l = quoteLine(q);
-      return `<div class="quote-card loose"><small>${esc(l.who)} · #${q.number}.${q.sentence} · 연결 미확정</small><blockquote>${esc(l.text)}</blockquote></div>`;
+      return `<div class="quote-card loose"><small>${esc(l.who)} · #${q.number}.${q.sentence} · 연결 미확정</small><blockquote>${esc(l.text)}</blockquote>${trNote(q.text)}</div>`;
     }).join("");
     const recs = s.recollections.map((r, i) => {
       const persona = personas.includes(r.who);
@@ -1311,22 +1451,22 @@ pre{font-size:12.5px!important;line-height:1.85!important}
             <label>인물<input data-f="who" value="${esc(r.who)}"></label>
             <label>기억 정도<select data-f="remembers">${Object.entries(REMEMBERS).map(([k, v]) => `<option value="${k}" ${r.remembers === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
             <label class="full">이유 (잠, 열, 술 등)<input data-f="why" value="${esc(r.why || "")}"></label>
-            ${persona ? '<p class="full hint">사용자 캐릭터는 속마음을 적지 않습니다. 한 말과 행동은 사건에 기록되어 있습니다.</p>' : `<label class="full">그때 (그 인물이 실제로 한 말·행동·느낌)<textarea class="event-field" data-f="text">${esc(r.text || "")}</textarea></label>`}
+            ${persona ? '<p class="full hint">사용자 캐릭터는 속마음을 적지 않습니다. 한 말과 행동은 사건에 기록되어 있습니다.</p>' : `<label class="full">그때 (그 인물이 실제로 한 말·행동·느낌)<textarea class="event-field" data-f="text">${esc(r.text || "")}</textarea></label>${trNote(r.text)}`}
             <label class="full">남은 기억 (흐릿하게만 기억할 때)<input data-f="kept" value="${esc(r.kept || "")}"></label>
           </div></article>`;
     }).join("");
     return `<div class="paper" id="sceneEditor" data-id="${esc(s.id)}">
       <div class="paper-toolbar"><h2>${esc(s.id)} · 메시지 ${s.start}~${s.end}번</h2>${s.edited ? '<span class="pill">직접 고침</span>' : ""}</div>
       <div class="form-grid">
-        <label class="full">제목<input id="sTitle" value="${esc(s.title)}"></label>
+        <label class="full">제목<input id="sTitle" value="${esc(s.title)}"></label>${trNote(s.title)}
         <label>작중 시간<input id="sTime" value="${esc(s.time || "")}"></label>
         <label>장소<input id="sPlace" value="${esc(s.place || "")}"></label>
         <label>날씨<input id="sWeather" value="${esc(s.weather || "")}" placeholder="예: 비, 첫눈 / 모르면 비워 두세요"></label>
-        <label class="full">요약<textarea id="sSummary" style="min-height:110px">${esc(s.summary)}</textarea></label>
+        <label class="full">요약<textarea id="sSummary" style="min-height:110px">${esc(s.summary)}</textarea></label>${trNote(s.summary)}
         ${group() ? `<label class="full">그 자리에 있던 사람 (쉼표로 구분 · 없던 인물은 이 장면 일을 모르는 것으로 기억합니다)<input id="sPresent" value="${esc((s.present || []).join(", "))}" placeholder="예: 서아, 도윤"></label>
         ${(s.heardLater || []).length ? `<p class="full hint">나중에 들은 사람: ${s.heardLater.map((h) => `${esc(h.who)}${h.from ? `(${esc(h.from)}에게)` : ""}`).join(", ")}</p>` : ""}` : ""}
       </div>
-      ${(s.later || []).length ? `<h3>나중에 밝혀진 것</h3>${s.later.map((x) => `<p>${x.when ? `<small>${esc(x.when)}</small><br>` : ""}${esc(x.what)}${x.by ? ` <small>(${esc(x.by)})</small>` : ""}</p>`).join("")}` : ""}
+      ${(s.later || []).length ? `<h3>나중에 밝혀진 것</h3>${s.later.map((x) => `<p>${x.when ? `<small>${esc(x.when)}</small><br>` : ""}${esc(shown(x.what))}${x.by ? ` <small>(${esc(x.by)})</small>` : ""}</p>`).join("")}` : ""}
       ${(() => {
       const facts = store.facts.filter((f) => f.sceneId === s.id);
       const threads = threadsIn(s);
@@ -1349,7 +1489,11 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const val = (el, f) => el.querySelector(`[data-f="${f}"]`)?.value ?? null;
     const events = [...ed.querySelectorAll("[data-event]")].map((el) => {
       const old = s.events[Number(el.dataset.event)];
-      return { ...old, text: val(el, "text"), time: val(el, "time"), why: val(el, "why"), importance: val(el, "importance") };
+      const quotes = old.quotes.map((q, i) => {
+        const input = el.querySelector(`[data-quote="${i}"] [data-quote-to]`);
+        return input ? { ...q, to: input.value.trim() || null } : q;
+      });
+      return { ...old, quotes, text: val(el, "text"), time: val(el, "time"), why: val(el, "why"), importance: val(el, "importance") };
     });
     const recollections = [...ed.querySelectorAll("[data-rec]")].map((el) => {
       const old = s.recollections[Number(el.dataset.rec)];
@@ -1380,7 +1524,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       const replaced = f.replacedBy && ids.has(f.replacedBy);
       return `<div class="fact-row" data-fact="${esc(f.id)}"><label>${esc(f.id)}${f.unaware?.length ? ` · 모름: ${esc(f.unaware.join("·"))}` : ""}${f.guess?.length ? ` · 짐작만: ${esc(f.guess.join("·"))}` : ""}${f.edited || f.knowSet?.length ? " · 직접 고침" : ""}${replaced ? ` · ${esc(f.replacedBy)}로 바뀜(기억 칸에서 제외)` : ""}</label>
             ${f.sceneId ? `<p class="record-links">${sceneLink(store.scenes.find((x) => x.id === f.sceneId), "에서 알게 됨")}</p>` : ""}
-            <textarea class="event-field">${esc(f.text)}</textarea>
+            <textarea class="event-field">${esc(f.text)}</textarea>${trNote(f.text)}
             ${group() ? `<div class="form-grid"><label>아직 모르는 인물 (쉼표로 구분)<input data-f="unaware" value="${esc((f.unaware || []).join(", "))}" placeholder="모두 알면 비워 두세요"></label><label>짐작만 하는 인물<input data-f="guess" value="${esc((f.guess || []).join(", "))}" placeholder="없으면 비워 두세요"></label></div>` : ""}
             <div class="buttons"><button data-act="saveFact" data-id="${esc(f.id)}">저장</button><button class="ghost" data-act="deleteFact" data-id="${esc(f.id)}">${armed === `fact:${f.id}` ? "한 번 더 누르면 삭제됩니다" : "삭제"}</button></div></div>`;
     }).join("")}</div>`).join("")}`;
@@ -1389,11 +1533,11 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const who = [t.who, t.toward].filter(Boolean).join(" → ");
     const when = t.due ? `약속한 때 ${[t.due.date, t.due.time].filter(Boolean).join(" ")}` : t.period ? `기간 ${day(t.period.from)}~${day(t.period.to)}` : "";
     const closed = t.status !== "open";
-    return `<details class="event-row" data-tid="${esc(t.id)}"><summary><span class="event-no">${esc(t.id)}</span><span class="event-main"><b>${esc(t.title)}</b><small>${esc(who)}${when ? ` · ${esc(when)}` : ""}${t.unaware?.length ? ` · 모름: ${esc(t.unaware.join("·"))}` : ""}${t.guess?.length ? ` · 짐작만: ${esc(t.guess.join("·"))}` : ""}${closed ? ` · 닫힘: ${esc(t.closed?.how || "")}` : ""}</small></span><span class="pill ${closed ? "neutral" : ""}">${KIND[t.kind] || t.kind}</span></summary>
+    return `<details class="event-row" data-tid="${esc(t.id)}"><summary><span class="event-no">${esc(t.id)}</span><span class="event-main"><b title="${esc(t.title)}">${esc(shown(t.title))}</b><small>${esc(who)}${when ? ` · ${esc(when)}` : ""}${t.unaware?.length ? ` · 모름: ${esc(t.unaware.join("·"))}` : ""}${t.guess?.length ? ` · 짐작만: ${esc(t.guess.join("·"))}` : ""}${closed ? ` · 닫힘: ${esc(t.closed?.how || "")}` : ""}</small></span><span class="pill ${closed ? "neutral" : ""}">${KIND[t.kind] || t.kind}</span></summary>
       <div class="event-body">
         <div class="form-grid" data-thread="${esc(t.id)}">
-          <label class="full">제목<input data-f="title" value="${esc(t.title)}"></label>
-          <label class="full">설명<textarea class="event-field" data-f="detail">${esc(t.detail || "")}</textarea></label>
+          <label class="full">제목<input data-f="title" value="${esc(t.title)}"></label>${trNote(t.title)}
+          <label class="full">설명<textarea class="event-field" data-f="detail">${esc(t.detail || "")}</textarea></label>${trNote(t.detail)}
           ${t.kind === "emotion" ? `<label class="full">풀리려면<input data-f="need" value="${esc(t.need || "")}"></label>` : ""}
           ${["promise", "pending"].includes(t.kind) ? `<label>기한 날짜 (작중)<input data-f="dueDate" value="${esc(t.due?.date || "")}" placeholder="예: 24-10-20 / 비우면 기한 없음"></label><label>기한 시각<input data-f="dueTime" value="${esc(t.due?.time || "")}" placeholder="예: 17:00"></label>` : ""}
           ${group() ? `<label>아직 모르는 인물 (쉼표로 구분)<input data-f="unaware" value="${esc((t.unaware || []).join(", "))}" placeholder="모두 알면 비워 두세요"></label><label>짐작만 하는 인물<input data-f="guess" value="${esc((t.guess || []).join(", "))}" placeholder="없으면 비워 두세요"></label>` : ""}
@@ -1415,10 +1559,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (!info)
       return emptyRoom();
     const threads = info.threads || [];
-    const open = threads.filter((t) => t.status === "open");
+    const open2 = threads.filter((t) => t.status === "open");
     const closed = threads.filter((t) => t.status !== "open");
-    const groups = KIND_ORDER.map((k) => [k, open.filter((t) => t.kind === k)]).filter(([, l]) => l.length);
-    return `<div class="eyebrow">LEDGER · ${open.length} OPEN</div><h1>아직 끝나지 않은 일</h1>
+    const groups = KIND_ORDER.map((k) => [k, open2.filter((t) => t.kind === k)]).filter(([, l]) => l.length);
+    return `<div class="eyebrow">LEDGER · ${open2.length} OPEN</div><h1>아직 끝나지 않은 일</h1>
       <p class="intro">약속·감정·상태·비밀·미해결 일입니다. 항목을 누르면 제목과 설명을 고치실 수 있고, 잘못 닫힌 항목은 다시 열고 끝난 일은 닫으실 수 있습니다. 직접 고친 내용은 리롤해도 유지됩니다.</p>
       ${groups.length ? groups.map(([k, l]) => `<div class="paper"><h2>${KIND[k]} · ${l.length}</h2>${l.map(threadRow).join("")}</div>`).join("") : '<div class="empty">열린 항목이 없습니다.</div>'}
       ${closed.length ? `<details class="paper"><summary>닫힌 항목 ${closed.length}개</summary>${closed.map(threadRow).join("")}</details>` : ""}`;
@@ -1427,13 +1571,13 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (!info)
       return emptyRoom();
     return `<div class="eyebrow">DAILY LIFE</div><h1>최근 생활</h1>
-      <p class="intro">인물마다 마지막 식사·씻기·잠·약을 보여 드립니다. 몇 끼째인지, 몇 시간 잤는지는 지문의 작중 시각으로 프로그램이 계산합니다.</p>
+      <p class="intro">인물마다 마지막 식사·씻기·꾸밈·잠·약을 보여 드립니다. 몇 끼째인지, 몇 시간 잤는지는 지문의 작중 시각으로 프로그램이 계산합니다.</p>
       ${info.routine ? `<pre>${esc(info.routine)}</pre>` : '<div class="empty">아직 기록이 없습니다.</div>'}
       ${routineEditor()}`;
   }
-  const ROUTINE_LABEL = { meal: "식사", wash: "씻기", sleep: "잠듦", wake: "깸", medicine: "약" };
+  const ROUTINE_LABEL = { meal: "식사", wash: "씻기", groom: "꾸밈", sleep: "잠듦", wake: "깸", medicine: "약" };
   function routineRow(r, key) {
-    const opts = Object.entries(ROUTINE_LABEL).map(([k, v]) => `<option value="${k}" ${r.what === k ? "selected" : ""}>${v}</option>`).join("");
+    const opts = Object.entries(ROUTINE_LABEL).map(([k, v]) => `<option value="${k}" ${(r.displayWhat || r.what) === k ? "selected" : ""}>${v}</option>`).join("");
     return `<div class="routine-row" data-rkey="${esc(key)}">
       <select data-f="what" aria-label="무엇">${opts}</select>
       <input data-f="at" type="datetime-local" value="${esc(r.at || "")}" aria-label="작중 시각">
@@ -1541,6 +1685,25 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         <p class="hint">어느 쪽이든 지난 일을 줄줄이 설명하지는 않게 합니다.</p>
         <div class="buttons"><button class="primary" data-act="saveSettings">저장</button></div>
       </div>
+      <div class="paper"><h2>기억 언어</h2>
+        <p class="hint">언어는 두 가지를 따로 고릅니다. <b>정리할 언어</b>는 기억 서재에 저장되는 언어이고, <b>넣을 언어</b>는 답변을 만들 때 프롬프트에 넣는 언어입니다. 넣을 언어만 바꾸면 저장된 기억은 그대로 두고 넣을 때만 번역하므로 <b>다시 정리할 필요가 없습니다</b>.</p>
+        ${info?.chatLang ? `<p class="hint">이 방은 <b>${info.chatLang === "en" ? "영어" : "한국어"}</b>로 진행되는 것으로 보입니다(최근 메시지 기준, 자동).</p>` : ""}
+        ${prepNote()}
+        <label>기억을 정리할 언어<select id="setWriteLang">
+          <option value="auto" ${serverSettings?.writeLanguage !== "en" ? "selected" : ""}>채팅 언어로 (기본)</option>
+          <option value="en" ${serverSettings?.writeLanguage === "en" ? "selected" : ""}>영어로 (한국어 방도 영어로 정리)</option></select></label>
+        <p class="hint">기억 서재에 <b>저장되는</b> 언어입니다. 영어로 바꾸면 <b>새로 정리되는 기억부터</b> 영어로 저장하고, 이 화면에서는 한국어 번역이 함께 보입니다. 이미 정리된 기억은 그대로 두고 넣을 때 영어로 번역하므로 바로 써도 됩니다. 전부 영어로 저장하고 싶으시면 한눈에 → <b>처음부터 다시 정리</b>를 눌러 주세요. 대사 인용과 이름은 늘 원문 그대로입니다. 한국어 방에서 영어로 정리하면 '빠른 방식' 회상(낱말 맞추기)은 덜 걸립니다. 기본 회상(모델이 고르기)과 뜻으로 찾기는 그대로 동작합니다.</p>
+        <label>기억을 넣을 언어<select id="setMemLang">
+          <option value="auto" ${!serverSettings?.memoryLanguage || serverSettings?.memoryLanguage === "auto" ? "selected" : ""}>정리한 언어 그대로 (기본 · 번역 없음)</option>
+          <option value="ko" ${serverSettings?.memoryLanguage === "ko" ? "selected" : ""}>한국어</option>
+          <option value="en" ${serverSettings?.memoryLanguage === "en" ? "selected" : ""}>영어 (한국어 채팅이면 영어로 번역해서 넣음)</option></select></label>
+        <label>번역에 쓸 연결<select id="setTrConn">
+          <option value="" ${!serverSettings?.translateConnection ? "selected" : ""}>기억 정리 연결 그대로</option>
+          ${connections.map((c) => `<option value="${esc(c.id)}" ${c.id === serverSettings?.translateConnection ? "selected" : ""}>${esc(c.name)}${c.model ? ` · ${esc(c.model)}` : ""}</option>`).join("")}</select></label>
+        <label class="setting-switch"><span>영어 대사도 한국어로 보기<small>이 화면에서 영어로 된 대사 아래에 한국어 번역을 함께 보여 줍니다. 번역 호출이 조금 더 듭니다. 기억 칸에 들어가는 대사는 늘 원문 그대로입니다.</small></span><input type="checkbox" id="setTrQuotes" ${serverSettings?.translateQuotes ? "checked" : ""}></label>
+        <p class="hint">넣을 언어를 바꾸면 이 방의 기억을 바로 뒤에서 번역해 둡니다. 번역이 끝나기 전에 답변을 만들면, 아직 번역되지 않은 줄만 원래 언어로 들어갑니다(기억이 빠지지는 않습니다). 새로 정리되는 기억도 정리가 끝날 때마다 이어서 번역합니다. 대사 인용과 이름은 늘 원문 그대로 넣습니다. 영어로 정리된 기억은 이 화면에서 한국어 번역이 함께 보입니다.</p>
+        <div class="buttons"><button class="primary" data-act="saveLanguage">저장</button></div>
+      </div>
       <div class="paper"><h2>뜻으로 찾기 (임베딩)</h2>
         <p class="hint">말을 바꿔 물어도 비슷한 내용의 지난 장면을 찾습니다. 한국어라면 Qwen3-Embedding이나 bge-m3 같은 다국어 임베딩 모델을 추천합니다.</p>
         <label>임베딩 모델을 어디서 가져올까요<select id="setEmbedMode">
@@ -1559,19 +1722,28 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   function inspector() {
     if (!info)
       return "";
-    const open = (info.threads || []).filter((t) => t.status === "open");
+    const open2 = (info.threads || []).filter((t) => t.status === "open");
     return `<div class="rail-title">이 방의 기억</div>
       <div class="rail-stat"><b>${info.scenes?.count ?? 0}</b><small>장면<br>메시지 ${info.scenes?.coveredThrough ?? "-"}번까지</small></div>
-      <div class="rail-stat"><b>${open.filter((t) => t.kind === "emotion").length}</b><small>풀리지 않은 감정</small></div>
-      <div class="rail-stat"><b>${open.filter((t) => t.kind === "promise").length}</b><small>지켜야 할 약속</small></div>
+      <div class="rail-stat"><b>${open2.filter((t) => t.kind === "emotion").length}</b><small>풀리지 않은 감정</small></div>
+      <div class="rail-stat"><b>${open2.filter((t) => t.kind === "promise").length}</b><small>지켜야 할 약속</small></div>
       <div class="rail-divider"></div>
       <div class="rail-note">${icon("spark")}<h3>기억은 확장 저장소에 있습니다</h3><p>여기서 고친 내용은 확장의 저장소에 바로 저장되고, 다음 답변부터 반영됩니다.</p></div>
       <div class="rail-footer">기억 서재 · 기억 모듈판 v${VERSION}</div>`;
   }
   const VIEWS = { home: viewHome, scenes: viewScenes, search: viewSearch, facts: viewFacts, ledger: viewLedger, life: viewLife, inject: viewInject, settings: viewSettings };
   function render() {
+    if (trRoom !== room) {
+      trMap = {};
+      trPending = 0;
+      trError = "";
+      trWorking = false;
+      trRoom = room;
+    }
     if (!root)
       return;
+    launcher?.setAttribute("data-theme", theme);
+    launcher?.setAttribute("aria-expanded", String(open));
     root.querySelector("#backdrop").hidden = !open;
     root.host.setAttribute("data-font", font);
     root.querySelector("#panel").classList.toggle("is-running", Boolean(busy || info && running()));
@@ -1592,12 +1764,16 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     err.textContent = lastError;
     const content = root.querySelector("#content");
     const scroll = content.scrollTop;
-    content.innerHTML = VIEWS[tab]();
+    const jobError = info?.job?.error || info?.sceneJob?.error;
+    const warning = jobError ? `<div class="note" role="alert">기억 정리를 마치지 못했습니다. ${esc(jobError)}</div>` : "";
+    const translation = trPending || trError ? `<div class="note" role="status">${trError ? `한국어 번역을 마치지 못했습니다. ${esc(trError)}` : trWorking ? "한국어 번역 중입니다." : "한국어 번역이 남아 있습니다."} ${trPending ? `남은 항목: ${trPending}개.` : ""} <button data-act="retryTranslation">남은 항목 다시 번역</button></div>` : "";
+    content.innerHTML = warning + translation + VIEWS[tab]();
     content.scrollTop = scroll;
     root.querySelector("#inspector").innerHTML = inspector();
     const n = root.querySelector("#themeToggle");
     n.innerHTML = icon(theme === "dark" ? "sun" : "moon");
     root.host.setAttribute("data-theme", theme);
+    launcher?.setAttribute("data-theme", theme);
     if (tab === "scenes") {
       const sel = root.querySelector(".file-index.is-selected");
       sel?.scrollIntoView?.({ block: "nearest", inline: "center" });
@@ -1620,9 +1796,14 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (actName !== "fresh" && !actName.startsWith("deleteFact") && actName !== "closeThread" && actName !== "rebuildChapters" && actName !== "deleteRoutine")
       armed = "";
     switch (actName) {
+      case "retryTranslation":
+        return act(async () => {
+          const result = await api("POST", `/chats/${chat}/translations/retry`);
+          notice = result.alreadyWorking ? "이미 번역 중입니다." : result.missing === 0 ? "남은 번역이 없습니다." : "남은 항목을 번역하고 있습니다.";
+        });
       case "refresh":
         rooms = [];
-        return act(refresh, "새로 불러왔습니다.");
+        return act(refresh, "새로 불러왔습니다.", { reload: false });
       case "start":
         return act(() => api("POST", `/chats/${chat}/start`, { fresh: false }), "정리를 시작했습니다.");
       case "fresh":
@@ -1704,9 +1885,9 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         const box = root.querySelector(`[data-thread="${CSS.escape(id)}"]`);
         const body = {};
         for (const f of ["title", "detail", "need", "unaware", "guess", "dueDate", "dueTime"]) {
-          const el = box?.querySelector(`[data-f="${f}"]`);
-          if (el)
-            body[f] = el.value;
+          const el2 = box?.querySelector(`[data-f="${f}"]`);
+          if (el2)
+            body[f] = el2.value;
         }
         return act(() => api("POST", `/chats/${chat}/threads/${encodeURIComponent(id)}/edit`, body), `${id} 항목을 저장했습니다.`);
       }
@@ -1732,25 +1913,45 @@ pre{font-size:12.5px!important;line-height:1.85!important}
           notice = mode === "off" ? "뜻으로 찾기를 껐습니다." : `임베딩을 연결했습니다: ${r.model} (${r.dimensions}차원). 새로 만들 색인이 있으면 이어서 만듭니다.`;
         });
       }
+      case "saveLanguage": {
+        const memoryLanguage = root.querySelector("#setMemLang")?.value || "auto";
+        const writeLanguage = root.querySelector("#setWriteLang")?.value || "auto";
+        const writeChanged = writeLanguage !== (serverSettings?.writeLanguage === "en" ? "en" : "auto");
+        const translateConnection = root.querySelector("#setTrConn")?.value || "";
+        const translateQuotes = Boolean(root.querySelector("#setTrQuotes")?.checked);
+        return act(async () => {
+          await api("POST", "/settings/language", { memoryLanguage, writeLanguage, translateConnection, translateQuotes });
+          serverSettings = (await api("GET", "/status")).settings;
+          if (room)
+            info = await api("GET", `/chats/${encodeURIComponent(room)}`).catch(() => info);
+        }, writeChanged && writeLanguage === "en" ? "기억 언어를 저장했습니다. 새 기억부터 영어로 정리합니다. 이미 정리된 기억은 넣을 때 영어로 번역합니다(전부 영어로 저장하려면 한눈에 → 처음부터 다시 정리)." : writeChanged ? "기억 언어를 저장했습니다. 새 기억부터 채팅 언어로 정리합니다." : memoryLanguage === "auto" ? "기억 언어를 저장했습니다." : "기억 언어를 저장했습니다. 다시 정리할 필요 없이, 이 방의 기억을 바로 번역해 둡니다.");
+      }
       case "saveSettings": {
         const connection = root.querySelector("#setConnection")?.value;
         const recall = root.querySelector("#setRecall")?.value;
         const amount = root.querySelector("#setRecallAmount")?.value;
         const length = root.querySelector("#setChapterLength")?.value;
         const style = root.querySelector("#setRecallStyle")?.value;
+        const changes = [];
+        if (connection && connection !== (serverSettings?.connection || ""))
+          changes.push(["/settings", { connection }]);
+        if (recall && recall !== (serverSettings?.recall || "model"))
+          changes.push(["/settings/recall", { mode: recall }]);
+        if (amount && amount !== (serverSettings?.recallAmount || "normal"))
+          changes.push(["/settings/recall-amount", { amount }]);
+        if (length && length !== (serverSettings?.chapterLength || "normal"))
+          changes.push(["/settings/chapter-length", { length }]);
+        if (style && style !== (serverSettings?.recallStyle || "natural"))
+          changes.push(["/settings/recall-style", { style }]);
+        if (!changes.length) {
+          notice = "변경된 설정이 없습니다.";
+          return render();
+        }
         return act(async () => {
-          if (connection)
-            await api("POST", "/settings", { connection });
-          if (recall)
-            await api("POST", "/settings/recall", { mode: recall });
-          if (amount)
-            await api("POST", "/settings/recall-amount", { amount });
-          if (length)
-            await api("POST", "/settings/chapter-length", { length });
-          if (style)
-            await api("POST", "/settings/recall-style", { style });
+          for (const [path, body] of changes)
+            await api("POST", path, body);
           serverSettings = (await api("GET", "/status")).settings;
-        }, "설정을 저장했습니다.");
+        }, "설정을 저장했습니다.", { reload: false });
       }
       default:
     }
@@ -1773,6 +1974,19 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     render();
   }
   const LAUNCH_ICON = `<svg class="launch-icon" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 11L4.75 11A2.05 2.05 0 0 0 8.85 11L10.35 11A2.05 2.05 0 0 0 14.45 11L15.95 11A2.05 2.05 0 0 0 20.05 11L21.55 11A2.05 2.05 0 0 0 25.65 11L27.15 11A2.05 2.05 0 0 0 31.25 11L32.75 11A2.05 2.05 0 0 0 36.85 11L38.35 11A2.05 2.05 0 0 0 42.45 11L43.95 11A2.05 2.05 0 0 0 48.05 11L49.55 11A2.05 2.05 0 0 0 53.65 11L55.15 11A2.05 2.05 0 0 0 59.25 11L60 11L60 11.57A2.05 2.05 0 0 0 60 15.68L60 16.82A2.05 2.05 0 0 0 60 20.93L60 22.07A2.05 2.05 0 0 0 60 26.18L60 27.32A2.05 2.05 0 0 0 60 31.43L60 32.58A2.05 2.05 0 0 0 60 36.67L60 37.83A2.05 2.05 0 0 0 60 41.92L60 43.08A2.05 2.05 0 0 0 60 47.17L60 48.33A2.05 2.05 0 0 0 60 52.42L60 53L59.25 53A2.05 2.05 0 0 0 55.15 53L53.65 53A2.05 2.05 0 0 0 49.55 53L48.05 53A2.05 2.05 0 0 0 43.95 53L42.45 53A2.05 2.05 0 0 0 38.35 53L36.85 53A2.05 2.05 0 0 0 32.75 53L31.25 53A2.05 2.05 0 0 0 27.15 53L25.65 53A2.05 2.05 0 0 0 21.55 53L20.05 53A2.05 2.05 0 0 0 15.95 53L14.45 53A2.05 2.05 0 0 0 10.35 53L8.85 53A2.05 2.05 0 0 0 4.75 53L4 53L4 52.42A2.05 2.05 0 0 0 4 48.33L4 47.17A2.05 2.05 0 0 0 4 43.08L4 41.92A2.05 2.05 0 0 0 4 37.83L4 36.67A2.05 2.05 0 0 0 4 32.58L4 31.43A2.05 2.05 0 0 0 4 27.32L4 26.18A2.05 2.05 0 0 0 4 22.07L4 20.93A2.05 2.05 0 0 0 4 16.82L4 15.68A2.05 2.05 0 0 0 4 11.57Z" fill="#f1eee7" stroke="#0000002e" stroke-width=".5"/><rect x="9" y="15.5" width="46" height="33" fill="none" stroke="#141414" stroke-width=".9"/><line x1="43.5" y1="16.5" x2="43.5" y2="47.5" stroke="#141414" stroke-width=".9" stroke-dasharray="1.6 1.6"/><text x="26.2" y="30.3" font-family="Georgia,'Times New Roman',serif" font-weight="700" font-size="6" text-anchor="middle" fill="#141414" letter-spacing=".25">MEMORY</text><text x="26.2" y="38.6" font-family="ui-monospace,Menlo,monospace" font-size="3.4" text-anchor="middle" fill="#141414" letter-spacing=".2">ADMIT ONE</text><path d="M49.3 27.7C49.815999999999995 31.484 49.815999999999995 31.484 53.599999999999994 32C49.815999999999995 32.516 49.815999999999995 32.516 49.3 36.3C48.784 32.516 48.784 32.516 45 32C48.784 31.484 48.784 31.484 49.3 27.7Z" fill="#141414"/></svg>`;
+  const LAUNCHER_CSS = `
+#memory-module-launcher{position:fixed;right:18px;bottom:122px;z-index:2147483647;width:64px;height:64px;padding:0;margin:0;border:0;border-radius:0;
+  background:transparent;box-shadow:none;color:inherit;line-height:0;display:grid;place-items:center;cursor:grab;touch-action:none;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+  filter:drop-shadow(0 3px 6px #00000038);transition:transform .15s,filter .15s}
+#memory-module-launcher:hover{background:transparent;transform:translateY(-2px) rotate(-3deg);filter:drop-shadow(0 6px 9px #00000050)}
+#memory-module-launcher:active{background:transparent;transform:scale(.95)}
+#memory-module-launcher.dragging{cursor:grabbing;transform:rotate(-5deg) scale(1.06);filter:drop-shadow(0 10px 14px #00000060);transition:none}
+#memory-module-launcher:focus-visible{outline:3px solid #aaa7e5;outline-offset:3px}
+#memory-module-launcher[data-theme=dark]{filter:drop-shadow(0 3px 7px #000000a0)}
+#memory-module-launcher .launch-icon{width:100%;height:100%;display:block;pointer-events:none}
+@media(max-width:720px){#memory-module-launcher{width:58px;height:58px}}
+`;
   const LAUNCH_POS_KEY = "memory-module-launch-pos";
   function placeLaunch(launch, pos) {
     if (!pos || launch.dataset.exdHidden !== undefined)
@@ -1850,6 +2064,58 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         launch.style.removeProperty(k);
     });
   }
+  let launcher = null;
+  let onPageKey = null;
+  function makeLauncher() {
+    document.getElementById("memory-module-launcher")?.remove();
+    if (!document.getElementById("memory-module-launcher-style")) {
+      const style = document.createElement("style");
+      style.id = "memory-module-launcher-style";
+      style.textContent = LAUNCHER_CSS;
+      (document.head || document.documentElement).append(style);
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "memory-module-launcher";
+    button.setAttribute("data-drawer-launcher", "");
+    button.setAttribute("aria-label", "기억 서재 열기");
+    button.setAttribute("aria-haspopup", "dialog");
+    button.setAttribute("aria-expanded", "false");
+    button.title = "기억 서재 (끌어서 옮길 수 있습니다 · 두 번 누르면 제자리)";
+    button.innerHTML = LAUNCH_ICON;
+    (document.body || document.documentElement).append(button);
+    return button;
+  }
+  function openLibrary() {
+    if (open || disposed)
+      return;
+    open = true;
+    const current = activeChatId();
+    if (current && current !== room) {
+      room = current;
+      store = null;
+      storeRoom = "";
+      trMap = {};
+      trPending = 0;
+      searchDraft = searchQuery = "";
+      recallTest = null;
+    }
+    act(refresh, null, { reload: false });
+    if (tab === "settings")
+      openSettings();
+    render();
+    launcher?.setAttribute("aria-expanded", "true");
+  }
+  function closeLibrary() {
+    if (!open)
+      return;
+    open = false;
+    clearTimeout(pollTimer);
+    render();
+    launcher?.setAttribute("aria-expanded", "false");
+    if (launcher && launcher.offsetParent !== null && root?.activeElement)
+      launcher.focus({ preventScroll: true });
+  }
   function install() {
     const element = document.createElement("div");
     element.id = "memory-module-library";
@@ -1866,7 +2132,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         <div class="workspace">
           <header class="topbar"><div class="crumb"><select id="roomSelect" aria-label="채팅방"></select></div>
             <button id="themeToggle" class="theme-toggle" aria-label="화면 밝기 바꾸기"></button>
-            <button id="close" class="close" aria-label="닫기">${icon("close")}</button></header>
+            <button id="close" class="close" aria-label="기억 서재 닫기" title="닫기">${icon("close")}</button></header>
           <div id="status" role="status"></div><div id="error" hidden></div>
           <main id="content"></main>
         </div>
@@ -1875,6 +2141,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     element.setAttribute("style", "position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:none!important;display:block!important;");
     LV.mountHost(element);
     root.host.setAttribute("data-theme", theme);
+    launcher?.setAttribute("data-theme", theme);
     for (const type of ["keydown", "keypress", "keyup"])
       root.addEventListener(type, (e) => e.stopPropagation());
     root.addEventListener("input", (e) => {
@@ -1889,29 +2156,22 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       searchQuery = searchDraft.trim();
       render();
     });
-    LV.toggle = () => {
-      open = !open;
-      if (open) {
-        const current = activeChatId();
-        if (current && current !== room) {
-          room = current;
-          searchDraft = searchQuery = "";
-          recallTest = null;
-        }
-        act(refresh);
-        if (tab === "settings")
-          openSettings();
+    LV.toggle = () => open ? closeLibrary() : openLibrary();
+    root.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && open && !e.isComposing) {
+        e.preventDefault();
+        closeLibrary();
       }
-      render();
+    });
+    onPageKey = (e) => {
+      if (e.key === "Escape" && open && !e.isComposing && !e.defaultPrevented)
+        closeLibrary();
     };
-    root.querySelector("#close").onclick = () => {
-      open = false;
-      render();
-    };
-    root.querySelector("#backdrop").onclick = () => {
-      open = false;
-      render();
-    };
+    document.addEventListener("keydown", onPageKey);
+    window.memoryModuleLibrary = { open: openLibrary, close: closeLibrary, toggle: () => open ? closeLibrary() : openLibrary(), isOpen: () => open, launcher };
+    window.dispatchEvent(new CustomEvent("memory-module:ready", { detail: { launcher } }));
+    root.querySelector("#close").onclick = () => closeLibrary();
+    root.querySelector("#backdrop").onclick = () => closeLibrary();
     root.querySelector("#themeToggle").onclick = () => {
       theme = theme === "dark" ? "light" : "dark";
       try {
@@ -1921,10 +2181,12 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     };
     root.querySelector("#roomSelect").onchange = (e) => {
       room = e.target.value;
+      store = null;
+      storeRoom = "";
       searchDraft = searchQuery = "";
       recallTest = null;
       selectedScene = "";
-      act(() => loadRoom(room));
+      act(() => loadRoom(room), null, { reload: false });
     };
     root.querySelector("#roomEnabled").onchange = (e) => {
       const on = e.target.checked;
@@ -1937,6 +2199,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
           localStorage.setItem("memory-module-font", font);
         } catch {}
         return render();
+      }
+      if (["setWriteLang", "setMemLang", "setTrConn", "setTrQuotes"].includes(e.target.id)) {
+        handle("saveLanguage");
+        return;
       }
       const instant = { setConnection: ["/settings", "connection", "기억 정리에 쓸 연결을 저장했습니다."], setRecall: ["/settings/recall", "mode", "회상 방식을 저장했습니다."], setRecallAmount: ["/settings/recall-amount", "amount", "회상 양을 저장했습니다."], setChapterLength: ["/settings/chapter-length", "length", "지난 이야기 흐름 길이를 저장했습니다."], setRecallStyle: ["/settings/recall-style", "style", "기억을 드러내는 정도를 저장했습니다."] }[e.target.id];
       if (instant && e.target.value) {
@@ -1973,6 +2239,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
           tab = "facts";
           focus = { kind: "fact", id: link.dataset.gotoFact };
         }
+        ensureScenes();
         return render();
       }
       const n = e.target.closest("button");
@@ -1989,6 +2256,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         armed = "";
         if (tab === "settings")
           openSettings();
+        ensureScenes();
         return render();
       }
       if (n.dataset.group !== undefined) {
@@ -2044,18 +2312,19 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     disposed = true;
     clearTimeout(pollTimer);
     root?.host?.remove();
+    launcher?.remove();
+    document.getElementById("memory-module-launcher-style")?.remove();
+    if (onPageKey)
+      document.removeEventListener("keydown", onPageKey);
+    if (window.memoryModuleLibrary?.launcher === launcher)
+      delete window.memoryModuleLibrary;
   }
   install();
   host.onCleanup?.(cleanup);
   return { toggle: () => LV.toggle(), open: () => {
     if (!open)
       LV.toggle();
-  }, close: () => {
-    if (open) {
-      open = false;
-      render();
-    }
-  }, isOpen: () => open, dispose: cleanup, setRoom: (id) => {
+  }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: (id) => {
     room = id;
   } };
 }

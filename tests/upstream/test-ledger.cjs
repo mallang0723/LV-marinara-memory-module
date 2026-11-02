@@ -370,7 +370,7 @@ test('daily life: meals counted per day, sleep length worked out, drinks and smo
   L.commitBatch(ledger, batch);
   assert.ok(!ledger.routine.some((r) => r.who === '하준'), 'bourbon is not a meal');
   assert.equal(ledger.storyTime, '2024-10-18T11:15');
-  assert.equal(L.renderRoutine(ledger, '2024-10-18T11:25'), '[최근 생활] 지금: 24-10-18 (금) 11:25\n- 서아: 식사 기상(11:15) 후 1끼(11:15 토스트), 마지막 10분 전 · 밤잠 03:02에 잠들어 11:15에 깸(8시간 13분 잠)');
+  assert.equal(L.renderRoutine(ledger, '2024-10-18T11:25'), '[최근 생활] 지금: 24-10-18 (금) 11:25\n- 서아: 식사 기상(11:15) 후 1끼(11:15 토스트), 마지막 10분 전 · 밤잠 03:02에 잠들어 11:15에 깸(8시간 13분 잠) · 최근 24시간 낮잠: 시간 확인 가능한 기록 없음');
   assert.match(L.renderRoutine(ledger, '2024-10-19T09:00'), /식사 기상\(24-10-18 \(금\) 11:15\) 후 1끼/);
   const r = L.reconcile(ledger, L.prepareMessages([{ id: 'r1', number: 1, speaker: '하루', content: '바뀐 메시지.' }]));
   assert.ok(r.rolledBack);
@@ -403,7 +403,7 @@ test('bites of the same steak over an hour and a half are one meal', () => {
     { who: '서아', what: 'meal', text: '스테이크', at: '2024-10-18T01:47', number: 20 },
     { who: '서아', what: 'meal', text: '토스트', at: '2024-10-18T11:40', number: 60 },
   ] };
-  assert.match(L.renderRoutine(ledger, '2024-10-18T12:00'), /식사 오늘 2끼\(00:18 스테이크 여러 점, 11:40 토스트\), 마지막 20분 전/);
+  assert.match(L.renderRoutine(ledger, '2024-10-18T12:00'), /식사 오늘 2끼\(00:18 스테이크, 11:40 토스트\), 마지막 20분 전/);
 });
 
 test('everyone at the table ate unless told otherwise: one meal, an entry each', () => {
@@ -435,7 +435,7 @@ test('the last few days: meals per day and the night sleep after it; a morning w
   const text = L.renderRoutine(ledger, '2024-10-18T10:00');
   assert.match(text, /식사 기상\(09:00\) 후 아직 없음\(마지막: 24-10-17 \(목\) 12:00 빵, 22시간 전\)/);
   assert.match(text, /밤잠 03:00에 잠들어 09:00에 깸\(3시간 이상 잠\)/);
-  assert.match(text, /지난 며칠: 24-10-17 \(목\): 1끼, 그 뒤 밤잠 3시간 이상 \/ 24-10-16 \(수\): 2끼, 그 뒤 밤잠 3시간 30분/);
+  assert.match(text, /지난 며칠: 24-10-17 \(목\): 1끼, 낮잠 시간 확인 가능한 기록 없음, 그 뒤 밤잠 3시간 이상 \/ 24-10-16 \(수\): 2끼, 낮잠 시간 확인 가능한 기록 없음, 그 뒤 밤잠 3시간 30분/);
 });
 
 test('whoever only fed the meal did not eat it', () => {
@@ -608,3 +608,35 @@ test('a hand-added entry shows even when its time is after the story clock', () 
   assert.match(text, /비타민 한 알/);
   assert.equal((text.match(/소염제/g) || []).length, 1, 'the same medicine shows once, its latest');
 });
+
+test('a meal eaten over several turns is named by its dish, not by the first bite', () => {
+  const meal = (text, at) => ({ who: '도윤', what: 'meal', text, at, number: 1 });
+  const wake = { who: '도윤', what: 'wake', at: '2025-07-17T07:00', number: 1 };
+  const one = L.renderRoutine({ routine: [meal('스테이크 한 입', '2025-07-17T19:00'), meal('스테이크 몇 점', '2025-07-17T19:10'), meal('스테이크', '2025-07-17T19:25'), wake] }, '2025-07-17T20:00');
+  assert.match(one, /1끼\(19:00 스테이크\)/);
+  assert.doesNotMatch(one, /한 입|몇 점/);
+  const mixed = L.renderRoutine({ routine: [meal('스테이크 반 접시', '2025-07-17T19:00'), meal('샐러드', '2025-07-17T19:20'), meal('스테이크 마저', '2025-07-17T19:30'), wake] }, '2025-07-17T20:00');
+  assert.match(mixed, /1끼\(19:00 스테이크, 샐러드\)/, 'different dishes are listed; "반찬"-like words are not cut');
+  const firstBite = L.renderRoutine({ routine: [meal('스테이크 한 입', '2025-07-17T19:00'), wake] }, '2025-07-17T20:00');
+  assert.match(firstBite, /19:00 스테이크 한 입/, 'one entry so far: as written');
+  const words = L.renderRoutine({ routine: [meal('반찬 몇 점', '2025-07-17T19:00'), meal('더덕구이', '2025-07-17T19:20'), wake] }, '2025-07-17T20:00');
+  assert.match(words, /반찬 몇 점, 더덕구이/, "\"반찬\" and \"더덕\" are not cut as portion words");
+});
+
+test('sleep: an evening nap is not the night, and being up in between (ate, washed) splits a sleep', () => {
+  const r = (what, at, text = '') => ({ who: '서아', what, text, at, number: 1 });
+  // Bedtime 03:25, waking not written down, washed 15:40, ate 17:10, napped after dinner, woke 20:30.
+  const out = L.renderRoutine({ routine: [r('wake', '2025-11-15T11:00'), r('meal', '2025-11-15T19:00', '저녁'), r('sleep', '2025-11-16T03:25'), r('wash', '2025-11-16T15:40', '욕조'), r('meal', '2025-11-16T17:10', '스테이크'), r('sleep', '2025-11-16T18:30'), r('wake', '2025-11-16T20:30')] }, '2025-11-16T22:25');
+  assert.doesNotMatch(out, /17시간/, 'never a seventeen-hour sleep through a bath and a meal');
+  assert.match(out, /밤잠 03:25에 잠듦\(깬 시각 기록 없음, 15:40엔 깨어 있음\), 낮잠 20:30에 깸/);
+  assert.match(out, /식사 기상\(시각 모름\) 후 1끼\(17:10 스테이크\)/, 'the meal after getting up still counts');
+  // A morning waking, then a nap from 19:10 to 20:30: the night stays 03:25-13:15, the nap is a nap.
+  const nap = L.renderRoutine({ routine: [r('sleep', '2025-11-16T03:25'), r('wake', '2025-11-16T13:15'), r('meal', '2025-11-16T17:10', '스테이크'), r('sleep', '2025-11-16T19:10'), r('wake', '2025-11-16T20:30')] }, '2025-11-16T22:25');
+  assert.match(nap, /밤잠 03:25에 잠들어 13:15에 깸\(9시간 50분 잠\), 낮잠 20:30에 깸/);
+  assert.match(nap, /식사 기상\(13:15\) 후 1끼/);
+  // Up at 2 am, back to bed: still one night.
+  assert.match(L.renderRoutine({ routine: [r('sleep', '2025-11-15T23:00'), r('wake', '2025-11-16T02:00'), r('sleep', '2025-11-16T02:30'), r('wake', '2025-11-16T08:00')] }, '2025-11-16T09:00'), /23:00에 잠들어 08:00에 깸\(8시간 30분 잠\)/);
+  // Went to bed, then ate breakfast with no waking written: not "asleep now".
+  assert.doesNotMatch(L.renderRoutine({ routine: [r('sleep', '2025-11-16T01:00'), r('meal', '2025-11-16T09:00', '아침')] }, '2025-11-16T10:00'), /자는 중/);
+});
+

@@ -3,14 +3,13 @@
 // Firefox and Chromium; 360x460 (touch), 360x740 (touch), 1280x800; two origins:
 //  - "insecure": http://qa.test (served through page.route): a non-loopback http origin is NOT a secure context, so
 //    crypto.randomUUID / crypto.subtle / navigator.clipboard / navigator.share are missing exactly as on a phone over plain http,
-//  - "secure": http://127.0.0.1:<random port> (a secure context).
+//  - "secure": http://127.0.0.1 (a secure context).
 // `npm run qa:insecure` runs only the insecure origin. Host themes: a dark and a light one of qa/host-themes.json; the screens'
 // own light/dark switches are driven too. Per view: horizontal overflow, text >= 15px (secondary >= 13px), tap targets >= 44px,
 // text contrast >= 4.5:1 on what is actually behind it, no scroll box other than the screens' own main scroller, no request
 // leaving the page (only the harness files and the stand-in channel), no console errors.
-// Tools are not dependencies: PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs, FIREFOX_BIN, CHROMIUM_BIN. Port 0 = random.
+// Tools are not dependencies: PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs, FIREFOX_BIN, CHROMIUM_BIN. Requests are fulfilled in process.
 // Screenshots go to QA_SHOT_DIR (default <os tmpdir>/memory-library-lv-qa), outside the repo.
-import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -26,16 +25,8 @@ const parts = (process.env.QA_PARTS || 'drawer,memory,guard').split(',');
 const innerWidthOf = vp => vp.width;
 const root = process.cwd();
 const qa = await createQaServer(root);
-const server = createServer(async (req, res) => {
-    let body = ''; for await (const c of req) body += c;
-    try {
-        const r = await qa.handle({ method: req.method, pathname: new URL(req.url, 'http://x').pathname, search: new URL(req.url, 'http://x').search, session: req.headers['x-qa-session'] || 'default', body });
-        res.setHeader('Content-Type', r.type); res.end(r.body);
-    } catch { res.statusCode = 404; res.end(); }
-});
-await new Promise(r => server.listen(0, '127.0.0.1', r));
-const port = server.address().port;
-const ORIGINS = { secure: `http://127.0.0.1:${port}/qa/harness.html`, insecure: 'http://qa.test/qa/harness.html' };
+// Both origins are fulfilled in process; no listening socket or external network is needed.
+const ORIGINS = { secure: 'http://127.0.0.1/qa/harness.html', insecure: 'http://qa.test/qa/harness.html' };
 const browsers = [['firefox', pw.firefox, process.env.FIREFOX_BIN || undefined], ['chromium', pw.chromium, process.env.CHROMIUM_BIN || undefined]];
 const failures = [], rows = [], envRows = [], notes = [];
 
@@ -86,11 +77,11 @@ function measure({ target, secondarySel, mainScrollers }) {
 const SECONDARY = 'small, sup, time, .hint, .muted, .eyebrow, [class*="meta"], [class*="hint"], [class*="foot"], [class*="stamp"], [class*="clock"], .num, .cno, .ct, .nk, .no-c, .pv, .imgic, .bm-room, .badge, [class*="badge"], .am-hint, .am-stat, .launch-sub, .brand small, .nav-label, .side-bottom small, .rail-note p, em, .dcat, .cm, .file-code, .file-range, .file-spine, .chip-id, .event-no, .pill, .editor-number, .stamp, .count, .metric small, .metric span';
 const MAIN_SCROLLERS = { memory: ['#content', '.inspector', '.sidebar'], 'drawer-memory': [] };
 
+const launched = new Map();
 try {
     await mkdir(shotDir, { recursive: true });
     const variants = [];
     for (const [bname, type, exe] of browsers) for (const oname of Object.keys(ORIGINS)) for (const vp of VIEWPORTS) variants.push({ bname, type, exe, oname, vp });
-    const launched = new Map();
     for (const { bname, type, exe, oname, vp } of variants) {
         const tag = `${bname}-${vp.width}x${vp.height}-${oname}`;
         if (originsWanted.length && !originsWanted.includes(oname)) continue;
@@ -102,8 +93,8 @@ try {
         if (!browser) continue;
         const session = `s-${tag}`;
         const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch, ...(bname === 'chromium' && vp.touch ? { isMobile: true, deviceScaleFactor: 2 } : {}), locale: 'ko-KR', permissions: [], reducedMotion: 'reduce', extraHTTPHeaders: { 'x-qa-session': session } });
-        if (oname === 'insecure') {
-            await context.route('http://qa.test/**', async route => {
+        {
+            await context.route(new URL(ORIGINS[oname]).origin + '/**', async route => {
                 try { const rq = route.request(); const r = await qa.handle({ method: rq.method(), pathname: new URL(rq.url()).pathname, search: new URL(rq.url()).search, session, body: rq.postData() || '' }); await route.fulfill({ status: 200, contentType: r.type, body: r.body }); } catch { await route.fulfill({ status: 404, body: '' }); }
             });
         }
@@ -271,8 +262,7 @@ try {
         if (outside.length) failures.push(`${tag}: requests that left the page: ${[...new Set(outside)].slice(0, 4).join(' | ')}`);
         await context.close();
     }
-    for (const b of launched.values()) await b?.close();
-} finally { server.close(); }
+} finally { for (const browser of launched.values()) await browser?.close(); }
 
 const summary = { ok: failures.length === 0, variants: new Set(rows.map(r => r.tag)).size, views: rows.length, failures: failures.length };
 await writeFile(path.join(shotDir, 'qa-report.json'), JSON.stringify({ summary, failures, env: envRows, notes, rows: rows.map(({ examples, ...r }) => r) }, null, 1));
