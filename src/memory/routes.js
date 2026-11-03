@@ -96,7 +96,7 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
     add('GET', 'status', async ({ um }) => {
         const src = await um.embeddingSource();
         return {
-            version: VERSION, settings: um.settings(), dataDir: '확장 저장소(userStorage) · memory/', health: um.health(),
+            version: VERSION, settings: { ...um.settings(), windowInfo: await um.chatWindowInfo() }, dataDir: '확장 저장소(userStorage) · memory/', health: um.health(),
             embedding: { mode: um.embeddingMode(), model: src?.model || null, label: src?.label || null, error: src ? null : um.getEmbedError() },
         };
     });
@@ -119,10 +119,11 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         const vectors = await bounded(um.embedTexts(queries.map(q => [q.subject || '', q.query.trim()].filter(Boolean).join(' · ')), 'query', controller.signal), cap, controller.signal).catch(error => { controller.abort(); throw Error(error?.name === 'TimeoutError' ? '기억 검색이 중단되거나 시간 한도를 넘었습니다.' : error?.message || String(error)); });
         if (vectors.some(v => (!Array.isArray(v) && !(v instanceof Float32Array)) || !v.length || Array.from(v).some(n => !Number.isFinite(n)))) throw Error('검색 임베딩 형식이 올바르지 않습니다.');
         const normalize = v => String(v || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+        const archive = ['side-b', 'ooc-archive'].includes(body?.scope);
+        const firstInside = archive ? null : S.firstInsideWindow(await um.chatMessages(chatId), await um.chatWindow());
         const results = queries.map((query, i) => {
             const subject = normalize(query.subject);
-            const firstInside = um.windows.get(chatId) ?? st.window?.firstInside ?? null;
-            const searchable = ['side-b', 'ooc-archive'].includes(body?.scope) ? st.scenes : R.candidates(st, firstInside);
+            const searchable = archive ? st.scenes : R.candidates(st, firstInside);
             const candidates = subject ? searchable.filter(scene => normalize(JSON.stringify(scene)).includes(subject)) : searchable;
             const hits = V.nearest(index, [vectors[i]], candidates, 8).filter(hit => hit.score > 0).map(hit => ({ id: hit.id, piece: hit.piece, score: hit.score, strong: hit.strong }));
             return { query, hits };
@@ -140,9 +141,9 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         const st = um.loadScenes(chatId);
         if (!st?.scenes.length) throw Error('아직 장면이 없습니다.');
         const mode = RECALL_MODES.includes(um.settings().recall) && um.settings().recall !== 'off' ? um.settings().recall : 'model';
-        const firstInside = um.windows.get(chatId) ?? st.window?.firstInside ?? null;
-        const list = R.candidates(st, firstInside);
         const view = um.settled(await um.chatMessages(chatId));
+        const firstInside = S.firstInsideWindow(view, Math.max(1, (await um.chatWindow()) - 1));
+        const list = R.candidates(st, firstInside);
         const entry = await um.computeRecall(chatId, st, view, text, { mode, firstInside, list, budgetMs: T.TEST_RECALL_BUDGET_MS ?? 20_000 });
         const title = id => st.scenes.find(x => x.id === id)?.title || null;
         const ids = new Set(list.map(x => x.id));

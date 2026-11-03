@@ -4466,6 +4466,52 @@ function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setTimeout(
   };
 }
 
+// src/common/host-settings.js
+function createSummarizationReader(api, { timeoutMs = 1000 } = {}) {
+  const pending = new Map;
+  let sequence = 0;
+  const prefix = `${Date.now()}-${Math.random()}`;
+  const off = api.onFrontendMessage?.((msg, userId) => {
+    if (msg?.type !== "memory-summarization-result")
+      return;
+    const entry = pending.get(userId);
+    if (!entry || entry.id !== msg.id)
+      return;
+    entry.finish(msg.ok ? msg.value : null);
+  });
+  return {
+    read(userId) {
+      if (pending.has(userId))
+        return pending.get(userId).promise;
+      if (!off || !api.sendToFrontend)
+        return Promise.resolve(null);
+      const id = `${prefix}-${++sequence}`;
+      let resolve;
+      const promise = new Promise((r) => {
+        resolve = r;
+      });
+      const finish = (value) => {
+        clearTimeout(timer);
+        pending.delete(userId);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      pending.set(userId, { id, promise, finish });
+      try {
+        api.sendToFrontend({ event: "memory-read-summarization", id }, userId);
+      } catch {
+        finish(null);
+      }
+      return promise;
+    },
+    dispose() {
+      off?.();
+      for (const entry of pending.values())
+        entry.finish(null);
+    }
+  };
+}
+
 // src/common/host-adapter.js
 var PAGE = 200;
 var iso = (t) => {
@@ -4475,6 +4521,20 @@ var iso = (t) => {
   return new Date(n < 1000000000000 ? n * 1000 : n).toISOString();
 };
 function createHostAdapter(api, { log = () => {} } = {}) {
+  const summarization = createSummarizationReader(api);
+  const warned = new Set;
+  async function contextMessageLimit(userId) {
+    need(userId);
+    let value;
+    try {
+      value = await summarization.read(userId);
+    } catch {}
+    if (!value && !warned.has(userId)) {
+      warned.add(userId);
+      log("\uB8E8\uBBF8\uBC84\uC2A4 \uBA54\uC2DC\uC9C0 \uC81C\uD55C\uC744 \uC77D\uC9C0 \uBABB\uD574 \uAE30\uC5B5 \uC11C\uC7AC \uCC3D \uC124\uC815 \uB610\uB294 \uAE30\uBCF8\uAC12\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.");
+    }
+    return value?.messageLimitEnabled === true && typeof value.messageLimitCount === "number" && Number.isInteger(value.messageLimitCount) && value.messageLimitCount > 0 ? value.messageLimitCount : null;
+  }
   const need = (userId) => {
     if (typeof userId !== "string" || !userId)
       throw new Error("userId required");
@@ -4578,7 +4638,7 @@ function createHostAdapter(api, { log = () => {} } = {}) {
     const res = await call(() => api.embeddings.embed({ texts, ...connectionId ? { connection_id: connectionId } : {}, input_type: inputType === "query" ? "query" : "passage", userId }, { signal }));
     return res;
   }
-  return { connections, chatsList, rawChat, allMessages, character, characterName, generate, embeddingConnections, embed, has };
+  return { connections, chatsList, rawChat, allMessages, character, characterName, generate, embeddingConnections, embed, has, contextMessageLimit, dispose: () => summarization.dispose() };
 }
 
 // src/common/router.js
@@ -4656,7 +4716,7 @@ var import_scenes = __toESM(require_scenes(), 1);
 var import_recall = __toESM(require_recall(), 1);
 var import_vectors = __toESM(require_vectors(), 1);
 var import_translate = __toESM(require_translate(), 1);
-var VERSION = "1.1.0-lv.1";
+var VERSION = "1.1.1-lv.1";
 var RECALL_MODES = ["model", "fast", "off"];
 var CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 function safeChatId(chatId) {
@@ -5124,10 +5184,18 @@ ${reply.slice(-800)}
       return prepared;
     }
     const settled = (messages) => messages.length && messages.at(-1).role !== "user" ? messages.slice(0, -1) : messages;
-    async function chatWindow() {
+    async function chatWindowInfo() {
       await ready();
+      const limit = await host.contextMessageLimit(userId);
+      if (limit !== null)
+        return { size: limit, source: "lumiverse", label: `\uB8E8\uBBF8\uBC84\uC2A4 \uBA54\uC2DC\uC9C0 \uC81C\uD55C ${limit} \uC0AC\uC6A9 \uC911` };
       const w = Number(settings().window);
-      return Number.isInteger(w) && w > 0 ? w : T.DEFAULT_WINDOW;
+      if (Number.isInteger(w) && w > 0)
+        return { size: w, source: "library", label: `\uAE30\uC5B5 \uC11C\uC7AC \uCC3D \uC124\uC815 ${w} \uC0AC\uC6A9 \uC911` };
+      return { size: T.DEFAULT_WINDOW, source: "default", label: `\uAE30\uBCF8 \uCC3D \uD06C\uAE30 ${T.DEFAULT_WINDOW} \uC0AC\uC6A9 \uC911` };
+    }
+    async function chatWindow() {
+      return (await chatWindowInfo()).size;
     }
     async function chatCast(chatId) {
       try {
@@ -6155,7 +6223,7 @@ ${footer}` : "";
       const firstInside = windows.get(chatId) ?? null;
       const list = import_recall.default.candidates(st, firstInside);
       const tail = [...view.map((m) => m.h), ...userMessage ? [import_ledger.default.hashText(userMessage)] : []].slice(-5);
-      const key = import_ledger.default.hashText(JSON.stringify([mode, list.map(recallFingerprint), tail]));
+      const key = import_ledger.default.hashText(JSON.stringify([mode, firstInside, list.map(recallFingerprint), tail]));
       if (recalls.get(chatId)?.key === key)
         return;
       const entry = await computeRecall(chatId, st, view, userMessage, { mode, firstInside, list, ...opts });
@@ -6333,6 +6401,7 @@ ${footer}` : "";
       chatMessages,
       settled,
       chatWindow,
+      chatWindowInfo,
       chatCast,
       memoryModel,
       askModel,
@@ -6581,7 +6650,7 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
     const src = await um.embeddingSource();
     return {
       version: VERSION,
-      settings: um.settings(),
+      settings: { ...um.settings(), windowInfo: await um.chatWindowInfo() },
       dataDir: "\uD655\uC7A5 \uC800\uC7A5\uC18C(userStorage) \xB7 memory/",
       health: um.health(),
       embedding: { mode: um.embeddingMode(), model: src?.model || null, label: src?.label || null, error: src ? null : um.getEmbedError() }
@@ -6612,10 +6681,11 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
     if (vectors.some((v) => !Array.isArray(v) && !(v instanceof Float32Array) || !v.length || Array.from(v).some((n) => !Number.isFinite(n))))
       throw Error("\uAC80\uC0C9 \uC784\uBCA0\uB529 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
     const normalize = (v) => String(v || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    const archive = ["side-b", "ooc-archive"].includes(body?.scope);
+    const firstInside = archive ? null : import_scenes2.default.firstInsideWindow(await um.chatMessages(chatId), await um.chatWindow());
     const results = queries.map((query, i) => {
       const subject = normalize(query.subject);
-      const firstInside = um.windows.get(chatId) ?? st.window?.firstInside ?? null;
-      const searchable = ["side-b", "ooc-archive"].includes(body?.scope) ? st.scenes : import_recall2.default.candidates(st, firstInside);
+      const searchable = archive ? st.scenes : import_recall2.default.candidates(st, firstInside);
       const candidates = subject ? searchable.filter((scene) => normalize(JSON.stringify(scene)).includes(subject)) : searchable;
       const hits = import_vectors2.default.nearest(index, [vectors[i]], candidates, 8).filter((hit) => hit.score > 0).map((hit) => ({ id: hit.id, piece: hit.piece, score: hit.score, strong: hit.strong }));
       return { query, hits };
@@ -6633,9 +6703,9 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
     if (!st?.scenes.length)
       throw Error("\uC544\uC9C1 \uC7A5\uBA74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
     const mode = RECALL_MODES.includes(um.settings().recall) && um.settings().recall !== "off" ? um.settings().recall : "model";
-    const firstInside = um.windows.get(chatId) ?? st.window?.firstInside ?? null;
-    const list = import_recall2.default.candidates(st, firstInside);
     const view = um.settled(await um.chatMessages(chatId));
+    const firstInside = import_scenes2.default.firstInsideWindow(view, Math.max(1, await um.chatWindow() - 1));
+    const list = import_recall2.default.candidates(st, firstInside);
     const entry = await um.computeRecall(chatId, st, view, text, { mode, firstInside, list, budgetMs: T.TEST_RECALL_BUDGET_MS ?? 20000 });
     const title = (id) => st.scenes.find((x) => x.id === id)?.title || null;
     const ids = new Set(list.map((x) => x.id));
@@ -7077,7 +7147,7 @@ function start(api, options = {}) {
     const um = service.forUser(userId);
     await um.ready();
     const s = um.settings();
-    return { moduleMemory: s.moduleMemory !== false, autoInject: s.autoInject !== false, interceptorBudgetMs: s.interceptorBudgetMs || 6000, window: s.window || service.T.DEFAULT_WINDOW };
+    return { moduleMemory: s.moduleMemory !== false, autoInject: s.autoInject !== false, interceptorBudgetMs: s.interceptorBudgetMs || 6000, window: s.window || service.T.DEFAULT_WINDOW, windowInfo: await um.chatWindowInfo() };
   });
   disposers.push(router.attach(api));
   const injector = createInjector({ service, log });
@@ -7173,6 +7243,7 @@ function start(api, options = {}) {
     log(`commands: ${e?.message || e}`);
   }
   return async () => {
+    host.dispose();
     for (const t of timers)
       clearTimeout(t);
     for (const d of [offInterceptor, offEnded, offForked, offPerm, offCommands, ...disposers]) {

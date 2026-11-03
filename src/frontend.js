@@ -2,6 +2,7 @@
 import { createLink, createMarinara, createFetch } from './shim/marinara.js';
 import { createShell } from './shell.js';
 import { createOverlayGuard } from './overlay-guard.js';
+import { attachSummarizationFrontend } from './common/host-settings.js';
 import { mountMemory } from './memory/ui/runtime.generated.js';
 import { MEMORY_OVERRIDES } from './style.js';
 
@@ -20,7 +21,7 @@ export function setup(ctx, opts = {}) {
         try { return ctx.state?.get?.('chat.active')?.chatId || ''; } catch { return ''; }
     };
     const fireChat = () => { setTimeout(() => { shell?.refresh?.(); }, 0); };
-    const offs = [];
+    const offs = [attachSummarizationFrontend(ctx)];
     for (const ev of ['CHAT_SWITCHED', 'CHAT_CHANGED']) { try { const off = ctx.events?.on?.(ev, fireChat); if (typeof off === 'function') offs.push(off); } catch { /* optional */ } }
     try { const off = ctx.state?.subscribe?.('chat.active', fireChat); if (typeof off === 'function') offs.push(off); } catch { /* optional */ }
 

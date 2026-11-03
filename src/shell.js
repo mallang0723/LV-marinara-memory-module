@@ -78,6 +78,7 @@ export function createShell(ctx, { link, getChatId, openMemory, doc = globalThis
             warn(),
             el('div', { class: 'am-card' },
                 el('h2', { text: '설정' }),
+                el('p', { class: 'am-hint', text: ext?.windowInfo?.label || '창 크기 확인 중' }),
                 switchRow('기억 서재 사용', ext ? ext.moduleMemory !== false : true, v => saveExt({ moduleMemory: v }), '끄면 어느 방에서도 기억을 넣지도, 갱신하지도 않아요.'),
                 switchRow('프롬프트에 자동으로 넣기', ext ? ext.autoInject !== false : true, v => saveExt({ autoInject: v }), `프리셋에 {{memory_ledger}} 매크로를 넣어 쓰면 이 칸을 꺼도 돼요. 매크로를 넣어 두면 그 자리의 내용이 최신으로 바뀌어요.`),
                 el('label', { class: 'am-field' }, '기억 주입에 쓸 수 있는 시간', budget),

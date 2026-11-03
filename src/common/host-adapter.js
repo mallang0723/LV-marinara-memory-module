@@ -14,11 +14,25 @@
 //    (src/services/generation/direct-generation.ts:253-277, worker-host.ts:3318-3330)
 //  - paged lists: limit <= 200 (the fake host enforces it like the real one), loop until `total`
 import { wrapHostError } from './store.js';
+import { createSummarizationReader } from './host-settings.js';
 
 const PAGE = 200;
 const iso = t => { const n = Number(t); if (!Number.isFinite(n) || n <= 0) return null; return new Date(n < 1e12 ? n * 1000 : n).toISOString(); };
 
 export function createHostAdapter(api, { log = () => {} } = {}) {
+    const summarization = createSummarizationReader(api);
+    const warned = new Set();
+    async function contextMessageLimit(userId) {
+        need(userId);
+        let value;
+        try { value = await summarization.read(userId); } catch { /* fallback below */ }
+        if (!value && !warned.has(userId)) {
+            warned.add(userId);
+            log('루미버스 메시지 제한을 읽지 못해 기억 서재 창 설정 또는 기본값을 사용합니다.');
+        }
+        return value?.messageLimitEnabled === true && typeof value.messageLimitCount === 'number'
+            && Number.isInteger(value.messageLimitCount) && value.messageLimitCount > 0 ? value.messageLimitCount : null;
+    }
     const need = userId => { if (typeof userId !== 'string' || !userId) throw new Error('userId required'); return userId; };
     const call = async fn => { try { return await fn(); } catch (e) { throw wrapHostError(e); } };
 
@@ -109,5 +123,5 @@ export function createHostAdapter(api, { log = () => {} } = {}) {
         return res;
     }
 
-    return { connections, chatsList, rawChat, allMessages, character, characterName, generate, embeddingConnections, embed, has };
+    return { connections, chatsList, rawChat, allMessages, character, characterName, generate, embeddingConnections, embed, has, contextMessageLimit, dispose: () => summarization.dispose() };
 }

@@ -18,7 +18,7 @@ import R from './core/recall.cjs';
 import V from './core/vectors.cjs';
 import TR from './core/translate.cjs';
 
-export const VERSION = '1.1.0-lv.1';
+export const VERSION = '1.1.1-lv.1';
 export const RECALL_MODES = ['model', 'fast', 'off'];
 const CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export function safeChatId(chatId) {
@@ -507,12 +507,16 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
         }
         /** Messages the ledger may read: up to the user's latest message (a reroll of the newest reply never needs undoing). */
         const settled = messages => (messages.length && messages.at(-1).role !== 'user' ? messages.slice(0, -1) : messages);
-        /** How many of the newest messages the reply model sees directly. Lumiverse has no per-chat message limit (it is token based): setting or default. */
-        async function chatWindow() {
+        /** One resolver for folding, reply/recall boundaries, and the settings UI. */
+        async function chatWindowInfo() {
             await ready();
+            const limit = await host.contextMessageLimit(userId);
+            if (limit !== null) return { size: limit, source: 'lumiverse', label: `루미버스 메시지 제한 ${limit} 사용 중` };
             const w = Number(settings().window);
-            return Number.isInteger(w) && w > 0 ? w : T.DEFAULT_WINDOW;
+            if (Number.isInteger(w) && w > 0) return { size: w, source: 'library', label: `기억 서재 창 설정 ${w} 사용 중` };
+            return { size: T.DEFAULT_WINDOW, source: 'default', label: `기본 창 크기 ${T.DEFAULT_WINDOW} 사용 중` };
         }
+        async function chatWindow() { return (await chatWindowInfo()).size; }
         async function chatCast(chatId) {
             try {
                 const chat = await host.rawChat(userId, chatId);
@@ -1444,7 +1448,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             const firstInside = windows.get(chatId) ?? null;
             const list = R.candidates(st, firstInside);
             const tail = [...view.map(m => m.h), ...(userMessage ? [L.hashText(userMessage)] : [])].slice(-5);
-            const key = L.hashText(JSON.stringify([mode, list.map(recallFingerprint), tail]));
+            const key = L.hashText(JSON.stringify([mode, firstInside, list.map(recallFingerprint), tail]));
             if (recalls.get(chatId)?.key === key) return;
             const entry = await computeRecall(chatId, st, view, userMessage, { mode, firstInside, list, ...opts });
             entry.key = key;
@@ -1589,7 +1593,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
 
         return {
             userId, ready, ensureChat, ensureVectors, settings, saveSettings, chatEnabled, setChatEnabled, loadLedger, saveLedger, loadScenes, saveScenes,
-            loadVectors, embeddingMode, embeddingSource, embeddingModel, embedTexts, indexScenes, chatMessages, settled, chatWindow, chatCast,
+            loadVectors, embeddingMode, embeddingSource, embeddingModel, embedTexts, indexScenes, chatMessages, settled, chatWindow, chatWindowInfo, chatCast,
             memoryModel, askModel, enqueue, jobStatus, jobs, sceneJobs, trials, processChat, processScenes, rebuildChapters, tidyChat, startTrial,
             renderLedger, rendered, syncBeforeReply, recallBeforeReply, computeRecall, health, storyToday, storyNow, windows, recalls, replyViews,
             connectionList, checkFiles, flush, getEmbedError: () => embedSource.error, clearVectors: () => vectorCache.clear(), clearRecalls: () => recalls.clear(),

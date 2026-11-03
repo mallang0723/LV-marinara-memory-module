@@ -29,6 +29,10 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceAnchor(s, "        <label class=\"setting-switch\"><span>대사 앞에 이름 표시<small>캐릭터 대사에 '이름 | 대사'를 출력하도록 요청합니다. 말풍선 태그 기능과 독립적으로 설정할 수 있습니다.</small></span><input type=\"checkbox\" id=\"setSpeakerNames\" ${info.speakerNames ? 'checked' : ''}></label>\n", '', { name: 'speaker names switch' });
     s = replaceAnchor(s, "      if (e.target.id === 'setSpeakerNames') {\n        const on = e.target.checked;\n        void act(() => api('POST', `/chats/${encodeURIComponent(room)}/speaker-names`, { on }), on ? '대사 앞에 이름 표시를 켰습니다.' : '대사 앞에 이름 표시를 껐습니다.');\n      }\n", '', { name: 'speaker names handler' });
     // choosing a connection / recall option saves at once (it used to wait for the 저장 button); no connection yet shows a prompt
+    s = replaceAnchor(s, '<div class="paper"><h2>모든 방 공통</h2>', `<div class="paper"><h2>모든 방 공통</h2>
+        <p class="hint" id="windowSource">\${esc(serverSettings?.windowInfo?.label || '창 크기 확인 중')}</p>
+        <label>기억 서재 창 크기 (루미버스 메시지 제한이 꺼져 있을 때만 적용)<input id="setWindow" type="number" min="1" step="1" value="\${esc(serverSettings?.window || 30)}"></label>
+        <p class="hint">루미버스 요약 → 메시지 제한 → 컨텍스트 내 메시지 제한이 우선합니다. 설정을 읽지 못하면 서재 값, 없으면 기본값 30을 사용합니다.</p>`, { name: 'effective memory window' });
     s = replaceAnchor(s, '<select id="setConnection">${connections.map(', '<select id="setConnection"><option value="" ${current ? \'\' : \'selected\'} disabled>— 연결을 고르세요 —</option>${connections.map(', { name: 'connection placeholder' });
     s = replaceAnchor(s, "      if (e.target.id === 'setTags') {\n        const on = e.target.checked;\n        void act(() => api('POST', `/chats/${encodeURIComponent(room)}/speaker-tags`, { on }), on ? '말풍선 태그 되살리기를 켰습니다.' : '말풍선 태그 되살리기를 껐습니다.');\n      }\n", `      if (['setWriteLang', 'setMemLang', 'setTrConn', 'setTrQuotes'].includes(e.target.id)) { void handle('saveLanguage'); return; }
       const instant = { setConnection: ['/settings', 'connection', '기억 정리에 쓸 연결을 저장했습니다.'], setRecall: ['/settings/recall', 'mode', '회상 방식을 저장했습니다.'], setRecallAmount: ['/settings/recall-amount', 'amount', '회상 양을 저장했습니다.'], setChapterLength: ['/settings/chapter-length', 'length', '지난 이야기 흐름 길이를 저장했습니다.'], setRecallStyle: ['/settings/recall-style', 'style', '기억을 드러내는 정도를 저장했습니다.'] }[e.target.id];
@@ -37,6 +41,12 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
         void act(async () => { await api('POST', instant[0], { [instant[1]]: value }); serverSettings = (await api('GET', '/status')).settings; }, instant[2]);
       }
 `, { name: 'instant save' });
+    s = replaceAnchor(s, "      if (['setWriteLang', 'setMemLang', 'setTrConn', 'setTrQuotes'].includes(e.target.id))", `      if (e.target.id === 'setWindow') {
+        const window = Number(e.target.value);
+        void act(async () => { if (!Number.isInteger(window) || window <= 0) throw Error('창 크기는 1 이상의 정수로 적어 주세요.'); await api('POST', '/api/ext/settings', { window }); serverSettings = (await api('GET', '/status')).settings; }, '루미버스 메시지 제한이 꺼져 있을 때 쓸 창 크기를 저장했습니다.');
+        return;
+      }
+      if (['setWriteLang', 'setMemLang', 'setTrConn', 'setTrQuotes'].includes(e.target.id))`, { name: 'save fallback memory window' });
     // Marinara wording
     s = replaceAnchor(s, '서버에 연결하지 못했습니다. 마리나라가 다시 켜지는 중이라면 잠시 뒤에 다시 시도해 주세요.', '루미버스 서버에 연결하지 못했습니다. 잠시 뒤에 다시 시도해 주세요.', { name: 'wording connect' });
     s = replaceAnchor(s, '서버에 기억 모듈이 없거나 꺼져 있습니다. 서버에 기억 모듈을 설치했는지 확인해 주세요.', '확장의 기억 서재 쪽이 응답하지 않습니다. 확장이 켜져 있는지, 권한이 허용돼 있는지 확인해 주세요.', { name: 'wording 404' });

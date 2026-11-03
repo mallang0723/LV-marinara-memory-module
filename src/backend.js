@@ -42,7 +42,7 @@ export function start(api, options = {}) {
         const um = service.forUser(userId);
         await um.ready();
         const s = um.settings();
-        return { moduleMemory: s.moduleMemory !== false, autoInject: s.autoInject !== false, interceptorBudgetMs: s.interceptorBudgetMs || 6000, window: s.window || service.T.DEFAULT_WINDOW };
+        return { moduleMemory: s.moduleMemory !== false, autoInject: s.autoInject !== false, interceptorBudgetMs: s.interceptorBudgetMs || 6000, window: s.window || service.T.DEFAULT_WINDOW, windowInfo: await um.chatWindowInfo() };
     });
     disposers.push(router.attach(api));
 
@@ -109,6 +109,7 @@ export function start(api, options = {}) {
     } catch (e) { log(`commands: ${e?.message || e}`); }
 
     return async () => {
+        host.dispose();
         for (const t of timers) clearTimeout(t);
         for (const d of [offInterceptor, offEnded, offForked, offPerm, offCommands, ...disposers]) { try { d?.(); } catch { /* ignore */ } }
         try { api.unregisterMacro?.(MACRO_NAME); } catch { /* ignore */ }

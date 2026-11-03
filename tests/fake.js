@@ -12,7 +12,8 @@ export function fake(opts = {}) {
     const calls = [], sent = [], toasts = [];
     const interceptors = [], macros = new Map(), commands = { list: [], onInvoked: null };
     const handlers = new Map();
-    let frontendHandler = null, seq = 0;
+    const frontendHandlers = new Set();
+    let seq = 0;
     const nextId = p => `${p}-${++seq}`;
     const clone = v => JSON.parse(JSON.stringify(v ?? null));
     const state = { denied: [...(opts.denied || [])], modelCalls: [], modelCounts: {}, modelDelayMs: 0, modelHang: false, modelFail: null, userRequired: true, quietParamsSeen: [], embedFail: null };
@@ -130,8 +131,18 @@ export function fake(opts = {}) {
                 return { embeddings: input.texts.map(vec), connection_id: input.connection_id || 'emb-a', model: 'fake-embed', dimensions: 64 };
             },
         },
-        onFrontendMessage(fn) { frontendHandler = fn; f.frontendHandler = fn; return () => { frontendHandler = null; f.frontendHandler = null; }; },
-        sendToFrontend(msg, user, o) { sent.push({ msg: clone(msg), user, o }); opts.onSend?.(clone(msg), user, o); },
+        onFrontendMessage(fn) {
+            frontendHandlers.add(fn);
+            f.frontendHandler = (...args) => { for (const handler of frontendHandlers) handler(...args); };
+            return () => { frontendHandlers.delete(fn); if (!frontendHandlers.size) f.frontendHandler = null; };
+        },
+        sendToFrontend(msg, user, o) {
+            sent.push({ msg: clone(msg), user, o }); opts.onSend?.(clone(msg), user, o);
+            if (msg.event === 'memory-read-summarization' && !opts.noSettingsFrontend) queueMicrotask(() => {
+                const value = state.summarization ?? null;
+                f.frontendHandler?.({ type: 'memory-summarization-result', id: msg.id, ok: value !== null, value }, user);
+            });
+        },
     };
     const f = {
         api, state, files, calls, sent, interceptors, macros, commands, chats, characters, personas, books, entries, messages, connections, handlers,
