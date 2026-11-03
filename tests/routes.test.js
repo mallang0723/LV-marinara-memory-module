@@ -103,7 +103,7 @@ test('enable / disable / stop / estimate / status / scene-error / trial / recall
     const est = (await rpc('POST', 'chats/chat-a/estimate')).data;
     assert.equal(est.messages, 15);
     const st = (await rpc('GET', 'status')).data;
-    assert.equal(st.version, '1.1.1-lv.1'); assert.ok(st.embedding && st.health);
+    assert.equal(st.version, '1.1.2-lv.1'); assert.ok(st.embedding && st.health);
     assert.deepEqual((await rpc('GET', 'chats/chat-a/scene-error')).data, { text: null });
     assert.deepEqual((await rpc('GET', 'chats/chat-a/trial')).data, { state: 'none' });
     assert.equal((await rpc('POST', 'chats/chat-a/trial', { from: 5, to: 2 })).ok, false);

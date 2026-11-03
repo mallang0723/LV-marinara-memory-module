@@ -2,8 +2,8 @@
 // (runtime.js) reads them as they are. 'memory-module/' is the prefix the screen puts in front (BASE = '/api/memory-module').
 // A handler gets {userId, params, body, query}; errors thrown here become {ok:false,error} replies (the screen shows them).
 import L from './core/ledger.cjs';
-import S from './core/scenes.cjs';
-import R from './core/recall.cjs';
+import S from './core/scenes.generated.cjs';
+import R from './core/recall.generated.cjs';
 import V from './core/vectors.cjs';
 import TR from './core/translate.cjs';
 import { VERSION, safeChatId, nameList, summary, bounded, RECALL_MODES, RECALL_STYLES, CHAPTER_LENGTHS, RECALL_AMOUNTS } from './service.js';

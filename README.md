@@ -78,8 +78,9 @@ https://github.com/mallang0723/marinara-memory-module
 ## 원작과 달라진 점
 
 - 원작 서버 패치(`registerHooks`로 Marinara 소스에 한 줄 삽입)·`install.sh`·CLI·`mm`은 가져오지 않았습니다. `service.cjs`는 같은 논리(배치·재시도·반으로 쪼개기·장면/챕터/큰 흐름 순서·회상)로 **다시 썼습니다**(`src/memory/service.js`).
-- 원작 코드는 **고쳐 쓰지 않고** 그대로 둡니다. 기억 코어 6개(`src/memory/core/*.cjs`)와 화면 3개(`src/memory/ui/*.orig.*`)는 SHA-256으로 고정돼 있고(`npm run verify:original`), 화면은 빌드할 때 **앵커가 정확히 한 번 일치하는 패치**로만 바뀝니다(0번·2번 이상이면 빌드 실패).
-- **원작 기준 커밋**: `3498fd9e267bdb214efe214335245e3b7305ba96`(원작 런타임 0.11.27), 이식판 **1.1.1-lv.1**. 버전별 PORT/SKIP과 **옮기지 않은 것**은 [변경 내역](CHANGELOG.md)에 기록했습니다. 기존 채팅 분기·반복 억제 지침도 유지합니다.
+- 원작 코드는 **고쳐 쓰지 않고** 그대로 둡니다. 기억 코어 원본 6개(`src/memory/core/`의 `.generated.cjs` 제외)와 화면 원본 3개(`src/memory/ui/*.orig.*`)는 기존 SHA-256으로 검증합니다(`npm run verify:original`). 화면과 실행용 코어는 **앵커가 정확히 한 번 일치하는 패치**로 생성합니다(0번·2번 이상이면 실패). `npm test`와 빌드는 원본 검증 후 `scripts/generate-core.mjs`로 장면·회상 모듈을 생성하며 서비스·라우트·회상이 모두 같은 패치된 장면 모듈을 사용합니다.
+- **이식판만의 길이 변경**: 영어 기억이 잘리는 문제를 줄이기 위해 장면의 작중 시간·장소는 각각 **60→120자**, 날씨는 **30→60자**, 사건 시간은 **40→80자**로 늘렸습니다. 사실·알게 된 내용·나중에 밝혀진 내용의 `when`도 **120자**로 통일했습니다. 장면 카드도 시간을 앞 두 단어로 줄이지 않습니다. 직접 편집과 한국어 보기에는 이보다 짧은 필드 제한이 없고, 전체 프롬프트 예산은 유지합니다. 이미 잘려 저장된 값은 자동 복구되지 않으므로 직접 고치거나 해당 기억을 다시 정리해야 합니다.
+- **원작 기준 커밋**: `3498fd9e267bdb214efe214335245e3b7305ba96`(원작 런타임 0.11.27), 이식판 **1.1.2-lv.1**. 버전별 PORT/SKIP과 **옮기지 않은 것**은 [변경 내역](CHANGELOG.md)에 기록했습니다. 기존 채팅 분기·반복 억제 지침도 유지합니다.
 - **분기 이어받기**: Lumiverse가 채팅을 분기하면 보내는 `CHAT_FORKED` 이벤트(권한 불필요)를 받아, 원본의 장부·장면·사실·챕터·큰 흐름·뜻 색인·방별 설정을 새 방으로 복사합니다. 메시지 id와 원문 번호는 새 방 것으로 다시 연결하고, 과거 메시지에서 분기하면 그 뒤 내용은 제외합니다. 새 방에 기억 파일이 이미 있으면 덮어쓰지 않습니다. 원작은 서버 `onSend` 훅이었고 여기서는 이벤트로 대신합니다. 업데이트 전에 만든 분기는 소급하지 않습니다.
 - 말풍선 `<speaker>` 태그 복구·생성 지침(Marinara 전용)과 게임 상태 트래커 시계는 없습니다(작중 시간은 본문 날짜 줄만 읽습니다). 라우트 `speaker-tags`는 항상 꺼짐으로 답합니다.
 - 수동 메모 파일(`<채팅>.txt`)은 옮기지 않았습니다.
@@ -91,8 +92,8 @@ https://github.com/mallang0723/marinara-memory-module
 ## 빌드·시험
 
 ```bash
-BUN_BIN=/path/to/bun npm run build   # 화면 패치 → dist/backend.js, dist/frontend.js (bun 1.4.0)
-npm test                            # node --test: 단위 + 원본 테스트
+BUN_BIN=/path/to/bun npm run build   # 원본 검증 → 코어·화면 패치 → dist/backend.js, dist/frontend.js (bun 1.4.0)
+npm test                            # 원본 검증·코어 생성 → node --test: 단위 + 원본 테스트
 npm run verify:original             # UPSTREAM_MEMORY=<원작 체크아웃>을 주면 원작과도 비교(이 포크의 main이 원작)
 npm run qa:browser                  # Firefox + Chromium, 360×460·360×740(터치)·390×844·1280×800, 밝/어두운 호스트 테마
 npm run qa:insecure                 # 비보안 출처(http://qa.test)만

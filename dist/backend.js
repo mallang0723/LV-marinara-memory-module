@@ -1983,8 +1983,8 @@ ${sections.join(`
   };
 });
 
-// src/memory/core/scenes.cjs
-var require_scenes = __commonJS(function(exports, module) {
+// src/memory/core/scenes.generated.cjs
+var require_scenes_generated = __commonJS(function(exports, module) {
   var L = require_ledger();
   var SCENES_VERSION = 1;
   var REMEMBERS = ["full", "partial", "none"];
@@ -2472,7 +2472,7 @@ var require_scenes = __commonJS(function(exports, module) {
         for (const q of all)
           if (!inScene(q) && text)
             stray.push({ quote: q, about: text });
-        return { text, time: cleanText(e?.time, 40), why: cleanText(e?.why, 300), importance: ["critical", "major", "minor"].includes(e?.importance) ? e.importance : "major", quotes: all.filter(inScene).slice(0, MAX_QUOTES_PER_EVENT) };
+        return { text, time: cleanText(e?.time, 80), why: cleanText(e?.why, 300), importance: ["critical", "major", "minor"].includes(e?.importance) ? e.importance : "major", quotes: all.filter(inScene).slice(0, MAX_QUOTES_PER_EVENT) };
       }).filter((e) => e.text).slice(0, item._maxEvents || MAX_EVENTS);
       const recollections = (Array.isArray(item.recollections) ? item.recollections : []).map((r) => ({
         who: L.canonNames(cleanText(r?.who, 40), [...cast, ...personas]),
@@ -2487,9 +2487,9 @@ var require_scenes = __commonJS(function(exports, module) {
         start: messages[0].number,
         end: messages.at(-1).number,
         messages: messages.map((m) => ({ id: m.id, h: m.h, ...m.c ? { c: m.c } : {} })),
-        time: cleanText(item.time, 60),
-        place: cleanText(item.place, 60),
-        weather: cleanText(item.weather, 30) || mostOften(messages.map((m) => m.weather), Math.ceil(messages.length / 2)),
+        time: cleanText(item.time, 120),
+        place: cleanText(item.place, 120),
+        weather: cleanText(item.weather, 60) || mostOften(messages.map((m) => m.weather), Math.ceil(messages.length / 2)),
         title: cleanText(item.title, 60) || "(\uC81C\uBAA9 \uC5C6\uC74C)",
         summary: cleanText(item.summary, 600) || "",
         events,
@@ -2528,7 +2528,7 @@ var require_scenes = __commonJS(function(exports, module) {
           if (level === "guess" && !guess.includes(who))
             guess.push(who);
         }
-        newFacts.push({ id: `F${store.nextFact + newFacts.length}`, about, text, evidence, sceneId: id, when: cleanText(item.time, 60), replaces, unaware, guess, edited: false, createdAt: now });
+        newFacts.push({ id: `F${store.nextFact + newFacts.length}`, about, text, evidence, sceneId: id, when: cleanText(item.time, 120), replaces, unaware, guess, edited: false, createdAt: now });
       }
       for (const l of Array.isArray(item.learned) ? item.learned : []) {
         const who = castNames([l?.who], cast)[0];
@@ -2537,13 +2537,13 @@ var require_scenes = __commonJS(function(exports, module) {
           continue;
         const sceneRef = String(l?.scene ?? "").trim().toUpperCase().replace(/^(\d+)$/, "S$1") || null;
         const factRef = String(l?.fact ?? "").trim().toUpperCase().replace(/^(\d+)$/, "F$1") || null;
-        learned.push({ who, what, from: cleanText(l?.from, 40), scene: sceneRef, fact: factRef, in: id, when: cleanText(item.time, 60), guess: l?.guess === true || GUESS_WORDS.test(what) });
+        learned.push({ who, what, from: cleanText(l?.from, 40), scene: sceneRef, fact: factRef, in: id, when: cleanText(item.time, 120), guess: l?.guess === true || GUESS_WORDS.test(what) });
       }
       for (const old of liveFacts(store)) {
         for (const who of old.unaware || []) {
           const level = awarenessIn(messages, who, old.text, [...cast, ...personas]);
           if (level)
-            learned.push({ who, what: level === "guess" ? `${old.text} \u2014 \uC9D0\uC791\uD568` : old.text, from: null, scene: null, fact: old.id, in: id, when: cleanText(item.time, 60), guess: level === "guess", quiet: true });
+            learned.push({ who, what: level === "guess" ? `${old.text} \u2014 \uC9D0\uC791\uD568` : old.text, from: null, scene: null, fact: old.id, in: id, when: cleanText(item.time, 120), guess: level === "guess", quiet: true });
         }
       }
       for (const x of Array.isArray(item.later) ? item.later : []) {
@@ -2551,7 +2551,7 @@ var require_scenes = __commonJS(function(exports, module) {
         const what = cleanText(x?.what, 400);
         if (!what || !store.scenes.some((old) => old.id === scene))
           continue;
-        later.push({ scene, what, by: cleanText(x?.by, 40), in: id, when: cleanText(item.time, 60) });
+        later.push({ scene, what, by: cleanText(x?.by, 40), in: id, when: cleanText(item.time, 120) });
       }
       startAt = endAt + 1;
     }
@@ -3609,10 +3609,10 @@ ${lines.join(`
   };
 });
 
-// src/memory/core/recall.cjs
-var require_recall = __commonJS(function(exports, module) {
+// src/memory/core/recall.generated.cjs
+var require_recall_generated = __commonJS(function(exports, module) {
   var L = require_ledger();
-  var S = require_scenes();
+  var S = require_scenes_generated();
   var MAX_RECALL = 4;
   var MAX_PICKS = 6;
   var TOC_MAX_CHARS = 50000;
@@ -4712,11 +4712,11 @@ function createRouter() {
 
 // src/memory/service.js
 var import_ledger = __toESM(require_ledger(), 1);
-var import_scenes = __toESM(require_scenes(), 1);
-var import_recall = __toESM(require_recall(), 1);
+var import_scenes_generated = __toESM(require_scenes_generated(), 1);
+var import_recall_generated = __toESM(require_recall_generated(), 1);
 var import_vectors = __toESM(require_vectors(), 1);
 var import_translate = __toESM(require_translate(), 1);
-var VERSION = "1.1.1-lv.1";
+var VERSION = "1.1.2-lv.1";
 var RECALL_MODES = ["model", "fast", "off"];
 var CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 function safeChatId(chatId) {
@@ -4823,7 +4823,7 @@ function branchMemory(ledger, scenes, source, target, messageIds) {
   }
   let nextScenes = scenes ? structuredClone(scenes) : null;
   if (nextScenes) {
-    import_scenes.default.reconcileScenes(nextScenes, prefix);
+    import_scenes_generated.default.reconcileScenes(nextScenes, prefix);
     const factIds = new Set(nextScenes.facts.map((f) => f.id));
     for (const f of nextScenes.facts)
       if (f.replacedBy && !factIds.has(f.replacedBy))
@@ -4999,7 +4999,7 @@ function createMemoryService({ host, store, log = () => {}, now = () => Date.now
           if (!ledgerCache.has(chatId))
             ledgerCache.set(chatId, await store.supported(userId, keys.ledger(chatId), await store.getJson(userId, keys.ledger(chatId), null), import_ledger.default.LEDGER_VERSION));
           if (!sceneCache.has(chatId))
-            sceneCache.set(chatId, await store.supported(userId, keys.scenes(chatId), await store.getJson(userId, keys.scenes(chatId), null), import_scenes.default.SCENES_VERSION));
+            sceneCache.set(chatId, await store.supported(userId, keys.scenes(chatId), await store.getJson(userId, keys.scenes(chatId), null), import_scenes_generated.default.SCENES_VERSION));
         })().finally(() => loading.delete(key)));
       }
       await loading.get(key);
@@ -5334,7 +5334,7 @@ ${reply.slice(-800)}
     async function foldScenes(chatId, st, messages, window, model, job, { minPending = 1 } = {}) {
       let calls = 0;
       for (;; ) {
-        const next = import_scenes.default.nextSlice(st, messages, window, { minPending: calls ? 1 : minPending });
+        const next = import_scenes_generated.default.nextSlice(st, messages, window, { minPending: calls ? 1 : minPending });
         if (!next)
           break;
         if (job?.cancel)
@@ -5343,14 +5343,14 @@ ${reply.slice(-800)}
           job.stage = `\uC7A5\uBA74 \uC815\uB9AC (${next.slice[0].number}\uBC88\uBD80\uD130)`;
         let applied = null, lastError = "", lastParsed = null, lastReply = "";
         for (let attempt = 0;attempt < 2 && !applied; attempt++) {
-          const reply = await askModel(model, import_scenes.default.buildScenePrompt(st, next.slice, next.required, lastError || null), { maxTokens: 8192 });
+          const reply = await askModel(model, import_scenes_generated.default.buildScenePrompt(st, next.slice, next.required, lastError || null), { maxTokens: 8192 });
           calls++;
           lastReply = String(reply || "");
-          const { result: parsed, truncated } = import_scenes.default.parseScenesReply(reply);
+          const { result: parsed, truncated } = import_scenes_generated.default.parseScenesReply(reply);
           if (parsed)
             lastParsed = parsed;
           if (truncated) {
-            const part = parsed ? import_scenes.default.applyScenes(st, parsed, next.slice, next.required, undefined, { partial: true }) : { error: "\uC751\uB2F5\uC774 \uB108\uBB34 \uAE38\uC5B4\uC11C \uC798\uB838\uC2B5\uB2C8\uB2E4" };
+            const part = parsed ? import_scenes_generated.default.applyScenes(st, parsed, next.slice, next.required, undefined, { partial: true }) : { error: "\uC751\uB2F5\uC774 \uB108\uBB34 \uAE38\uC5B4\uC11C \uC798\uB838\uC2B5\uB2C8\uB2E4" };
             if (!part.error) {
               applied = part;
               log(`chat ${chatId}: reply was cut off, kept ${part.scenes.length} whole scene(s)`);
@@ -5358,7 +5358,7 @@ ${reply.slice(-800)}
               lastError = part.error;
             continue;
           }
-          const result = parsed ? import_scenes.default.applyScenes(st, parsed, next.slice, next.required) : { error: "\uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" };
+          const result = parsed ? import_scenes_generated.default.applyScenes(st, parsed, next.slice, next.required) : { error: "\uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" };
           if (result.error)
             lastError = result.error;
           else
@@ -5367,7 +5367,7 @@ ${reply.slice(-800)}
         if (!applied)
           saveLastReply(chatId, lastError, lastReply);
         if (!applied && lastParsed) {
-          const part = import_scenes.default.applyScenes(st, lastParsed, next.slice, next.required, undefined, { partial: true });
+          const part = import_scenes_generated.default.applyScenes(st, lastParsed, next.slice, next.required, undefined, { partial: true });
           if (!part.error) {
             applied = part;
             log(`chat ${chatId}: kept ${part.scenes.length} good scene(s), reading the rest again (${lastError})`);
@@ -5377,8 +5377,8 @@ ${reply.slice(-800)}
           throw Error("\uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uC791\uD558\uBA74 \uC774\uC5B4\uC11C \uC815\uB9AC\uD569\uB2C8\uB2E4.");
         if (!applied)
           throw Error(`${next.slice[0].number}\uBC88\uBD80\uD130 \uC7A5\uBA74 \uC815\uB9AC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${lastError}`);
-        import_scenes.default.commitScenes(st, applied);
-        st.window = { size: window, firstInside: import_scenes.default.firstInsideWindow(messages, window) };
+        import_scenes_generated.default.commitScenes(st, applied);
+        st.window = { size: window, firstInside: import_scenes_generated.default.firstInsideWindow(messages, window) };
         saveScenes(chatId, st);
         log(`chat ${chatId}: ${applied.scenes.length} scene(s) through message ${applied.scenes.at(-1).end}, ${applied.facts.length} fact(s)`);
       }
@@ -5387,11 +5387,11 @@ ${reply.slice(-800)}
     async function condense(chatId, st, model, job, { maxCalls = 6, chaptersOnly = false, staged = false } = {}) {
       let calls = 0;
       while (calls < maxCalls && !job?.cancel) {
-        const redo = import_scenes.default.nextRedo(st);
+        const redo = import_scenes_generated.default.nextRedo(st);
         if (!redo)
           break;
         if (redo.kind.startsWith("drop")) {
-          import_scenes.default.applyRedo(st, redo);
+          import_scenes_generated.default.applyRedo(st, redo);
           if (!staged)
             saveScenes(chatId, st);
           continue;
@@ -5401,9 +5401,9 @@ ${reply.slice(-800)}
           job.stage = `\uACE0\uCE5C \uB0B4\uC6A9\uC73C\uB85C ${label} \uB2E4\uC2DC \uC694\uC57D (${redo.target.id})`;
         calls++;
         try {
-          const prompt = redo.kind === "chapter" ? import_scenes.default.buildChapterPrompt(st, redo.parts) : import_scenes.default.buildArcPrompt(st, redo.parts);
+          const prompt = redo.kind === "chapter" ? import_scenes_generated.default.buildChapterPrompt(st, redo.parts) : import_scenes_generated.default.buildArcPrompt(st, redo.parts);
           const parsed = import_ledger.default.parseJsonObject(await askModel(model, prompt, { maxTokens: 2000 }));
-          const made = import_scenes.default.applyRedo(st, redo, parsed);
+          const made = import_scenes_generated.default.applyRedo(st, redo, parsed);
           if (made.error)
             throw Error(made.error);
           if (!staged)
@@ -5417,18 +5417,18 @@ ${reply.slice(-800)}
         }
       }
       while (calls < maxCalls && !job?.cancel) {
-        const scenes = import_scenes.default.nextChapter(st);
+        const scenes = import_scenes_generated.default.nextChapter(st);
         if (!scenes)
           break;
         if (job)
           job.stage = `\uCC55\uD130 \uBB36\uAE30 (${scenes[0].id}~${scenes.at(-1).id})`;
         calls++;
         try {
-          const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes.default.buildChapterPrompt(st, scenes), { maxTokens: 2000 }));
-          const made = import_scenes.default.applyChapter(st, parsed, scenes);
+          const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes_generated.default.buildChapterPrompt(st, scenes), { maxTokens: 2000 }));
+          const made = import_scenes_generated.default.applyChapter(st, parsed, scenes);
           if (made.error)
             throw Error(made.error);
-          import_scenes.default.commitChapter(st, made.chapter);
+          import_scenes_generated.default.commitChapter(st, made.chapter);
           if (!staged)
             saveScenes(chatId, st);
           log(`chat ${chatId}: chapter ${made.chapter.id} (${scenes[0].id}~${scenes.at(-1).id}) ${made.chapter.title}`);
@@ -5440,18 +5440,18 @@ ${reply.slice(-800)}
         }
       }
       while (calls < maxCalls && !job?.cancel) {
-        const chapters = import_scenes.default.nextArc(st);
+        const chapters = import_scenes_generated.default.nextArc(st);
         if (!chapters)
           break;
         if (job)
           job.stage = `\uD070 \uD750\uB984 \uBB36\uAE30 (${chapters[0].id}~${chapters.at(-1).id})`;
         calls++;
         try {
-          const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes.default.buildArcPrompt(st, chapters), { maxTokens: 1500 }));
-          const made = import_scenes.default.applyArc(st, parsed, chapters);
+          const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes_generated.default.buildArcPrompt(st, chapters), { maxTokens: 1500 }));
+          const made = import_scenes_generated.default.applyArc(st, parsed, chapters);
           if (made.error)
             throw Error(made.error);
-          import_scenes.default.commitArc(st, made.arc);
+          import_scenes_generated.default.commitArc(st, made.arc);
           if (!staged)
             saveScenes(chatId, st);
           log(`chat ${chatId}: arc ${made.arc.id} (${made.arc.chapters[0]}~${made.arc.chapters.at(-1)}) ${made.arc.title}`);
@@ -5463,20 +5463,20 @@ ${reply.slice(-800)}
         }
       }
       while (!chaptersOnly && calls < maxCalls && !job?.cancel) {
-        const next = import_scenes.default.nextFactMerge(st);
+        const next = import_scenes_generated.default.nextFactMerge(st);
         if (!next)
           break;
         if (job)
           job.stage = `\uC0AC\uC2E4 \uD569\uCE58\uAE30 (${next.about})`;
         calls++;
         try {
-          const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes.default.buildFactMergePrompt(st, next.about, next.facts), { maxTokens: 3000 }));
+          const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes_generated.default.buildFactMergePrompt(st, next.about, next.facts), { maxTokens: 3000 }));
           if (!parsed)
             throw Error("\uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
-          const made = import_scenes.default.applyFactMerge(st, next.about, next.facts, parsed);
+          const made = import_scenes_generated.default.applyFactMerge(st, next.about, next.facts, parsed);
           if (!staged)
             saveScenes(chatId, st);
-          log(`chat ${chatId}: merged ${next.about}'s facts (${next.facts.length} \u2192 ${import_scenes.default.liveFacts(st).filter((f) => (f.about || "\uAE30\uD0C0") === next.about).length})${made ? "" : ", nothing to merge"}`);
+          log(`chat ${chatId}: merged ${next.about}'s facts (${next.facts.length} \u2192 ${import_scenes_generated.default.liveFacts(st).filter((f) => (f.about || "\uAE30\uD0C0") === next.about).length})${made ? "" : ", nothing to merge"}`);
         } catch (error) {
           if (staged)
             throw error;
@@ -5620,16 +5620,16 @@ ${reply.slice(-800)}
             job.again = false;
             const messages = await chatMessages(chatId);
             const window = await chatWindow();
-            const st = fresh ? import_scenes.default.emptyStore() : structuredClone(loadScenes(chatId) || import_scenes.default.emptyStore());
+            const st = fresh ? import_scenes_generated.default.emptyStore() : structuredClone(loadScenes(chatId) || import_scenes_generated.default.emptyStore());
             fresh = false;
-            const change = import_scenes.default.reconcileScenes(st, messages);
+            const change = import_scenes_generated.default.reconcileScenes(st, messages);
             if (change.dropped) {
               log(`chat ${chatId}: ${change.dropped} scene(s) changed underneath, folding again${change.lostEdits ? ` (${change.lostEdits} hand edit(s) lost)` : ""}`);
               saveScenes(chatId, st);
             }
             if (rebuild && !st.scenes.length)
               saveScenes(chatId, st);
-            const translated = import_scenes.default.attachTranslations(st, messages) + import_scenes.default.tidyKnowledge(st);
+            const translated = import_scenes_generated.default.attachTranslations(st, messages) + import_scenes_generated.default.tidyKnowledge(st);
             const personas = import_ledger.default.personaNames(messages);
             const cast = await chatCast(chatId);
             const personasChanged = JSON.stringify(personas) !== JSON.stringify(st.personas || []) || JSON.stringify(cast) !== JSON.stringify(st.cast || []);
@@ -5646,7 +5646,7 @@ ${reply.slice(-800)}
             if (reason === "resume" && !rebuild) {
               const attempted = new Set;
               while (!job.cancel) {
-                const candidates = import_scenes.default.recipientCandidates(st, messages, 20, attempted);
+                const candidates = import_scenes_generated.default.recipientCandidates(st, messages, 20, attempted);
                 if (!candidates.length)
                   break;
                 candidates.forEach(({ q }) => attempted.add(q));
@@ -5665,7 +5665,7 @@ ${reply.slice(-800)}
                   }
                   job.calls++;
                   if (Array.isArray(answer?.items)) {
-                    const n = import_scenes.default.applyRecipientResults(candidates, answer.items);
+                    const n = import_scenes_generated.default.applyRecipientResults(candidates, answer.items);
                     saveScenes(chatId, st);
                     if (n)
                       recalls.delete(chatId);
@@ -5680,9 +5680,9 @@ ${reply.slice(-800)}
               }
             }
             const minPending = rebuild ? 1 : T.SCENE_MIN_PENDING;
-            if (import_scenes.default.nextSlice(st, messages, window, { minPending }))
+            if (import_scenes_generated.default.nextSlice(st, messages, window, { minPending }))
               job.calls += await foldScenes(chatId, st, messages, window, await getModel(), job, { minPending });
-            if (import_scenes.default.nextRedo(st) || import_scenes.default.nextChapter(st) || import_scenes.default.nextArc(st) || import_scenes.default.nextFactMerge(st))
+            if (import_scenes_generated.default.nextRedo(st) || import_scenes_generated.default.nextChapter(st) || import_scenes_generated.default.nextArc(st) || import_scenes_generated.default.nextFactMerge(st))
               job.calls += await condense(chatId, st, await getModel(), job);
             await indexScenes(chatId, st, job);
             await translateAfterRun(chatId, job).catch((error) => log(`chat ${chatId}: translation failed (${error?.message || error})`));
@@ -5792,15 +5792,15 @@ ${reply.slice(-800)}
           trial.stage = "\uC7A5\uBD80 \uC810\uAC80";
           const tidy = await tidyLedger(model, ledger, slice);
           trial.stage = "\uC7A5\uBA74 \uC815\uB9AC";
-          const scenes = import_scenes.default.emptyStore();
+          const scenes = import_scenes_generated.default.emptyStore();
           for (;; ) {
-            const next = import_scenes.default.nextSlice(scenes, slice, 0, { lead: 0, minVisible: 0 });
+            const next = import_scenes_generated.default.nextSlice(scenes, slice, 0, { lead: 0, minVisible: 0 });
             if (!next)
               break;
             let applied = null;
             for (let attempt = 0;attempt < 2 && !applied; attempt++) {
-              const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes.default.buildScenePrompt(scenes, next.slice, next.required), { maxTokens: 8192 }));
-              const result = parsed ? import_scenes.default.applyScenes(scenes, parsed, next.slice, next.required) : { error: "\uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" };
+              const parsed = import_ledger.default.parseJsonObject(await askModel(model, import_scenes_generated.default.buildScenePrompt(scenes, next.slice, next.required), { maxTokens: 8192 }));
+              const result = parsed ? import_scenes_generated.default.applyScenes(scenes, parsed, next.slice, next.required) : { error: "\uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" };
               if (!result.error)
                 applied = result;
               else
@@ -5808,10 +5808,10 @@ ${reply.slice(-800)}
             }
             if (!applied)
               break;
-            import_scenes.default.commitScenes(scenes, applied);
+            import_scenes_generated.default.commitScenes(scenes, applied);
           }
           trial.stage = null;
-          const memory = [import_scenes.default.renderScenes(scenes, null, { expand: 99, maxChars: 1e5 }), `[\uC544\uC9C1 \uB05D\uB098\uC9C0 \uC54A\uC740 \uC77C]
+          const memory = [import_scenes_generated.default.renderScenes(scenes, null, { expand: 99, maxChars: 1e5 }), `[\uC544\uC9C1 \uB05D\uB098\uC9C0 \uC54A\uC740 \uC77C]
 ${import_ledger.default.renderCompact(ledger)}`].filter(Boolean).join(`
 
 `);
@@ -5866,10 +5866,10 @@ ${import_ledger.default.renderCompact(ledger)}`].filter(Boolean).join(`
     }
     function checkScenesBeforeReply(chatId, view) {
       const stored = loadScenes(chatId);
-      if (!stored || import_scenes.default.changedAt(stored, view) === -1)
+      if (!stored || import_scenes_generated.default.changedAt(stored, view) === -1)
         return replyViews.delete(chatId);
       const st = structuredClone(stored);
-      const change = import_scenes.default.reconcileScenes(st, view);
+      const change = import_scenes_generated.default.reconcileScenes(st, view);
       replyViews.set(chatId, { base: stored, store: st });
       log(`chat ${chatId}: ${change.dropped} scene(s) no longer match the chat; left out of this reply until folded again`);
     }
@@ -5977,8 +5977,8 @@ ${import_ledger.default.renderCompact(ledger)}`].filter(Boolean).join(`
       add(renderMemorySource(chatId));
       const store2 = scenesForReply(chatId);
       if (store2) {
-        const cast = import_scenes.default.castOf(store2);
-        store2.scenes.forEach((scene, i) => add(import_scenes.default.renderExpanded(scene, i, store2.personas || [], cast)));
+        const cast = import_scenes_generated.default.castOf(store2);
+        store2.scenes.forEach((scene, i) => add(import_scenes_generated.default.renderExpanded(scene, i, store2.personas || [], cast)));
       }
       return [...new Set(lines)];
     }
@@ -6125,27 +6125,27 @@ ${open}` : "", routine].filter(Boolean);
         const firstInside = windows.get(chatId) ?? scenes.window?.firstInside ?? null;
         const amount = RECALL_AMOUNTS[settings().recallAmount] || RECALL_AMOUNTS.normal;
         const recall = recalls.get(chatId);
-        const picks = import_recall.default.shownPicks(recall?.picks || [], amount.scenes);
+        const picks = import_recall_generated.default.shownPicks(recall?.picks || [], amount.scenes);
         const chapterChars = CHAPTER_LENGTHS[settings().chapterLength] || CHAPTER_LENGTHS.normal;
         const total = 9000 + 4500 + chapterChars;
         const overviewMax = Math.min(total, Math.floor(room * (chapterChars > CHAPTER_LENGTHS.normal ? 0.65 : 0.5)));
         const scale = Math.min(1, overviewMax / total);
-        const overview = import_scenes.default.renderScenes(scenes, firstInside, { maxChars: Math.floor(9000 * scale), factChars: Math.floor(4500 * scale), chapterChars: Math.floor(chapterChars * scale), query, today });
+        const overview = import_scenes_generated.default.renderScenes(scenes, firstInside, { maxChars: Math.floor(9000 * scale), factChars: Math.floor(4500 * scale), chapterChars: Math.floor(chapterChars * scale), query, today });
         if (overview) {
           story.push(overview);
           room -= overview.length + 2;
         }
-        const recalled = room > 500 ? import_recall.default.renderRecalled(scenes, picks, { maxChars: Math.min(amount.sceneChars, room) }) : "";
+        const recalled = room > 500 ? import_recall_generated.default.renderRecalled(scenes, picks, { maxChars: Math.min(amount.sceneChars, room) }) : "";
         if (recalled) {
           story.push(recalled);
           room -= recalled.length + 2;
         }
-        const near = amount.near && room > 500 ? import_recall.default.renderNearEvents(scenes, recall?.semantic || [], picks, { max: amount.near, maxChars: Math.min(5000, room) }) : "";
+        const near = amount.near && room > 500 ? import_recall_generated.default.renderNearEvents(scenes, recall?.semantic || [], picks, { max: amount.near, maxChars: Math.min(5000, room) }) : "";
         if (near) {
           story.push(near);
           room -= near.length + 2;
         }
-        const raw = room > 300 ? fitBlock(import_recall.default.renderRaw((recall?.raw || []).slice(0, amount.raw)), room) : "";
+        const raw = room > 300 ? fitBlock(import_recall_generated.default.renderRaw((recall?.raw || []).slice(0, amount.raw)), room) : "";
         if (raw)
           story.push(raw);
       }
@@ -6204,7 +6204,7 @@ ${footer}` : "";
       if (day)
         storyDays.set(chatId, day);
       const window = await chatWindow();
-      windows.set(chatId, import_scenes.default.firstInsideWindow(view, Math.max(1, window - (userMessage ? 1 : 0))));
+      windows.set(chatId, import_scenes_generated.default.firstInsideWindow(view, Math.max(1, window - (userMessage ? 1 : 0))));
       checkScenesBeforeReply(chatId, view);
       await recallBeforeReply(chatId, view, userMessage, { budgetMs, signal });
       await translateBeforeReply(chatId, Math.max(0, (budgetMs || settings().recallBudgetMs || T.RECALL_BUDGET_MS) - (now() - started)), signal).catch(() => {});
@@ -6221,7 +6221,7 @@ ${footer}` : "";
       if (mode === "off" || !st)
         return recalls.delete(chatId);
       const firstInside = windows.get(chatId) ?? null;
-      const list = import_recall.default.candidates(st, firstInside);
+      const list = import_recall_generated.default.candidates(st, firstInside);
       const tail = [...view.map((m) => m.h), ...userMessage ? [import_ledger.default.hashText(userMessage)] : []].slice(-5);
       const key = import_ledger.default.hashText(JSON.stringify([mode, firstInside, list.map(recallFingerprint), tail]));
       if (recalls.get(chatId)?.key === key)
@@ -6277,11 +6277,11 @@ ${footer}` : "";
             signal?.addEventListener?.("abort", stop, { once: true });
             model.signal = ctl.signal;
             try {
-              const reply = await bounded(askModel(model, import_recall.default.buildRecallPrompt(list, ledger, recent, userMessage, st.chapters || [], entry.semantic || []), { maxTokens: 600 }), ms, ctl.signal);
+              const reply = await bounded(askModel(model, import_recall_generated.default.buildRecallPrompt(list, ledger, recent, userMessage, st.chapters || [], entry.semantic || []), { maxTokens: 600 }), ms, ctl.signal);
               const parsed = import_ledger.default.parseJsonObject(reply);
               if (!parsed)
                 throw Error("\uAE30\uC5B5 \uBAA8\uB378\uC758 \uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
-              entry.picks = import_recall.default.applyRecall(parsed, list, st.chapters || [], [...recent.map((m) => m.content), userMessage || ""].join(" "));
+              entry.picks = import_recall_generated.default.applyRecall(parsed, list, st.chapters || [], [...recent.map((m) => m.content), userMessage || ""].join(" "));
             } finally {
               clearTimeout(timer);
               signal?.removeEventListener?.("abort", stop);
@@ -6293,21 +6293,21 @@ ${footer}` : "";
           }
         }
         if (entry.used === "fast")
-          entry.picks = import_recall.default.fastRecall(list, ledger, recent, userMessage);
+          entry.picks = import_recall_generated.default.fastRecall(list, ledger, recent, userMessage);
         const strong = (entry.semantic || []).find((x) => x.strong && !entry.picks.some((p) => p.id === x.id));
-        if (strong && entry.picks.length < import_recall.default.MAX_PICKS)
+        if (strong && entry.picks.length < import_recall_generated.default.MAX_PICKS)
           entry.picks.push({ id: strong.id, why: "\uB73B\uC774 \uAC00\uAE4C\uC6C0(\uC784\uBCA0\uB529)" });
-        const latest = import_recall.default.latestUser(recent, userMessage).text;
+        const latest = import_recall_generated.default.latestUser(recent, userMessage).text;
         for (const x of [...entry.pointed || []].reverse()) {
-          entry.picks = [{ id: x.id, why: `\uC608\uC804 \uC77C\uC744 \uAC00\uB9AC\uD0A4\uB294 \uB9D0: "${x.text.slice(0, 40)}${x.text.length > 40 ? "\u2026" : ""}"` }, ...entry.picks.filter((p) => p.id !== x.id)].slice(0, import_recall.default.MAX_PICKS);
+          entry.picks = [{ id: x.id, why: `\uC608\uC804 \uC77C\uC744 \uAC00\uB9AC\uD0A4\uB294 \uB9D0: "${x.text.slice(0, 40)}${x.text.length > 40 ? "\u2026" : ""}"` }, ...entry.picks.filter((p) => p.id !== x.id)].slice(0, import_recall_generated.default.MAX_PICKS);
         }
-        const wordHit = import_recall.default.directHit(list, latest);
-        if (wordHit && entry.picks.length < import_recall.default.MAX_PICKS && !entry.picks.some((p) => p.id === wordHit.id))
+        const wordHit = import_recall_generated.default.directHit(list, latest);
+        if (wordHit && entry.picks.length < import_recall_generated.default.MAX_PICKS && !entry.picks.some((p) => p.id === wordHit.id))
           entry.picks.push({ id: wordHit.id, why: `\uBC29\uAE08 \uBA54\uC2DC\uC9C0\uC758 \uB0B1\uB9D0(${wordHit.hits.slice(0, 3).join(", ")})\uC774 \uC774 \uC7A5\uBA74\uC5D0 \uC788\uC74C` });
-        entry.raw = import_recall.default.rawHits(view.filter((m) => firstInside != null && m.number < firstInside), latest);
+        entry.raw = import_recall_generated.default.rawHits(view.filter((m) => firstInside != null && m.number < firstInside), latest);
         if (wordHit)
           entry.direct = { id: wordHit.id, hits: wordHit.hits.slice(0, 5) };
-        entry.picks = import_recall.default.withFollowUps(st, entry.picks, list);
+        entry.picks = import_recall_generated.default.withFollowUps(st, entry.picks, list);
       }
       entry.ms = now() - started;
       return entry;
@@ -6563,8 +6563,8 @@ function registerHostRoutes(router, host) {
 
 // src/memory/routes.js
 var import_ledger2 = __toESM(require_ledger(), 1);
-var import_scenes2 = __toESM(require_scenes(), 1);
-var import_recall2 = __toESM(require_recall(), 1);
+var import_scenes_generated2 = __toESM(require_scenes_generated(), 1);
+var import_recall_generated2 = __toESM(require_recall_generated(), 1);
 var import_vectors2 = __toESM(require_vectors(), 1);
 var import_translate2 = __toESM(require_translate(), 1);
 var PREFIX = "memory-module/";
@@ -6682,10 +6682,10 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
       throw Error("\uAC80\uC0C9 \uC784\uBCA0\uB529 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
     const normalize = (v) => String(v || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
     const archive = ["side-b", "ooc-archive"].includes(body?.scope);
-    const firstInside = archive ? null : import_scenes2.default.firstInsideWindow(await um.chatMessages(chatId), await um.chatWindow());
+    const firstInside = archive ? null : import_scenes_generated2.default.firstInsideWindow(await um.chatMessages(chatId), await um.chatWindow());
     const results = queries.map((query, i) => {
       const subject = normalize(query.subject);
-      const searchable = archive ? st.scenes : import_recall2.default.candidates(st, firstInside);
+      const searchable = archive ? st.scenes : import_recall_generated2.default.candidates(st, firstInside);
       const candidates = subject ? searchable.filter((scene) => normalize(JSON.stringify(scene)).includes(subject)) : searchable;
       const hits = import_vectors2.default.nearest(index, [vectors[i]], candidates, 8).filter((hit) => hit.score > 0).map((hit) => ({ id: hit.id, piece: hit.piece, score: hit.score, strong: hit.strong }));
       return { query, hits };
@@ -6704,8 +6704,8 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
       throw Error("\uC544\uC9C1 \uC7A5\uBA74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
     const mode = RECALL_MODES.includes(um.settings().recall) && um.settings().recall !== "off" ? um.settings().recall : "model";
     const view = um.settled(await um.chatMessages(chatId));
-    const firstInside = import_scenes2.default.firstInsideWindow(view, Math.max(1, await um.chatWindow() - 1));
-    const list = import_recall2.default.candidates(st, firstInside);
+    const firstInside = import_scenes_generated2.default.firstInsideWindow(view, Math.max(1, await um.chatWindow() - 1));
+    const list = import_recall_generated2.default.candidates(st, firstInside);
     const entry = await um.computeRecall(chatId, st, view, text, { mode, firstInside, list, budgetMs: T.TEST_RECALL_BUDGET_MS ?? 20000 });
     const title = (id) => st.scenes.find((x) => x.id === id)?.title || null;
     const ids = new Set(list.map((x) => x.id));
@@ -6910,7 +6910,7 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
         return { mode: r.mode, used: r.used, ms: r.ms, at: r.at, error: r.error, semantic: (r.semantic || []).map((x) => ({ id: x.id, score: Math.round(x.score * 1000) / 1000, strong: x.strong, title: scenes?.scenes.find((s) => s.id === x.id)?.title || null })), semanticError: r.semanticError || null, raw: (r.raw || []).map((x) => ({ number: x.number, hits: x.hits })), picks: r.picks.map((p) => ({ ...p, title: scenes?.scenes.find((s) => s.id === p.id)?.title || null })) };
       })(),
       summary: summary(ledger),
-      scenes: { count: scenes?.scenes.length || 0, chapters: scenes?.chapters?.length || 0, facts: scenes ? import_scenes2.default.liveFacts(scenes).length : 0, coveredThrough: scenes?.scenes.at(-1)?.end ?? null, firstInside: um.windows.get(chatId) ?? scenes?.window?.firstInside ?? null },
+      scenes: { count: scenes?.scenes.length || 0, chapters: scenes?.chapters?.length || 0, facts: scenes ? import_scenes_generated2.default.liveFacts(scenes).length : 0, coveredThrough: scenes?.scenes.at(-1)?.end ?? null, firstInside: um.windows.get(chatId) ?? scenes?.window?.firstInside ?? null },
       threads: ledger?.threads || [],
       storyDate: um.storyToday(chatId, ledger),
       deadlines: ledger ? import_ledger2.default.deadlineList(ledger, um.storyToday(chatId, ledger)) : [],
@@ -6978,17 +6978,17 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
   add("GET", "chats/:id/scenes", async (ctx) => {
     const chatId = chatOf(ctx);
     await ctx.um.ensureChat(chatId);
-    return ctx.um.loadScenes(chatId) || import_scenes2.default.emptyStore();
+    return ctx.um.loadScenes(chatId) || import_scenes_generated2.default.emptyStore();
   });
   const editScenes = async (um, chatId, edit) => {
     await um.ensureChat(chatId);
     const out = await um.enqueue(`scenes:${chatId}`, async () => {
-      const st = structuredClone(um.loadScenes(chatId) || import_scenes2.default.emptyStore());
+      const st = structuredClone(um.loadScenes(chatId) || import_scenes_generated2.default.emptyStore());
       const res = edit(st);
       um.saveScenes(chatId, st);
       um.clearRecall(chatId);
       um.enqueue(`scenes:${chatId}`, () => um.indexScenes(chatId, um.loadScenes(chatId)).then(() => um.flush())).catch(() => {});
-      if (import_scenes2.default.nextRedo(st) && um.chatEnabled(chatId))
+      if (import_scenes_generated2.default.nextRedo(st) && um.chatEnabled(chatId))
         um.processScenes(chatId, { reason: "edit" }).catch(() => {});
       return res;
     });
@@ -7005,13 +7005,13 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
       for (const field of ["title", "summary", "time", "place", "weather"])
         if (typeof body?.[field] === "string")
           scene[field] = body[field].trim();
-      import_scenes2.default.markStale(st, { scene: scene.id });
+      import_scenes_generated2.default.markStale(st, { scene: scene.id });
       if (body?.present !== undefined)
         scene.present = nameList(body.present);
       const str = (v) => typeof v === "string" && v.trim() ? v.trim() : null;
       if (Array.isArray(body?.events)) {
         scene.events = body.events.filter((e) => e && typeof e.text === "string" && e.text.trim()).map((e) => ({ text: e.text.trim(), time: str(e.time), why: str(e.why), importance: ["critical", "major", "minor"].includes(e.importance) ? e.importance : "major", quotes: Array.isArray(e.quotes) ? e.quotes : [] }));
-        import_scenes2.default.relinkLoose(scene);
+        import_scenes_generated2.default.relinkLoose(scene);
       }
       if (Array.isArray(body?.recollections)) {
         scene.recollections = body.recollections.filter((r) => r && typeof r.who === "string" && r.who.trim()).map((r) => {
@@ -7051,7 +7051,7 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
         chapter.keep = body.keep.map((t) => String(t).trim()).filter(Boolean).slice(0, 12);
       chapter.edited = true;
       delete chapter.stale;
-      import_scenes2.default.markStale(st, { chapter: chapter.id });
+      import_scenes_generated2.default.markStale(st, { chapter: chapter.id });
       return chapter;
     });
   });
@@ -7078,7 +7078,7 @@ function registerMemoryRoutes(router, service, { onChange = () => {} } = {}) {
       const fact = st.facts.find((x) => x.id === ctx.params.factId);
       if (!fact)
         throw Error("\uD574\uB2F9 \uC0AC\uC2E4\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
-      import_scenes2.default.editFact(fact, {
+      import_scenes_generated2.default.editFact(fact, {
         text: typeof body?.text === "string" ? body.text.trim() : undefined,
         about: typeof body?.about === "string" ? body.about.trim() : undefined,
         unaware: body?.unaware !== undefined ? nameList(body.unaware) : undefined,

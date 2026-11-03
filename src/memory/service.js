@@ -2,7 +2,8 @@
 //
 // Kept from the original (same logic, same order, same numbers): batching and retry/halving of the ledger reads, the tidy pass,
 // scene folding, chapters / arcs / fact merges, the {{기억}} text (renderLedger), the recall (meaning search + model pick + fast
-// pick), the hand-edit helpers, the job queues. The pure logic lives in ./core/*.cjs (byte-identical copies of the originals).
+// pick), the hand-edit helpers, the job queues. Pinned ./core originals stay byte-identical; generated scene/recall modules
+// apply the Lumiverse field limits at build time (scripts/generate-core.mjs).
 // Replaced: the Marinara engine (db / storage / provider-registry) by the host adapter, files by userStorage (src/common/store.js),
 // Fastify routes by src/memory/routes.js, the preHandler/onResponse hooks by the interceptor and GENERATION_ENDED
 // (src/backend.js), process.env knobs by `tunables` / settings, the game-state tracker clock by the date lines in the messages.
@@ -13,12 +14,12 @@
 // The sync parts of the original (renderLedger, settings) read in-memory caches; every async entry point first awaits
 // ensureChat()/ready() so the caches are filled.
 import L from './core/ledger.cjs';
-import S from './core/scenes.cjs';
-import R from './core/recall.cjs';
+import S from './core/scenes.generated.cjs';
+import R from './core/recall.generated.cjs';
 import V from './core/vectors.cjs';
 import TR from './core/translate.cjs';
 
-export const VERSION = '1.1.1-lv.1';
+export const VERSION = '1.1.2-lv.1';
 export const RECALL_MODES = ['model', 'fast', 'off'];
 const CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export function safeChatId(chatId) {

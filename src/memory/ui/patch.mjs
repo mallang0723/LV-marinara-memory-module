@@ -12,6 +12,8 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     const sha = createHash('sha256').update(runtime).digest('hex');
     if (sha !== RUNTIME_SHA256) throw new Error(`memory screen original changed: sha256 ${sha} != pinned ${RUNTIME_SHA256}`);
     let s = runtime;
+    // English story times need more than the first two words even in the scene shelf.
+    s = replaceAnchor(s, "esc((s.time || '').split(/\\s+/).slice(0, 2).join(' '))", "esc(s.time || '')", { name: 'full scene shelf time' });
     s = replaceAnchor(s, "(() => {\n  'use strict';", "export function mountMemory(marinara, LV) {\n  'use strict';", { name: 'iife open' });
     // what build.py of the original did: CSS and version into their places
     s = replaceAnchor(s, "/*__UI_CSS__*/ ''", () => '/*__UI_CSS__*/ ' + JSON.stringify(uiCss), { name: 'ui css' });

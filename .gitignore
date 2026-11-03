@@ -5,7 +5,9 @@ qa-shots/
 .env
 .env.*
 src/**/*.generated.js
+src/**/*.generated.cjs
 
 # Local review report requested by the sync brief (never commit).
 /REPORT-1.1.0.md
 /REPORT-1.1.1.md
+/REPORT-1.1.2.md
