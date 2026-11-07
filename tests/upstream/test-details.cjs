@@ -1,11 +1,12 @@
+// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
 // node --test tests/test-details.cjs
 // Details kept whole, lines from the right scene, a question and its answer together, names, HTML messages.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
-const S = require('../../src/memory/core/scenes.cjs');
-const R = require('../../src/memory/core/recall.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
+const R = require('../../src/memory/core/recall.generated.cjs');
 
 const chat = L.prepareMessages([
   { id: 'm1', number: 1, speaker: '서아', role: 'user', content: '"병원은 안 갈 거야."' },

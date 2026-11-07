@@ -1,8 +1,9 @@
+// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
-const S = require('../../src/memory/core/scenes.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
 test('retries old checked blanks and progresses across batches while preserving edited recipients', () => {
  const messages = L.prepareMessages(Array.from({length:45}, (_,i)=>({id:'m'+i,number:i+1,role:'assistant',content:'카시안이 이리나를 바라봤다.\n"Hello, sweetheart." (안녕, 여보.)'})));
  const quotes=messages.map(m=>({messageId:m.id,number:m.number,sentence:2,text:'"Hello, sweetheart." (안녕, 여보.)',by:'카시안',to:null,recipientChecked:true}));

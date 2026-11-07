@@ -72,7 +72,7 @@ test('inferred knowledge uses the same extended scene time', () => {
 test('each core anchor fails loudly when missing or duplicated, including inferred learned time', () => {
     const original = read('src/memory/core/scenes.cjs');
     const lines = original.split('\n').filter(line => /cleanText\((?:item\.(?:time|place|weather)|e\?\.time),/.test(line));
-    assert.equal(lines.length, 8);
+    assert.equal(lines.length, 9);
     for (const line of lines) {
         assert.throws(() => patchScenes(original.replace(line, '')), /patch anchor .* found 0 time\(s\), expected 1/);
         assert.throws(() => patchScenes(original + '\n' + line), /patch anchor .* found 2 time\(s\), expected 1/);

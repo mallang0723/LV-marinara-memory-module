@@ -6,10 +6,13 @@ import S from './core/scenes.generated.cjs';
 import R from './core/recall.generated.cjs';
 import V from './core/vectors.cjs';
 import TR from './core/translate.cjs';
+import F from './core/features.cjs';
+import { registerRoomRoutes, ROOM_ROUTES } from './room-routes.js';
 import { VERSION, safeChatId, nameList, summary, bounded, RECALL_MODES, RECALL_STYLES, CHAPTER_LENGTHS, RECALL_AMOUNTS } from './service.js';
 
 export const PREFIX = 'memory-module/';
 export const ROUTES = [
+    ...ROOM_ROUTES,
     ['POST', 'settings/language'], ['GET', 'chats/:id/translations'], ['POST', 'chats/:id/translations/retry'],
     ['POST', 'chats/:id/threads/:tid/:action'], ['POST', 'chats/:id/routine'], ['GET', 'chats/:id/scene-error'], ['GET', 'status'],
     ['POST', 'chats/:id/search'], ['POST', 'chats/:id/recall-test'], ['POST', 'settings/embedding'], ['POST', 'settings/recall-style'],
@@ -27,9 +30,16 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
     const add = (method, pattern, fn) => router.add(method, PREFIX + pattern, async ctx => {
         const um = service.forUser(ctx.userId);
         await um.ready();
+        if (ctx.params?.id) {
+            const id = safeChatId(ctx.params.id);
+            await um.ensureChat(id);
+            return um.roomData.using(id, () => fn({ ...ctx, um }));
+        }
         return fn({ ...ctx, um });
     });
     const chatOf = ctx => safeChatId(ctx.params.id);
+
+    registerRoomRoutes(add, chatOf);
 
     // Hand fixes to the ledger: reopen or close one item.
     add('POST', 'chats/:id/threads/:tid/:action', async ctx => {
@@ -286,7 +296,7 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         await um.ensureVectors(chatId);
         const ledger = um.loadLedger(chatId);
         const { cancel: _c1, abort: _a1, cancelReason: _r1, ...job } = um.jobStatus(chatId);
-        const { cancel: _c2, abort: _a2, ...sceneJob } = um.sceneJobs.get(chatId) || { state: 'idle' };
+        const { cancel: _c2, abort: _a2, attributionDiagnostics: _d2, pendingNotes: _n2, ...sceneJob } = um.sceneJobs.get(chatId) || { state: 'idle' };
         const scenes = um.loadScenes(chatId);
         const index = um.loadVectors(chatId);
         const recallEntry = um.recalls.get(chatId);
@@ -300,7 +310,15 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
             chatLang, memoryLanguage: um.memoryLanguage(chatId), writeLanguage: um.writeLanguage(chatId), translationPrep: um.prepareStatus(chatId),
             job,
             sceneJob,
-            speakerTags: false,
+            speakerTags: false, speakerNames: false,
+            organize: um.organizeFor(chatId),
+            features: um.roomData.featureView(chatId),
+            routineSetting: F.resolve(um.settings(), chatId, 'recentLife'),
+            routineGaps: ledger?.routineGaps || [],
+            attributionCheck: F.resolveAttribution(um.settings(), chatId),
+            attributionRuns: um.roomData.get(chatId, 'attribution-log').runs.length,
+            attributionStamp: um.roomData.get(chatId, 'attribution-log').updatedAt || '',
+            selectedCount: 0,
             routine: ledger ? L.renderRoutine(ledger, um.storyNow.get(chatId) || ledger.storyTime || null) : '',
             routineItems: (ledger?.routine || []).map(r => ({ ...r, displayWhat: L.routineDisplayKind(r), key: L.routineKey(r) })),
             storyNow: um.storyNow.get(chatId) || ledger?.storyTime || null,
@@ -314,7 +332,8 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
             })(),
             summary: summary(ledger),
             scenes: { count: scenes?.scenes.length || 0, chapters: scenes?.chapters?.length || 0, facts: scenes ? S.liveFacts(scenes).length : 0, coveredThrough: scenes?.scenes.at(-1)?.end ?? null, firstInside: um.windows.get(chatId) ?? scenes?.window?.firstInside ?? null },
-            threads: ledger?.threads || [],
+            threadStats: { open: ledger?.threads?.filter(t => t.status === 'open').length || 0, emotion: ledger?.threads?.filter(t => t.status === 'open' && t.kind === 'emotion').length || 0, promise: ledger?.threads?.filter(t => t.status === 'open' && t.kind === 'promise').length || 0 },
+            threadsStamp: `${ledger?.updatedAt || ''}:${ledger?.threads?.length || 0}`,
             storyDate: um.storyToday(chatId, ledger),
             deadlines: ledger ? L.deadlineList(ledger, um.storyToday(chatId, ledger)) : [],
             lastNumber: ledger?.lastNumber ?? null,
@@ -383,7 +402,7 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         return ctx.um.loadScenes(chatId) || S.emptyStore();
     });
     const editScenes = async (um, chatId, edit) => {
-        await um.ensureChat(chatId);
+        await um.checkFiles(chatId);
         const out = await um.enqueue(`scenes:${chatId}`, async () => {
             const st = structuredClone(um.loadScenes(chatId) || S.emptyStore());
             const res = edit(st);
@@ -405,12 +424,13 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         return editScenes(ctx.um, chatOf(ctx), st => {
             const scene = st.scenes.find(x => x.id === ctx.params.sceneId);
             if (!scene) throw Error('해당 장면을 찾지 못했습니다.');
+            const before = structuredClone(scene);
             for (const field of ['title', 'summary', 'time', 'place', 'weather']) if (typeof body?.[field] === 'string') scene[field] = body[field].trim();
             S.markStale(st, { scene: scene.id });
             if (body?.present !== undefined) scene.present = nameList(body.present);
             const str = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
             if (Array.isArray(body?.events)) {
-                scene.events = body.events.filter(e => e && typeof e.text === 'string' && e.text.trim()).map(e => ({ text: e.text.trim(), time: str(e.time), why: str(e.why), importance: ['critical', 'major', 'minor'].includes(e.importance) ? e.importance : 'major', quotes: Array.isArray(e.quotes) ? e.quotes : [] }));
+                scene.events = body.events.filter(e => e && typeof e.text === 'string' && e.text.trim()).map(e => ({ ...e, text: e.text.trim(), time: str(e.time), why: str(e.why), importance: ['critical', 'major', 'minor'].includes(e.importance) ? e.importance : 'major', quotes: Array.isArray(e.quotes) ? e.quotes : [] }));
                 S.relinkLoose(scene);
             }
             if (Array.isArray(body?.recollections)) {
@@ -419,6 +439,7 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
                     return { who: r.who.trim(), text: str(r.text), remembers, why: str(r.why), kept: remembers === 'partial' ? str(r.kept) : null };
                 });
             }
+            ctx.um.roomData.learnEdit(chatOf(ctx), st, before, scene);
             scene.edited = true;
             scene.editedAt = new Date().toISOString();
             return scene;
@@ -468,7 +489,8 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
             S.editFact(fact, {
                 text: typeof body?.text === 'string' ? body.text.trim() : undefined,
                 about: typeof body?.about === 'string' ? body.about.trim() : undefined,
-                unaware: body?.unaware !== undefined ? nameList(body.unaware) : undefined,
+                unaware: body?.unknownTo !== undefined ? nameList(body.unknownTo) : body?.unaware !== undefined ? nameList(body.unaware) : undefined,
+                knownBy: body?.knownBy !== undefined ? nameList(body.knownBy) : undefined,
                 guess: body?.guess !== undefined ? nameList(body.guess) : undefined,
             });
             return fact;

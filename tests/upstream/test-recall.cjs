@@ -1,10 +1,11 @@
+// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
 // node --test tests/test-recall.cjs
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
-const S = require('../../src/memory/core/scenes.cjs');
-const R = require('../../src/memory/core/recall.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
+const R = require('../../src/memory/core/recall.generated.cjs');
 
 const scene = (id, start, end, title, summary, events = []) => ({ id, start, end, messages: [], time: null, place: null, title, summary, events, recollections: [], edited: false });
 const store = {

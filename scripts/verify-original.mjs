@@ -1,19 +1,27 @@
-// Provenance check. The six memory core modules and the three screen files must be byte-identical to the pinned upstream
+// Provenance check. The fourteen memory core modules and the three screen files must be byte-identical to the pinned upstream
 // copies (SHA-256 below). UPSTREAM_MEMORY=/path/to/a/checkout/of/tlsiddl/marinara-memory-module additionally compares with that checkout
 // (this fork's `main` branch is such a checkout).
 // Usage: node scripts/verify-original.mjs
 import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 export const PINS = {
-    'src/memory/core/translate.cjs': '019582f8e48f69401e749fc11207e2d330c86ee04dfe38bd15bf570731549df5',
-    'src/memory/core/ledger.cjs': 'a5eefedc8a67aadfb04a116e9c30efe842d44890c92902812611c79d71f694b2',
-    'src/memory/core/scenes.cjs': '209cda809ed8ec9c2032dfcdf6d4bdf0087be834a4e45659dc58219c6fffee29',
-    'src/memory/core/recall.cjs': '0a9403102871b888afe98b56aae16a7e4d73ac0de81658095c8c6ea525544fa2',
-    'src/memory/core/vectors.cjs': '87e898a02bfe08d7cc79bab9279f0544ccb3a2de282313f66d80ddc8afd7b919',
-    'src/memory/core/speakers.cjs': 'e005c5a0801890314b4cb0db70bc84e827433e7cc0f16f3cc8fd32893c7d5ca0',
-    'src/memory/ui/runtime.orig.js': 'b056fc057f258b4d7ccc892340724ffbd62dd095dd14fb13a5dab80fb3d5700d',
-    'src/memory/ui/ui.orig.css': '7ec55c4359c1487da99240fc5b53e016280a9f8b903fda14a247ca1e97a58259',
-    'src/memory/ui/theme.orig.css': 'de5bced8c35480baf962e2f7b6baf24b6fafe217d5d201d30aa498205621f2db',
+    'src/memory/core/ledger.cjs': '52eddd1c15365ba3fc925f8bd67f049393bc92acd53bfcab32969a822b508940',
+    'src/memory/core/scenes.cjs': '6b8799d5052e69009f39c00bfe4a9dfd27b74058624c66803c059bdbf043cf7c',
+    'src/memory/core/recall.cjs': 'c544134e3dae15931a153df1b1c5194771bb1735461bc4e7508fdf9ae2c6b9a6',
+    'src/memory/core/vectors.cjs': 'a317a49b8d7dffb3d3efb1aa054a74d495ef5c2a3a5f2f188469a88b3d86e371',
+    'src/memory/core/speakers.cjs': '74ded6367848f9f52ed372f50000175598e82c6bfbe70ed6b893bf6ecf9f3b89',
+    'src/memory/core/translate.cjs': '1fb6a2232d412952e3918882234c76ccdfc7af8f39abd31beb70857e43a1e50e',
+    'src/memory/core/aliases.cjs': 'afaff01e2bbdd9258fe166c56afeb10fa25cc6a0496969f0147e88fd3b5c0ec8',
+    'src/memory/core/keepsakes.cjs': '919e3de8e9af816a5661e15e6eb6e091b88c7a386aad697feee161a3e481e46a',
+    'src/memory/core/knowledge.cjs': '42e170be29dfa403fe37233e15a27ea50f888b8514bcfa463875dfc7ca796172',
+    'src/memory/core/places.cjs': 'd72e470557d45990c80b5e3c031f6159b76d3793c71bbee8e7107e06ddadf438',
+    'src/memory/core/state.cjs': '9a5a2843b9f91f57232c748d2a27eaa64890d337d32a6f4847b8ab964f2f6025',
+    'src/memory/core/names.cjs': '1cc982d12c5ff7be450949da6720a11e3ea84ece8ec3e944a58bdb4f7a5054cf',
+    'src/memory/core/address.cjs': '47e8dea319451bec189068cfdbf5c70cf7697aecc4dbcfa1c7a4a5af30122914',
+    'src/memory/core/features.cjs': '878764c5f716f4344a01306e42c84fc2bb09bc6c4749bb723495303cee201d47',
+    'src/memory/ui/runtime.orig.js': '47bfacd40f890bae4dd4f0df0abf736abe63a8cedce5a08ed68ac0a5f0f6b2b0',
+    'src/memory/ui/ui.orig.css': 'debd8a8a99fbbe935186aa06165ab021708283fc2e88a5924f6920bd0d7120f6',
+    'src/memory/ui/theme.orig.css': 'bb90898cb08dad340eb0c1381fd0482dc9196f127d70586500a85a7983446310',
 };
 const sha = f => createHash('sha256').update(readFileSync(f)).digest('hex');
 export function verify(root = '.') {

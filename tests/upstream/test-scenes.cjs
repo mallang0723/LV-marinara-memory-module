@@ -1,9 +1,10 @@
+// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
 // node --test tests/test-scenes.cjs
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
-const S = require('../../src/memory/core/scenes.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
 
 const chat = L.prepareMessages([
   { id: 'a1', number: 1, speaker: '하루', content: '§RP | 24-10-18 (금) | 00:05 | 서재 | 안개§ 하루가 스테이크를 먹였다.' },
@@ -171,6 +172,7 @@ test('a translation on the next line comes with the quote, also for lines saved 
   assert.match(text, /- \[02:52\] 하준이 서아에게 고백함 \(계기: 서아가 졸라서\)\n  하준 → 서아: "I love you, Ari\." \(사랑해, 아리\.\)/);
   // A line saved by an older version, without its translation.
   store.scenes[0].events[0].quotes[0].text = '<speaker="하준">하준 | "I love you, Ari."';
+  delete store.scenes[0].events[0].quotes[0].translation;
   assert.equal(S.attachTranslations(store, msgs), 1);
   assert.equal(S.attachTranslations(store, msgs), 0);
   assert.match(S.renderScenes(store, null), /\(사랑해, 아리\.\)/);

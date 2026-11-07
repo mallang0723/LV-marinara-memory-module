@@ -15,10 +15,10 @@ const boot = async (opts = {}) => {
     return { f, stop, rpc, logs };
 };
 
-test('all 33 routes of the original module are registered under memory-module/', async () => {
-    assert.equal(ROUTES.length, 33);
+test('all 55 supported routes are registered under memory-module/', async () => {
+    assert.equal(ROUTES.length, 55);
     const { f } = await boot();
-    // an unknown route is 404, the 33 known ones are not
+    // an unknown route is 404, the supported ones are not
     const miss = await f.rpc('GET', 'memory-module/nope');
     assert.equal(miss.ok, false); assert.equal(miss.status, 404);
     const fine = await Promise.all(ROUTES.map(async ([method, pattern]) => {
@@ -33,7 +33,7 @@ test('GET chats/:id has every field the screen reads', async () => {
     const { rpc } = await boot();
     const r = await rpc('GET', 'chats/chat-a');
     assert.equal(r.ok, true, r.error);
-    for (const k of ['enabled', 'job', 'sceneJob', 'routine', 'routineItems', 'storyNow', 'personas', 'cast', 'vectors', 'recall', 'summary', 'scenes', 'threads', 'storyDate', 'deadlines', 'lastNumber', 'rendered', 'version', 'health']) assert.ok(k in r.data, `field ${k}`);
+    for (const k of ['enabled', 'job', 'sceneJob', 'routine', 'routineItems', 'storyNow', 'personas', 'cast', 'vectors', 'recall', 'summary', 'scenes', 'threadStats', 'threadsStamp', 'features', 'attributionCheck', 'storyDate', 'deadlines', 'lastNumber', 'rendered', 'version', 'health']) assert.ok(k in r.data, `field ${k}`);
     assert.equal(r.data.enabled, false);
     assert.equal(r.data.scenes.count, 0);
 });
@@ -62,7 +62,7 @@ test('start -> ledger + scenes done, enabled, then GET chats/:id shows them and 
     const r = (await rpc('GET', 'chats/chat-a')).data;
     assert.equal(r.enabled, true);
     assert.ok(r.summary.processed >= 14);
-    assert.ok(r.threads.length >= 1);
+    assert.ok((await rpc('GET', 'chats/chat-a/threads')).data.threads.length >= 1);
     assert.ok(r.rendered.startsWith('[Memory:'));
     const scenes = (await rpc('GET', 'chats/chat-a/scenes')).data;
     assert.ok(scenes.scenes.length >= 1);
@@ -76,13 +76,13 @@ test('hand edits: thread close/reopen/edit, fact edit/delete, scene edit', async
     await rpc('POST', 'settings', { connection: 'conn-a' });
     await rpc('POST', 'chats/chat-a/start', {});
     await waitUntil(async () => (await rpc('GET', 'chats/chat-a')).data.sceneJob.state === 'done');
-    const info = (await rpc('GET', 'chats/chat-a')).data;
+    const info = (await rpc('GET', 'chats/chat-a/threads')).data;
     const t = info.threads[0];
     assert.equal((await rpc('POST', `chats/chat-a/threads/${t.id}/close`, { how: '풀림' })).ok, true);
-    assert.equal((await rpc('GET', 'chats/chat-a')).data.threads[0].status, 'closed');
+    assert.equal((await rpc('GET', 'chats/chat-a/threads')).data.threads[0].status, 'closed');
     assert.equal((await rpc('POST', `chats/chat-a/threads/${t.id}/reopen`, {})).ok, true);
     assert.equal((await rpc('POST', `chats/chat-a/threads/${t.id}/edit`, { title: '고친 제목', dueDate: '24-10-20' })).ok, true);
-    assert.equal((await rpc('GET', 'chats/chat-a')).data.threads[0].title, '고친 제목');
+    assert.equal((await rpc('GET', 'chats/chat-a/threads')).data.threads[0].title, '고친 제목');
     assert.equal((await rpc('POST', `chats/chat-a/threads/${t.id}/nope`, {})).ok, false);
     const scenes = (await rpc('GET', 'chats/chat-a/scenes')).data;
     const sc = scenes.scenes[0];
@@ -103,7 +103,7 @@ test('enable / disable / stop / estimate / status / scene-error / trial / recall
     const est = (await rpc('POST', 'chats/chat-a/estimate')).data;
     assert.equal(est.messages, 15);
     const st = (await rpc('GET', 'status')).data;
-    assert.equal(st.version, '1.1.2-lv.1'); assert.ok(st.embedding && st.health);
+    assert.equal(st.version, '1.2.0-lv.1'); assert.ok(st.embedding && st.health);
     assert.deepEqual((await rpc('GET', 'chats/chat-a/scene-error')).data, { text: null });
     assert.deepEqual((await rpc('GET', 'chats/chat-a/trial')).data, { state: 'none' });
     assert.equal((await rpc('POST', 'chats/chat-a/trial', { from: 5, to: 2 })).ok, false);

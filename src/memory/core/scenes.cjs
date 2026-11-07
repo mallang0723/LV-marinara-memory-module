@@ -5,11 +5,18 @@
 // Pure logic only; the engine side lives in service.cjs.
 
 const L = require('./ledger.cjs');
+const A = require('./aliases.cjs');
+const St = require('./state.cjs');
+const Pl = require('./places.cjs');
+const K = require('./knowledge.cjs');
+const Ks = require('./keepsakes.cjs');
 
 const SCENES_VERSION = 1;
 const REMEMBERS = ['full', 'partial', 'none'];
 const MAX_EVENTS = 8;
-const MAX_QUOTES_PER_EVENT = 6;
+// One source of truth for how many quotes an event keeps, by the room's quote mode.
+const QUOTE_LIMITS = { dialogue: 6, narration: 6, both: 8 };
+const quoteLimit = (mode) => QUOTE_LIMITS[mode] || QUOTE_LIMITS.dialogue;
 const MAX_UNCITED = 5;
 
 function emptyStore() {
@@ -26,7 +33,7 @@ function emptyStore() {
  * The newest `minVisible` messages are never folded: they are the ones a reroll or edit touches.
  * Returns { slice, required }: the model must close scenes at least through message number `required`.
  */
-function nextSlice(store, messages, window, { maxChars = 20000, lookahead = 6, lead = 8, minVisible = 8, minPending = 1 } = {}) {
+function nextSlice(store, messages, window, { maxChars = 20000, maxMessages = Infinity, lookahead = 6, lead = 8, minVisible = 8, minPending = 1 } = {}) {
   const foldLine = Math.max(0, messages.length - Math.max(window - lead, minVisible));
   const from = store.covered.length;
   if (foldLine - from < Math.max(1, minPending)) return null;
@@ -36,7 +43,7 @@ function nextSlice(store, messages, window, { maxChars = 20000, lookahead = 6, l
     const cost = messages[i].content.length + 40;
     // A reply right after a user message comes along even past the size limit.
     const answers = slice.length && slice.at(-1).role === 'user' && messages[i].role !== 'user';
-    if (slice.length && size + cost > maxChars && !answers) break;
+    if (slice.length && (size + cost > maxChars || slice.length >= maxMessages) && !answers) break;
     slice.push(messages[i]);
     size += cost;
   }
@@ -72,16 +79,18 @@ const SCENE_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 지나�
 - weather: 그 장면의 날씨나 하늘(예: "비", "첫눈", "맑고 추움", "장마"). 본문이나 "(… 날씨: …)" 표시에 나온 것만 짧게. 짐작하지 말고, 없으면 null.
 - title: 짧은 제목.
 - summary: 1~2문장. 무슨 일이 있었고 무엇이 바뀌었는지.
-- events: 중요한 일 3~6개를 순서대로. 각 사건은 한두 문장(text)과, 그 순간을 보여 주는 대사나 문장(quotes) 1~4개.
+- events: 중요한 일 3~6개를 순서대로. 각 사건은 한두 문장(text)과, 그 순간을 보여 주는 대사나 문장(quotes) 1~4개, 최대 6개.
   날짜·기한·시각·금액·횟수·장소·조건("~하면 ~하기로")이 나오면 사건 text에 빠뜨리지 말고 그대로 적어. 예) "하준이 서아에게 원서 접수가 7월 20일 마감이라고 알려 줌".
+  사건은 실제 발생 순서대로 쓰고, 서로 떨어진 두 발화 사이에 반응이나 행동이 있으면 이를 별도 사건으로 나눠. 각 사건의 인용도 원문 순서대로 배치해. 뒤의 메시지에 작중 시각이 있으면 해당 사건의 time에 적어. 한 번 한 행동을 반복되는 습관이나 버릇으로 단정하지 마. 다른 인물이 대사의 뜻을 잘못 이해한 경우 그 오해를 사실로 쓰지 말고, 원문 발언과 해석을 구분해.
   대사가 있으면 대사를 우선해. 고백, 약속, 폭로, 결정적인 말은 꼭 대사로 남겨.
   [사용자 캐릭터]의 말도 요약하지 말고 대사 그대로 남겨. 나중에 다른 인물이 "너 그때 이렇게 말했잖아"라고 꺼낼 수 있어야 해. 특히 부탁, 약속, 고백, 질문, 변명, 감정을 드러낸 말, 그 장면을 움직인 말. 그 말에 대한 다른 인물의 대답이 있으면 같은 사건에 함께 넣어. 묻고 답하는 대화는 질문과 대답을 모두 인용해(사건 하나에 대사 최대 6개).
   사용자 캐릭터의 대사가 있는 장면이면 적어도 한두 개는 꼭 인용해.
-  대사마다 by(말한 사람)와 to(들은 사람, 여럿이면 "도윤·하준")를 적어. 서술 문장이면 둘 다 null.
+  대사마다 by(말한 사람)와 to(직접 말을 건 상대, 여럿이면 "도윤·하준")를 적어. 이름표가 없는 대사도 주변 행동과 대화의 흐름에서 화자를 파악해. 주인공이 듣고 있거나 메시지를 작성했다는 이유만으로 상대나 화자를 정하지 마. 대화가 누구에게 향하는지 불분명하면 to는 null, 화자가 불분명하면 by는 null로 둬. byEvidence와 toEvidence에 각각 판단을 뒷받침하는 원문 구절을 정확히 옮겨(없으면 null). 서술 문장이면 모두 null.
   사건 text는 '누가 누구에게 무엇을 어떻게 했는지'가 드러나게 써. 그 일이 일어난 작중 시각이 보이면 time에, 그렇게 한 이유나 계기가 원문에 있으면 why에 적어(없으면 null, 짐작 금지). 이유에 조건이나 날짜가 있으면 줄이지 마.
   인용은 그 장면 안의 메시지에서만 골라. 다른 장면의 대사를 붙이지 마.
   장면 안의 모든 메시지가 사건 몇 개로든 다뤄져야 해. 인용 없이 넘어간 메시지가 몇 개씩 이어지면 안 돼.
   사건마다 importance를 적어: critical(관계나 이야기가 바뀌는 일: 고백, 폭로, 결정적 약속, 처음 있는 일), major(나중에 다시 꺼낼 만한 일), minor(그 장면 안의 일).
+  각 사건에는 with도 적어: 그 사건이 일어난 자리에 실제로 같이 있던 사람(그 자리에 없는데 이름만 나오거나 떠올리거나 이야기에 오른 사람은 넣지 마). 장면 안에서 장소가 바뀌거나 둘로 나뉘면 사건마다 다르게 적어. 전화·문자로 이어진 사람은 그 통화·문자 사건의 with에만 넣어.
 - present: 장면에 실제로 있던 인물 모두(사용자 캐릭터 포함, [등장인물]에 없는 주변 인물도 이름이나 호칭 그대로). 전화·문자로만 이어진 사람도 넣되, 그 사람이 보거나 듣지 못한 일은 아래 unaware로 따로 적어.
 - recollections: 장면에 실제로 있었던 인물마다 1~2문장. 그 인물 입장에서 이 장면이 어떻게 남았는지, 그때 무엇을 느꼈고 무엇이 마음에 걸렸는지.
   그 인물이 보지 못한 일, 다른 인물의 속마음은 넣지 마. 속마음은 이 장면 본문에 드러난 것만 써. 뒤에서 밝혀질 진짜 이유를 앞 장면 회상에 미리 넣지 마.
@@ -101,6 +110,7 @@ const SCENE_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 지나�
     아는지 모르는지 원문에 안 나오면 적지 마.
     about에 적은 인물(사실의 주인공)은 자기 일을 알아. unaware에 넣지 마. 사용자 캐릭터가 몰랐다는 내용은 unaware가 아니라 text에 써(예: "서아는 최근에야 알게 됐다").
     '(추정)'인 사실은 다른 인물도 보고 짐작할 수 있다는 뜻이니 unaware를 비워.
+  knownBy: 숨긴 일·비밀·귓속말처럼 아는 사람이 갈리는 사실일 때만, 이 장면에서 그 사실을 직접 보거나 듣거나 말해서 알게 된 인물(알려 준 인물 포함)을 적어. 모두가 아는 평범한 사실이거나 확실하지 않으면 [](비움). 모르는 사람은 unaware에, 나중에 알게 되는 사람은 learned에 적어(여기 넣지 마).
     원문에 그 인물이 "짐작은 갔다", "눈치챘다", "뭔가 숨긴다는 건 안다"처럼 나오면 모르는 게 아니야. 자세히는 모르고 짐작만 하면 {"who":"하준","why":"숨겼지만 짐작은 함","guess":true}로 적어.
   [사용자 캐릭터]의 감정·속마음·성향은 그 인물이 대사로 직접 밝혔을 때만 단정해서 써. 지문이나 다른 인물의 말로만 드러났으면 끝을 "~인 것으로 보인다(추정)"로 써.
 
@@ -129,9 +139,9 @@ const SCENE_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 지나�
 
 출력 형식:
 {"scenes":[{"end":25,"time":"…","place":"…","weather":"… 또는 null","title":"…","summary":"…","present":["인물"],
- "events":[{"text":"누가 누구에게 무엇을 어떻게","time":"작중 시각 또는 null","why":"이유·계기 또는 null","importance":"critical|major|minor","quotes":[{"n":"23.4","q":"…","by":"말한 사람 또는 null","to":"들은 사람 또는 null"}]}],
+ "events":[{"text":"누가 누구에게 무엇을 어떻게","time":"작중 시각 또는 null","why":"이유·계기 또는 null","importance":"critical|major|minor","with":["그 사건 때 그 자리에 있던 인물"],"quotes":[{"n":"23.4","q":"…","by":"말한 사람 또는 null","to":"들은 사람 또는 null","byEvidence":"화자 근거 또는 null","toEvidence":"수신자 근거 또는 null"}]}],
  "recollections":[{"who":"인물","text":"…","remembers":"full|partial|none","why":"…또는 null","kept":"…또는 null"}],
- "facts":[{"about":"인물","text":"…","evidence":[{"n":"23.9","q":"…"}],"replaces":null,"unaware":[{"who":"인물","why":"이유","guess":false}]}],
+ "facts":[{"about":"인물","text":"…","evidence":[{"n":"23.9","q":"…"}],"replaces":null,"unaware":[{"who":"인물","why":"이유","guess":false}],"knownBy":["인물"]}],
  "learned":[],"later":[]}]}`;
 
 const PRESENCE_SCENES = 40;
@@ -236,7 +246,7 @@ function absentFrom(scene, cast) {
   return cast.filter((n) => (!present.includes(n) || blank.has(n)) && !heard.has(n));
 }
 
-function buildScenePrompt(store, slice, required, problem = null) {
+function buildScenePrompt(store, slice, required, problem = null, preferences = {}) {
   const parts = [];
   const known = liveFacts(store).slice(-80);
   const cast = castOf(store);
@@ -268,8 +278,22 @@ function buildScenePrompt(store, slice, required, problem = null) {
     parts.push(`[${message.number}] ${message.speaker}${L.clockNote(message)}:`);
     message.sentences.forEach((sentence, index) => parts.push(`[${message.number}.${index + 1}] ${String(sentence).replace(/\s*\n\s*/g, ' / ')}`));
   }
+  const guidance = [];
+  const base = preferences.quoteMode === 'both'
+    ? SCENE_PROMPT.replace('(quotes) 1~4개, 최대 6개', `(quotes) 대사와 서술 합쳐 2~${quoteLimit('both') - 2}개, 최대 ${quoteLimit('both')}개`).replace('(사건 하나에 대사 최대 6개)', `(사건 하나에 인용 최대 ${quoteLimit('both')}개)`)
+    : SCENE_PROMPT;
+  if (preferences.detailLevel === 'detailed') guidance.push('장면의 중요한 사건을 빠뜨리지 않도록 행동, 반응, 대화의 맥락과 상황 변화를 구체적으로 기록해. 서로 다른 단계나 반응은 시간순으로 구분해. 추측은 사실로 쓰지 마. 사건이 많으면 한 장면에 우겨 넣지 말고 장면을 나눠.');
+  if (preferences.detailLevel === 'very_detailed') guidance.push('장면을 아주 자세히 기록해. 사건의 계기, 행동, 표정, 접촉, 상대의 반응과 상황 변화, 중요한 대화의 앞뒤를 순서대로 구분해. 반복을 만들어 내거나 추측을 사실로 쓰지 마. 8개 사건을 넘길 흐름은 여러 장면으로 나눠 각 부분을 보존해.');
+  if (preferences.npcCoverage === 'expanded') guidance.push('1:1 대화에서도 주변 NPC·모브가 실제로 한 말·행동과 역할, 사건에 미친 영향 및 상대 반응을 구체적으로 정리해. 이름이 없는 단역(경비원, 운전기사, 웨이터 두 명 등)이 등장해 행동하거나 말하면 장면 present에 역할 이름("경비원", "운전기사", "웨이터")으로 적고, 그 자리에 실제로 있던 사건의 with에도 넣어. 이들의 눈에 띄는 행동·대사는 사건 text에 적어. 이름이나 성격을 지어내지 마. 같은 역할은 장면이 달라도 같은 호칭으로 적어.');
+  if (preferences.quoteMode === 'narration') guidance.push('인용은 사건의 중요한 서술 문장 위주로 골라. 중요 문답·약속·거절의 대사도 함께 보존해. 서술의 by와 to는 null로 둬.');
+  if (preferences.quoteMode === 'both') guidance.push(`사건의 대사와 중요한 서술을 모두 인용해. 각 사건에서 중요한 대사와 행동·표정·접촉·상황 변화의 서술을 각각 원문 문장 번호로 인용해. 대사가 있는 사건도 관련 서술이 있으면 최소 한 문장을 별도 quotes 항목으로 넣어. 원문에 없으면 만들지 마. 사건마다 최대 ${quoteLimit('both')}개. 질문과 답변은 함께 보존하고 서술의 by와 to는 null로 둬. 이름·철자 공개 뒤의 질문과 반응처럼 새 전개가 있으면 별도 사건을 만들어 그 대사를 직접 연결해.`);
+  // Optional records (인물 상태, 장소): added only while the room's switch is on, so a room without them gets the same prompt as before.
+  const extras = [];
+  if (preferences.characterState) extras.push(St.PROMPT);
+  if (preferences.places) extras.push(Pl.PROMPT);
+  if (preferences.keepsakes) extras.push(Ks.PROMPT);
   return [
-    { role: 'system', content: SCENE_PROMPT },
+    { role: 'system', content: base + (guidance.length ? '\n\n사용자가 선택한 정리 우선순위 (위의 대사 우선 규칙보다 우선):\n' + guidance.join('\n') : '') + (extras.length ? '\n\n' + extras.join('\n\n') : '') },
     { role: 'user', content: parts.join('\n') },
   ];
 }
@@ -310,34 +334,97 @@ const FLEETING = /(^|\s)(곧|지금은?|요즘|오늘|당분간|이번에는?)\s
 /** A fact about a change ("…을 알게 됐다", "몰랐다", "끊었다") reads with when it happened. */
 const DATED = /(몰랐|알게|알아챘|깨달|되었|됐다|바뀌|시작했|끊었|그만두|헤어|사귀|결혼|이사)/;
 
-const isTranslation = (text) => typeof text === 'string' && /^\(.*[가-힣].*\)$/.test(untag(text));
-const hasTranslation = (text) => /\([^()]*[가-힣][^()]*\)$/.test(untag(text));
+// A translation line as models write it after an original: "(…)", "（…）", "*(…)*", "_(…)_".
+const TRANSLATION_LINE = /^[*_\s]*[(（]([\s\S]*[가-힣][\s\S]*)[)）][*_\s]*$/;
+const isTranslation = (text) => typeof text === 'string' && TRANSLATION_LINE.test(untag(text));
+const hasTranslation = (text) => /[(（][^()（）]*[가-힣][^()（）]*[)）][*_\s]*$/.test(untag(text));
 const isSpoken = (text) => /^["“'‘「『]/.test(text);
+/** A stored quote's kind: what was recorded when it was made, else read from its text (older data). */
+const isDialogue = (q) => (q?.kind ? q.kind === 'dialogue' : isSpoken(parseLine(q?.text).text));
 
-// Only pair an adjacent Korean parenthetical with a complete quoted foreign-language line.
-// This avoids treating ordinary parenthetical narration as a translation.
+/** Text in another language than Korean: letters, and Korean (a name, say) at most a small part of them. */
+function mostlyForeign(text) {
+  const letters = String(text || '').match(/\p{L}/gu) || [];
+  const hangul = letters.filter((c) => /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(c)).length;
+  return letters.length - hangul >= 2 && hangul * 4 <= letters.length;
+}
+const CLOSE_QUOTE = /["”’'」』]\s*[*_]*\s*$/;
+// Only pair an adjacent Korean parenthetical with a complete quoted foreign-language line: one that is spoken
+// ("Stay.") or one whose narration ends with the spoken words (He whispered, "Stay."). Ordinary parenthetical
+// narration is not a translation.
+const foreignQuote = (text) => {
+  const t = String(text || '').trim();
+  if (isSpoken(t)) return /\p{L}/u.test(t) && mostlyForeign(t);
+  if (!CLOSE_QUOTE.test(t)) return false;
+  const open = Math.max(t.lastIndexOf('"', t.replace(CLOSE_QUOTE, '').length - 1), t.lastIndexOf('“'), t.lastIndexOf('「'), t.lastIndexOf('『'));
+  return open >= 0 && mostlyForeign(t.slice(open));
+};
 function bilingualQuote(pointer, index) {
   let first = pointer;
   if (isTranslation(pointer.text)) {
     const previous = index.get(`${pointer.number}.${pointer.sentence - 1}`);
     const preceding = previous && parseLine(previous.text).text;
-    if (preceding && isSpoken(preceding) && /[A-Za-z]/.test(preceding) && !hasTranslation(preceding)) first = previous;
+    if (preceding && foreignQuote(preceding) && !hasTranslation(preceding)) first = previous;
   }
   const next = index.get(`${first.number}.${first.sentence + 1}`);
   const spoken = parseLine(first.text).text;
-  if (isSpoken(spoken) && /[A-Za-z]/.test(spoken) && !hasTranslation(spoken) && isTranslation(next?.text)) {
+  if (foreignQuote(spoken) && !hasTranslation(spoken) && isTranslation(next?.text)) {
     return { ...first, text: `${first.text} ${next.text}` };
   }
   return pointer;
 }
 
-function resolveQuotes(items, index, slice) {
+const TRANSLATION_AFTER_QUOTE = /(["”’」』])(\s*[*_]*\s*[(（]([^()（）]*[가-힣][^()（）]*)[)）][*_]*)/g;
+/**
+ * A saved line split into the original and its Korean translation: `"EN" (KO)` → { text: '"EN"', translation: 'KO' }.
+ * The translation may follow the line, sit right after the spoken words inside narration, or come one per quoted
+ * part. A Korean line, or a Korean aside after a Korean line, is not a translation: it stays whole.
+ */
+function splitBilingual(raw) {
+  const text = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return { text, translation: null };
+  const tail = text.match(/^([\s\S]*?\S)\s*[*_]*[(（]([^()（）]*[가-힣][^()（）]*)[)）][*_]*$/);
+  if (tail && mostlyForeign(tail[1]) && !hasTranslation(tail[1])) {
+    const inner = splitBilingual(tail[1]);
+    return { text: inner.text, translation: [inner.translation, tail[2].trim()].filter(Boolean).join(' ') };
+  }
+  const found = [];
+  const rest = text.replace(TRANSLATION_AFTER_QUOTE, (all, close, paren, inner, at) => {
+    const before = text.slice(0, at + 1);
+    const open = Math.max(before.lastIndexOf('"', at - 1), before.lastIndexOf('“'), before.lastIndexOf('「'), before.lastIndexOf('『'));
+    if (open < 0 || !mostlyForeign(before.slice(open))) return all;
+    found.push(inner.trim());
+    return close;
+  });
+  if (!found.length) return { text, translation: null };
+  return { text: rest.replace(/\s+([,.!?…])/g, '$1').replace(/\s+/g, ' ').trim(), translation: found.join(' ') };
+}
+/** A saved line the way it is shown and recalled: the original, then its translation in brackets. */
+function quoteText(q) {
+  const text = String(q?.text ?? '');
+  const tr = typeof q?.translation === 'string' ? q.translation.trim() : '';
+  return tr ? `${text} (${tr})` : text;
+}
+/** The original and translation of a line as the source gives it; in place. Returns whether anything changed. */
+function setQuoteText(q, raw) {
+  const parts = splitBilingual(raw);
+  const before = JSON.stringify([q.text, q.translation ?? null]);
+  q.text = parts.text;
+  if (parts.translation) q.translation = parts.translation;
+  else delete q.translation;
+  return before !== JSON.stringify([q.text, q.translation ?? null]);
+}
+
+function resolveQuotes(items, index, slice, verifyAttribution = false, names = []) {
   const roles = new Map(slice.map((m) => [m.number, m]));
   const out = [];
   const seen = new Set();
   for (const raw of Array.isArray(items) ? items : []) {
     let pointer = L.resolveEvidence([raw], index)[0];
-    if (!pointer) continue;
+    // Do not trust an existing number when the supplied phrase does not occur there.
+    // resolveEvidence may otherwise retain an unrelated numbered sentence.
+    const phrase = typeof raw === 'object' && raw ? squash(raw.q) : '';
+    if (!pointer || (phrase.length >= 2 && !squash(pointer.text).includes(phrase))) continue;
     pointer = bilingualQuote(pointer, index);
     const key = `${pointer.number}.${pointer.sentence}`;
     if (seen.has(key)) continue;
@@ -345,10 +432,31 @@ function resolveQuotes(items, index, slice) {
     const line = parseLine(pointer.text);
     const message = roles.get(pointer.number);
     const spoken = isSpoken(line.text);
-    const by = line.by || (spoken ? cleanText(raw?.by, 40) || (message?.role === 'user' ? message.speaker : null) : null);
-    out.push({ ...pointer, text: line.text, by, to: by ? cleanText(raw?.to, 60) : null });
+    const nearby = (message?.sentences || []).slice(Math.max(0, pointer.sentence - 4), pointer.sentence + 3).join(' ');
+    const hasProof = (proof) => typeof proof === 'string' && squash(proof).length >= 4 && squash(nearby).includes(squash(proof));
+    const modelBy = cleanText(raw?.by, 40);
+    let by = line.by || (spoken ? (verifyAttribution && !hasProof(raw?.byEvidence) ? null : modelBy) || (message?.role === 'user' ? message.speaker : null) : null);
+    // A name the room's name table knows is written as its canonical name (an empty table changes nothing).
+    if (by) by = A.rewriteName(by);
+    let to = by ? A.rewriteName(cleanText(raw?.to, 60)) : null;
+    if (to && (to === by || (verifyAttribution && !hasProof(raw?.toEvidence)))) to = null;
+    // A person the line calls by name ("Signor X, …") is the one spoken to, not the speaker.
+    if (by && !line.by && names.length && addressedIn(line.text, names).names.some((n) => samePerson(n, by, names))) { by = null; to = null; }
+    const parts = splitBilingual(line.text);
+    out.push({ ...pointer, text: parts.text, ...(parts.translation ? { translation: parts.translation } : {}), kind: spoken ? 'dialogue' : 'narration', by, to });
   }
   return out;
+}
+
+// Keep one narrative source in mixed mode even if the model listed it after many lines.
+function limitQuotes(quotes, mode) {
+  const limit = quoteLimit(mode);
+  const selected = quotes.slice(0, limit);
+  if (mode === 'both' && !selected.some((q) => !isDialogue(q))) {
+    const narrative = quotes.slice(limit).find((q) => !isDialogue(q));
+    if (narrative) selected[limit - 1] = narrative;
+  }
+  return selected.sort((a, b) => a.number - b.number || a.sentence - b.sentence);
 }
 
 /** "도윤은 하준을…" about 도윤 → "하준을…" */
@@ -393,6 +501,34 @@ function endIndex(item, slice, byNumber) {
  */
 function ownEvents(item) {
   return (Array.isArray(item?.events) ? item.events : []).filter((e) => cleanText(e?.text, 500)).slice(0, MAX_EVENTS);
+}
+
+/**
+ * Who was physically there for one line: the people of its event, or (a line not linked to an event) of the event nearest
+ * to it in the story; an event with no such list, or an older scene without any, falls back to the whole scene's list.
+ */
+function eventAt(scene, event, q) {
+  let at = event;
+  if (!at && Array.isArray(scene.events)) {
+    const key = (x) => x.number * 10000 + (x.sentence || 0);
+    let best = Infinity;
+    for (const ev of scene.events) for (const x of ev.quotes || []) { const d = Math.abs(key(x) - key(q)); if (d < best) { best = d; at = ev; } }
+  }
+  return at || null;
+}
+const presenceOf = (scene, at) => (at?.with?.length ? at.with : scene.present || []);
+
+/** The people the model gave as being at one event: cast and the user's character by their full name, others as written. */
+/** People in a scene who are neither the cast nor the user's characters: the minor characters around them. */
+function extrasOf(present, store) {
+  const personas = store.personas || [];
+  const cast = castOf(store);
+  return [...new Set((present || []).filter((n) => typeof n === 'string' && n && !personas.includes(n) && !L.matchName(n, cast)))];
+}
+
+function eventPresence(raw, cast, personas) {
+  const list = splitNames(raw);
+  return [...new Set([...castNames(list, cast), ...list.filter((n) => personas.includes(n) || !castNames([n], cast).length)])];
 }
 
 function joinAnswers(raw, slice, byNumber) {
@@ -453,7 +589,7 @@ function linkQuote(scene, quote, speakerOf) {
   // Who speaks and who is spoken to say nothing about the topic: their names (and short forms) are left out.
   const names = [who, quote.to].filter(Boolean).flatMap((n) => [n, ...L.nameKeys(n)]).sort((a, b) => b.length - a.length);
   const withoutSpeaker = (text) => names.reduce((t, n) => t.split(n).join(' '), String(text || ''));
-  const words = withoutSpeaker(quote.text);
+  const words = withoutSpeaker(quoteText(quote));
   let best = null;
   let score = 0;
   let tied = false;
@@ -471,14 +607,14 @@ function linkQuote(scene, quote, speakerOf) {
  * A line cited under the wrong scene goes to the event of its own scene that it clearly fits. When none does,
  * it is kept on that scene as a line not yet linked (scene.loose), and is matched again when the events change.
  */
-function placeStray(made, stray, speakerOf) {
+function placeStray(made, stray, speakerOf, mode = 'dialogue') {
   const same = (a, b) => a.number === b.number && a.sentence === b.sentence;
   for (const { quote } of stray) {
     const scene = made.find((x) => quote.number >= x.start && quote.number <= x.end);
     if (!scene) continue;
     if (scene.events.some((e) => e.quotes.some((q) => same(q, quote))) || (scene.loose || []).some((q) => same(q, quote))) continue;
     const event = linkQuote(scene, quote, speakerOf);
-    if (event && event.quotes.length < MAX_QUOTES_PER_EVENT + 2) event.quotes.push(quote);
+    if (event && event.quotes.length < quoteLimit(mode)) event.quotes.push(quote);
     else (scene.loose ||= []).push(quote);
   }
 }
@@ -500,26 +636,79 @@ function relinkLoose(scene, speakerOf) {
   return moved;
 }
 
-/** An event with no line at all gets the sentence of its scene that it describes best, when one clearly fits. */
-function supportEvents(scene, index, slice) {
+/** Add only clear narrative support from a cited message; ambiguous matches stay unlinked. */
+function supportEvents(scene, index, slice, quoteMode) {
   for (const e of scene.events) {
-    if (e.quotes.length) continue;
-    let best = null;
-    let score = 0;
+    const wantNarration = quoteMode === 'both' || quoteMode === 'narration';
+    if (e.quotes.length && (!wantNarration || e.quotes.some((q) => !isDialogue(q)))) continue;
+    const citedMessages = new Set(e.quotes.map((q) => q.number));
+    let best = null, score = 0, tied = false;
     for (const p of index.values()) {
       if (p.number < scene.start || p.number > scene.end) continue;
-      const sc = overlap(e.text, p.text);
-      if (sc > score) [best, score] = [p, sc];
+      if (citedMessages.size && !citedMessages.has(p.number)) continue;
+      const line = parseLine(p.text).text;
+      if (isSpoken(line) || isTranslation(line)) continue;
+      // A short line can coincidentally overlap almost completely with an unrelated event.
+      if (squash(line).length < 8) continue;
+      const sc = overlap(e.text, line);
+      if (sc > score) { best = p; score = sc; tied = false; }
+      else if (sc === score && sc > 0) tied = true;
     }
-    if (best && score >= 0.35) e.quotes = resolveQuotes([{ n: `${best.number}.${best.sentence}` }], index, slice);
+    if (best && score >= 0.35 && !tied) {
+      const added = resolveQuotes([{ n: `${best.number}.${best.sentence}` }], index, slice)[0];
+      if (added && !e.quotes.some((q) => q.number === added.number && q.sentence === added.sentence)) e.quotes.push(added);
+      e.quotes = limitQuotes(e.quotes, quoteMode);
+    }
   }
+}
+
+/** The people whose state changed in a scene, cleaned: only people of the story, only with evidence from this scene's own sentences. */
+function sceneStateOf(raw, { cast, personas, index, inScene }) {
+  const out = [];
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    const who = L.matchName(String(entry?.who ?? '').trim(), [...cast, ...personas]);
+    const cleaned = who && St.cleanEntry(entry, who, { isUser: personas.includes(who) });
+    if (!cleaned) continue;
+    const evidence = L.resolveEvidence(entry.evidence, index).filter(inScene).slice(0, 4).map((p) => ({ number: p.number, sentence: p.sentence }));
+    if (!evidence.length) continue;
+    const at = out.findIndex((x) => x.who === who);
+    if (at >= 0) out[at] = { ...out[at], ...cleaned, evidence: [...out[at].evidence, ...evidence].slice(0, 4) };
+    else out.push({ ...cleaned, evidence });
+  }
+  return out.slice(0, 8);
+}
+/** The meaningful objects of a scene, cleaned: only owners from the story's people, only with evidence from this scene's own sentences. */
+function sceneKeepsakesOf(raw, { cast, personas, index, inScene }) {
+  const out = [];
+  const people = [...cast, ...personas];
+  const person = (n) => (n ? L.matchName(n, people) || '' : '');
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const cleaned = Ks.cleanEntry(item, { person });
+    if (!cleaned) continue;
+    const evidence = L.resolveEvidence(item.evidence, index).filter(inScene).slice(0, 4).map((p) => ({ number: p.number, sentence: p.sentence }));
+    if (!evidence.length) continue;
+    const at = out.findIndex((x) => Ks.keyOf(x.name) === Ks.keyOf(cleaned.name));
+    if (at >= 0) out[at] = { ...out[at], ...cleaned, evidence: [...out[at].evidence, ...evidence].slice(0, 4) };
+    else out.push({ ...cleaned, evidence });
+  }
+  return out.slice(0, Ks.PER_SCENE);
+}
+/** Details of the places of a scene, cleaned. */
+function sceneNotesOf(raw, scenePlace) {
+  const out = [];
+  const list = Array.isArray(raw) ? raw : [];
+  for (const item of list) {
+    const note = Pl.cleanNote(item, list.length === 1 ? scenePlace : null);
+    if (note) out.push(note);
+  }
+  return out.slice(0, 3);
 }
 
 /**
  * Turn a model result into scenes for this slice. Scenes follow each other with no gap, from the slice start,
  * and the last one must reach `required`. Returns { scenes, facts, covered } or { error }.
  */
-function applyScenes(store, result, slice, required, now = new Date().toISOString(), { partial = false } = {}) {
+function applyScenes(store, result, slice, required, now = new Date().toISOString(), { partial = false, quoteMode = 'dialogue', verifyAttribution = false, strictCoverage = false, characterState = false, places = false, keepsakes = false } = {}) {
   const raw = Array.isArray(result?.scenes) ? result.scenes : null;
   if (!raw || !raw.length) return { error: '장면이 비어 있습니다' };
   const index = L.indexBatch(slice);
@@ -543,10 +732,11 @@ function applyScenes(store, result, slice, required, now = new Date().toISOStrin
     const inScene = (p) => p.number >= lo && p.number <= hi;
     const events = (Array.isArray(item.events) ? item.events : [])
       .map((e) => {
-        const all = resolveQuotes(e?.quotes, index, slice);
+        const all = resolveQuotes(e?.quotes, index, slice, verifyAttribution, [...new Set([...cast, ...personas, ...splitNames(item.present)])]);
         const text = cleanText(e?.text, 500);
         for (const q of all) if (!inScene(q) && text) stray.push({ quote: q, about: text });
-        return { text, time: cleanText(e?.time, 40), why: cleanText(e?.why, 300), importance: ['critical', 'major', 'minor'].includes(e?.importance) ? e.importance : 'major', quotes: all.filter(inScene).slice(0, MAX_QUOTES_PER_EVENT) };
+        const withList = eventPresence(e?.with, cast, personas);
+        return { text, time: cleanText(e?.time, 40), why: cleanText(e?.why, 300), ...(withList.length ? { with: withList } : {}), importance: ['critical', 'major', 'minor'].includes(e?.importance) ? e.importance : 'major', quotes: limitQuotes(all.filter(inScene), quoteMode) };
       })
       .filter((e) => e.text)
       .slice(0, item._maxEvents || MAX_EVENTS);
@@ -561,7 +751,13 @@ function applyScenes(store, result, slice, required, now = new Date().toISOStrin
       // The user's own character: only how much they remember, never a written-up inner life.
       .map((r) => (personas.includes(r.who) ? { ...r, text: null } : r))
       .filter((r) => r.who && (r.text || personas.includes(r.who)));
+    const present = [...new Set([...castNames(item.present, cast), ...splitNames(item.present).filter((n) => personas.includes(n) || !castNames([n], cast).length)])];
+    const extras = extrasOf(present, store);
     const id = `S${store.nextScene + made.length}`;
+    // Optional records, read only while the room asked for them (the prompt asked for them too).
+    const stateNotes = characterState ? sceneStateOf(item.state, { cast, personas, index, inScene }) : [];
+    const placeNotes = places ? sceneNotesOf(item.placeNotes, cleanText(item.place, 60)) : [];
+    const keeps = keepsakes ? sceneKeepsakesOf(item.keepsakes, { cast, personas, index, inScene }) : [];
     made.push({
       id,
       start: messages[0].number,
@@ -574,7 +770,11 @@ function applyScenes(store, result, slice, required, now = new Date().toISOStrin
       summary: cleanText(item.summary, 600) || '',
       events,
       recollections,
-      present: [...new Set([...castNames(item.present, cast), ...splitNames(item.present).filter((n) => personas.includes(n) || !castNames([n], cast).length)])],
+      present,
+      ...(extras.length ? { extras } : {}),
+      ...(stateNotes.length ? { state: stateNotes } : {}),
+      ...(placeNotes.length ? { placeNotes } : {}),
+      ...(keeps.length ? { keepsakes: keeps } : {}),
       heardLater: [],
       edited: false,
       createdAt: now,
@@ -609,7 +809,10 @@ function applyScenes(store, result, slice, required, now = new Date().toISOStrin
         unaware = unaware.filter((n) => n !== who);
         if (level === 'guess' && !guess.includes(who)) guess.push(who);
       }
-      newFacts.push({ id: `F${store.nextFact + newFacts.length}`, about, text, evidence, sceneId: id, when: cleanText(item.time, 60), replaces, unaware, guess, edited: false, createdAt: now });
+      // Who knows it: as the model listed, or (for a fact some people do not know) the people of the scene who do. Empty = not specified.
+      const people = [...cast, ...personas];
+      const knownBy = K.deriveKnownBy({ listed: castNames(f?.knownBy, people), present: castNames(scene.present, people), unaware, guess, guessed: /\(추정\)|추정된다|보인다/.test(text) });
+      newFacts.push({ id: `F${store.nextFact + newFacts.length}`, about, text, evidence, sceneId: id, when: cleanText(item.time, 60), replaces, unaware, guess, ...(knownBy.length ? { knownBy } : {}), edited: false, createdAt: now });
     }
     for (const l of Array.isArray(item.learned) ? item.learned : []) {
       const who = castNames([l?.who], cast)[0];
@@ -636,14 +839,23 @@ function applyScenes(store, result, slice, required, now = new Date().toISOStrin
   }
   if (!made.length) return { error: '쓸 수 있는 장면이 없습니다' };
   const speakers = new Map(slice.map((m) => [m.number, m.speaker]));
-  placeStray(made, stray, (n) => speakers.get(n));
-  for (const scene of made) supportEvents(scene, index, slice);
+  placeStray(made, stray, (n) => speakers.get(n), quoteMode);
+  for (const scene of made) {
+    if (scene.loose) scene.loose.sort((a, b) => a.number - b.number || a.sentence - b.sentence);
+    supportEvents(scene, index, slice, quoteMode);
+  }
   // A scene whose lines all come from a few of its messages skipped the rest: those would be lost.
-  const bad = made.findIndex((scene, i) => uncited(scene, slice, newFacts) > MAX_UNCITED);
+  const missing = (scene) => {
+    if (!strictCoverage) return [];
+    const cited = new Set(scene.events.flatMap((event) => event.quotes.map((q) => q.number)));
+    return slice.slice(scene._from, scene._to + 1).filter((m) => String(m.content || '').trim().length >= 80 && !cited.has(m.number)).map((m) => m.number);
+  };
+  const bad = made.findIndex((scene) => uncited(scene, slice, newFacts) > MAX_UNCITED || missing(scene).length);
   if (bad >= 0) {
     const s = made[bad];
-    const problem = `장면 "${s.title}"(${s.start}~${s.end}번)은 인용 없이 넘어간 메시지가 ${uncited(s, slice, newFacts)}개 이어집니다. 그 메시지들의 일도 사건으로 적거나, 장면을 나눠 주세요.`;
-    if (!partial || bad === 0) return { error: problem };
+    const missed = missing(s);
+    const problem = missed.length ? `장면 "${s.title}"에서 ${missed.join(", ")}번 메시지의 사건과 원문 인용이 빠졌습니다. 그 메시지의 중요한 일을 사건에 직접 연결하거나 장면을 적절히 나눠 주세요.` : `장면 "${s.title}"(${s.start}~${s.end}번)은 인용 없이 넘어간 메시지가 ${uncited(s, slice, newFacts)}개 이어집니다. 그 메시지들의 일도 사건으로 적거나, 장면을 나눠 주세요.`;
+    if (!partial || bad === 0) return { error: problem, errorCode: missed.length ? 'coverage_missing' : 'uncited_run' };
     made.length = bad;
     startAt = made.at(-1)._to + 1;
     const kept = new Set(made.map((x) => x.id));
@@ -722,7 +934,14 @@ function uncited(scene, slice, facts) {
   return longest;
 }
 
-/** Old quotes saved without the translation line that follows them in the message: add it. */
+/**
+ * Saved lines brought to one form: the original in `text`, the Korean translation in `translation`.
+ * - A line saved with its translation inside (`"EN" (KO)`) is split. This is only a change of form, so it is done
+ *   for lines corrected by hand too.
+ * - A line saved without the translation that follows it in the message, or saved as the translation alone, gets
+ *   the original and the translation from the message (not for lines corrected by hand or scenes edited by hand).
+ * The pointer stays on the original's sentence. Running it again changes nothing.
+ */
 function attachTranslations(store, messages) {
   const byNumber = new Map(messages.map((m) => [m.number, m]));
   const index = L.indexBatch(messages);
@@ -730,21 +949,1484 @@ function attachTranslations(store, messages) {
   for (const scene of store.scenes) {
     for (const quotes of [...scene.events.map((e) => e.quotes), scene.loose || []]) {
       for (const q of quotes) {
-        const message = byNumber.get(q.number);
-        if (!message || (q.messageId && message.id !== q.messageId)) continue;
+        let touched = false;
+        if (!q.translation) {
+          const parts = splitBilingual(parseLine(q.text).text);
+          if (parts.translation) touched = setQuoteText(q, parseLine(q.text).text);
+        }
+        if (!q.translation && !q.manual && !scene.edited) {
+          const message = byNumber.get(q.number);
+          const original = message && (!q.messageId || message.id === q.messageId) && index.get(`${q.number}.${q.sentence}`);
+          if (original && parseLine(original.text).text === parseLine(q.text).text) {
+            const paired = bilingualQuote(original, index);
+            const line = parseLine(paired.text);
+            const parts = paired.text !== original.text ? splitBilingual(line.text) : { translation: null };
+            if (parts.translation) {
+              setQuoteText(q, line.text);
+              q.sentence = paired.sentence;
+              if (!q.by && line.by) q.by = line.by;
+              touched = true;
+            }
+          }
+        }
+        if (touched) changed++;
+      }
+    }
+  }
+  return changed;
+}
+
+/**
+ * Quotes saved as pieces of a line. Before v0.11.48 a paragraph with mismatched quote marks (opened with " and closed
+ * with ”, or the reverse, or an inch mark before it) was split at every period, so a saved quote could be one piece of
+ * a line ("Andiamo.") while the message holds the whole line with its translation. Such a piece is replaced by the whole
+ * line, read the same way as any other quote (original in `text`, translation in `translation`), and its pointer
+ * moves to the line's sentence. Several pieces of one line become one quote (the first one's speaker and listener stay).
+ *
+ * No model is asked. Only a quote whose message still exists with the same id, whose text is exactly one piece the
+ * old reading made of a paragraph that is now read differently, and that lies inside exactly one spoken sentence of
+ * that paragraph, is changed. Quotes corrected by hand, scenes edited by hand and every other quote are left alone.
+ * A repaired quote that had been checked and whose check still holds keeps being "checked" (its fingerprint is
+ * re-taken), unless it now breaks a rule. Running it again changes nothing. Returns { repaired, merged }.
+ */
+function repairFragmentQuotes(store, messages) {
+  const result = { repaired: 0, merged: 0 };
+  const byId = new Map(messages.map((m) => [m.id, m]));
+  const index = L.indexBatch(messages);
+  const flat = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+  // Per message: the paragraphs whose old and present readings differ.
+  const plans = new Map();
+  const planOf = (m) => {
+    if (!plans.has(m.id)) {
+      const changed = [];
+      for (const paragraph of String(m.content || '').split(/\n+/)) {
+        const trimmed = paragraph.trim();
+        if (!trimmed) continue;
+        const clean = (parts) => parts.map((s) => s.trim()).filter(Boolean);
+        const older = clean(L.splitSentences(trimmed, true));
+        const newer = clean(L.splitSentences(trimmed));
+        if (JSON.stringify(older) !== JSON.stringify(newer)) changed.push({ older, newer });
+      }
+      plans.set(m.id, changed);
+    }
+    return plans.get(m.id);
+  };
+  const lineOf = (sentence) => flat(parseLine(sentence).text);
+  /** Where the whole line of a saved piece is: { sentence (1-based), paired } or null. */
+  const wholeLine = (q, m) => {
+    const piece = flat(q.text);
+    if (piece.length < 2) return null;
+    const holdsPiece = (older, j) => [older[j], isTranslation(older[j + 1]) ? `${older[j]} ${older[j + 1]}` : null]
+      .some((c) => c && (lineOf(c) === piece || flat(splitBilingual(lineOf(c)).text) === piece));
+    const found = [];
+    for (const { older, newer } of planOf(m)) {
+      if (!older.some((_, j) => holdsPiece(older, j))) continue;
+      for (const s of newer) {
+        if (!isSpoken(lineOf(s))) continue;
+        const at = m.sentences.reduce((list, x, i) => (x.trim() === s ? [...list, i] : list), []);
+        const pointer = at.length === 1 && index.get(`${m.number}.${at[0] + 1}`);
+        if (!pointer) continue;
+        // The line as any quote holds it: with the translation that follows it, when there is one.
+        const paired = bilingualQuote(pointer, index);
+        const whole = lineOf(paired.text);
+        if (whole.length > piece.length && whole.includes(piece)) found.push(paired);
+      }
+    }
+    return found.length === 1 ? { paired: found[0] } : null;
+  };
+  const quotesOf = (scene) => [...(scene.events || []).map((e) => e.quotes), scene.loose || []].filter(Array.isArray);
+  const everyQuote = (scene) => quotesOf(scene).flat();
+  const fingerprints = (scene) => {
+    const copy = structuredClone(scene);
+    const mine = everyQuote(copy);
+    const order = new Map(messages.map((m, i) => [m.number, i]));
+    const ctx = { titles: titleMap(store), address: addressMap(), personas: store.personas || [], byId };
+    const { names, lines } = sceneLines(store, copy, messages, new Map(messages.map((m) => [m.number, m])), order, ctx);
+    const out = new Map();
+    for (const line of lines) {
+      if (line.stale) continue;
+      const context = lineContext(line, messages, order).context;
+      out.set(mine.indexOf(line.q), { fp: attributionFingerprint({ m: line.m, q: line.q, names, facts: line.facts, context }), broken: ruleViolations(line.q, line.facts, names).length > 0 });
+    }
+    return out;
+  };
+
+  for (const scene of store.scenes || []) {
+    if (scene.edited) continue;
+    // Plan first, change after: nothing is touched unless a piece is found.
+    const plan = [];
+    for (const q of everyQuote(scene)) {
+      if (q.manual || !q.messageId) continue;
+      const m = byId.get(q.messageId);
+      if (!m || m.number !== q.number) continue;
+      const whole = wholeLine(q, m);
+      if (whole) plan.push({ q, whole });
+    }
+    if (!plan.length) continue;
+    const checked = plan.some(({ q }) => q.attributionFp);
+    let before = null;
+    if (checked) { try { before = fingerprints(scene); } catch { before = null; } }
+    const flatBefore = everyQuote(scene);
+    const was = new Map(plan.map(({ q }) => [q, { fp: before?.get(flatBefore.indexOf(q)), saved: q.attributionFp }]));
+    const repaired = new Set();
+    for (const { q, whole } of plan) {
+      const line = parseLine(whole.paired.text);
+      setQuoteText(q, line.text);
+      q.sentence = whole.paired.sentence;
+      if (!q.by && line.by) q.by = line.by;
+      repaired.add(q);
+      result.repaired++;
+    }
+    // Pieces of one line become one quote: the first stays; a quote that already holds the line (by hand too) stays instead.
+    for (const quotes of quotesOf(scene)) {
+      const holders = new Set(quotes.filter((q) => !repaired.has(q)).map((q) => `${q.number}.${q.sentence}`));
+      const seen = new Set();
+      for (let i = 0; i < quotes.length; i++) {
+        const q = quotes[i];
+        if (!repaired.has(q)) continue;
+        const key = `${q.number}.${q.sentence}`;
+        if (holders.has(key) || seen.has(key)) {
+          quotes.splice(i--, 1);
+          repaired.delete(q);
+          result.merged++;
+        } else seen.add(key);
+      }
+    }
+    if (checked && before) {
+      try {
+        const after = fingerprints(scene);
+        const flatAfter = everyQuote(scene);
+        for (const q of repaired) {
+          const { fp, saved } = was.get(q);
+          const now = after.get(flatAfter.indexOf(q));
+          // The earlier check still held for this line before the repair, and nothing it depends on broke a rule.
+          if (saved && fp === saved && now && !now.broken) q.attributionFp = now.fp;
+        }
+      } catch {}
+    }
+  }
+  return result;
+}
+
+/** Restore original adjacent translations in ledger evidence, without changing sentence numbering. */
+function attachLedgerTranslations(ledger, messages) {
+  const byId = new Map(messages.map((m) => [m.id, m]));
+  const index = L.indexBatch(messages);
+  let changed = 0;
+  for (const thread of ledger.threads || []) {
+    for (const pointers of [thread.evidence, thread.clues, thread.closed?.evidence]) {
+      for (const q of Array.isArray(pointers) ? pointers : []) {
+        const message = byId.get(q.messageId);
+        if (!message || message.number !== q.number) continue;
         const original = index.get(`${q.number}.${q.sentence}`);
-        if (!original || parseLine(original.text).text !== parseLine(q.text).text) continue;
+        if (!original || original.text !== q.text) continue;
         const paired = bilingualQuote(original, index);
-        if (paired.text === original.text) continue;
-        const line = parseLine(paired.text);
-        q.text = line.text;
-        q.sentence = paired.sentence;
-        if (!q.by && line.by) q.by = line.by;
+        if (paired.text === original.text || paired.sentence !== original.sentence) continue;
+        q.text = paired.text;
         changed++;
       }
     }
   }
   return changed;
+}
+
+/* ---------- deterministic attribution rules ---------- */
+// Checks that do not depend on the model: who is called by name inside a line, who is only mentioned as someone to
+// pass a message on to, which narration names the speaker, and a reply to the line right before it.
+
+// A coarse consonant outline of a name, so "베르나" and "Berna" or "파비오" and "Fabio" can be compared.
+const CHO = ['k', 'k', 'n', 't', 't', 'r', 'm', 'p', 'p', 's', 's', '', 's', 's', 's', 'k', 't', 'p', 'h'];
+const JONG = ['', 'k', 'k', 'k', 'n', 'n', 'n', 't', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'm', 'p', 'p', 's', 's', 'n', 's', 's', 'k', 't', 'p', 'h'];
+// Vowels become one mark (Korean "ㅡ" is left out: it is only added between consonants, as in 베르크 for Berk).
+const collapse = (s) => s.replace(/h/g, '').replace(/V+/g, 'V').replace(/([^V])\1+/g, '$1');
+const memo = (fn, cache = new Map()) => (key) => { if (cache.size > 5000) cache.clear(); if (!cache.has(key)) cache.set(key, fn(key)); return cache.get(key); };
+const hangulOutline = memo(hangulOutlineOf);
+function hangulOutlineOf(text) {
+  let out = '';
+  for (const ch of String(text || '')) {
+    const code = ch.charCodeAt(0) - 0xac00;
+    if (code < 0 || code > 11171) continue;
+    out += CHO[Math.floor(code / 588)] + (Math.floor((code % 588) / 28) === 18 ? '' : 'V') + JONG[code % 28];
+  }
+  return collapse(out);
+}
+const latinOutlines = memo(latinOutlinesOf);
+function latinOutlinesOf(text) {
+  const w = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return [];
+  const out = new Set();
+  for (const word of [w, w.replace(/([^aeiou])e$/, '$1')]) for (const ch of ['k', 's']) for (const soft of ['s', 'k']) {
+    const s = word
+      .replace(/ph/g, 'p').replace(/th/g, 't').replace(/sh/g, 's').replace(/sc(?=[eiy])/g, 's').replace(/gn/g, 'n')
+      .replace(/ch/g, ch).replace(/qu/g, 'k').replace(/ck/g, 'k').replace(/x/g, 'ks').replace(/t[sz]/g, 's').replace(/ng(?![aeiouy])/g, 'n')
+      .replace(/c(?=[eiy])/g, 's').replace(/g(?=[eiy])/g, soft).replace(/(?<=[sk])i(?=[aou])/g, '')
+      .replace(/[cqg]/g, 'k').replace(/[jz]/g, 's').replace(/d/g, 't').replace(/[bfv]/g, 'p').replace(/l/g, 'r').replace(/[wy]/g, '').replace(/[aeiou]/g, 'V');
+    out.add(collapse(s));
+  }
+  return [...out];
+}
+const consonants = (outline) => outline.replace(/V/g, '').length;
+
+const PARTS = /^(?:di|de|da|del|della|dei|van|von|le|la|el|al|디|드|데|델|반|폰)$/i;
+/** The ways a person may be called: the full name, the given name, the family name ("Bel Caro"), Korean short forms. */
+const baseAliases = memo(nameAliasesOf);
+/** The ways a person may be called, with every other name the room's name table knows them by. */
+function nameAliases(name) {
+  const forms = A.formsOf(name);
+  if (forms.length <= 1 && forms[0] === String(name || '').trim()) return baseAliases(name);
+  return [...new Set(forms.flatMap((f) => baseAliases(f)))];
+}
+function nameAliasesOf(name) {
+  const n = String(name || '').trim();
+  const out = new Set(n ? [n] : []);
+  for (const k of L.nameKeys(n)) out.add(k);
+  const parts = n.split(/\s+/).filter(Boolean);
+  if (parts.length > 1) {
+    out.add(parts[0]);
+    for (let i = 1; i < parts.length; i++) out.add(parts.slice(i).join(' '));
+  }
+  return [...out].filter((a) => a.replace(/\s/g, '').length >= 2 && !PARTS.test(a));
+}
+
+const hasHangul = (s) => /[가-힣]/.test(s);
+const hasLatin = (s) => /[A-Za-zÀ-ÿ]/.test(s);
+/** A written name or alias matched to one known person; null when unknown or when it could be more than one. */
+function matchAlias(phrase, names) {
+  const p = String(phrase || '').trim().replace(/\s+/g, ' ');
+  if (!p || !names?.length) return null;
+  const lower = p.toLowerCase();
+  // One entry per person: names the table knows as one person count once, under the canonical name.
+  const people = [...new Set(names.filter((n) => typeof n === 'string' && n.trim()).map((n) => A.canonical(n)))];
+  const exact = new Set(people.filter((n) => nameAliases(n).some((a) => a.toLowerCase() === lower)));
+  if (exact.size) return exact.size === 1 ? [...exact][0] : null;
+  const known = L.matchName(p, people);
+  if (known) return known;
+  const sounds = new Set();
+  for (const n of people) for (const a of nameAliases(n)) {
+    if (hasLatin(p) && hasHangul(a)) {
+      const outline = hangulOutline(a);
+      if (consonants(outline) >= 2 && latinOutlines(p).includes(outline)) sounds.add(n);
+    } else if (hasHangul(p) && hasLatin(a)) {
+      const outline = hangulOutline(p);
+      if (consonants(outline) >= 2 && latinOutlines(a).includes(outline)) sounds.add(n);
+    }
+  }
+  return sounds.size === 1 ? [...sounds][0] : null;
+}
+
+/** Whether a piece of text names this person (any alias, in either script). */
+function mentions(text, name, { sound = false } = {}) {
+  const t = String(text || '');
+  if (!t || !name) return false;
+  for (const a of nameAliases(name)) {
+    if (hasHangul(a) ? t.includes(a) : new RegExp(`(^|[^\\p{L}])${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}])`, 'iu').test(t)) return true;
+  }
+  const words = t.match(/\p{Lu}[\p{L}'’]+(?:\s+(?:(?:di|de|da|del|della|van|von)\s+)?\p{Lu}[\p{L}'’]+)*/gu) || [];
+  if (words.some((w) => matchAlias(w, [name]) === name || w.split(/\s+/).some((x) => matchAlias(x, [name]) === name))) return true;
+  // A Latin name written in Korean narration ("토마소라는 직원" for Tommaso). Only where a role is being named,
+  // because a short Korean word can sound like a name.
+  return sound && hangulWords(t).some((w) => matchAlias(w, [name]) === name);
+}
+const PARTICLE = /(?:이라는|라는|이라고|라고|에게서|한테서|에게|한테|께서|이에요|예요|입니다|이다|씨가|씨는|씨|님|이|가|은|는|을|를|의|와|과|도|야|아)$/;
+function hangulWords(text) {
+  const out = new Set();
+  for (const w of String(text || '').match(/[가-힣]{2,}/g) || []) {
+    out.add(w);
+    const stem = w.replace(PARTICLE, '');
+    if (stem.length >= 2) out.add(stem);
+  }
+  return [...out];
+}
+
+const HONORIFIC = /^(?:(?:signor(?:e|a|ina)?|sig\.?(?:ra)?|mr|mrs|ms|miss|sir|madam|don|donna|dott(?:ore|oressa|or)?\.?|avvocato|capo|zio|zia|caro|cara|mio|mia|dear|ehi|hey|oh|ah|eh|senti|ascolta|scusi|scusa|ciao|salve|buongiorno|buonasera|grazie|dai|allora|yo|hi|hello|well|저기|어이|야|자|네)[.,]?\s+)+/i;
+const GENERIC = /^(?:boss|capo|signore|signora|signorina|sir|madam|ma'am|보스|두목|사장님|손님|선생님|형님|아가씨)$/i;
+// Words that open a plain noun phrase ("그 사람", "내 친구"): not the first word of a two-word nickname.
+const KO_DETERMINER = /^(?:그|이|저|내|네|제|우리|너희|당신|어떤|무슨|모든|이런|그런|저런|다른|같은|아무|어느|나의|너의|새|옛|한|두|세)$/;
+const KO_CALL =/\s?(?:씨|님|군|양|선생님|아|야)$/;
+/**
+ * People called directly inside the line ("Signora Bel Caro, …", "Hai capito, Nico?", "니코야, …").
+ * A part between punctuation counts only when it is a name and nothing else, followed by , ! or ? (or at the
+ * end after a comma). "generic" is set for a call without a name ("Boss,").
+ */
+function addressedIn(text, names) {
+  const line = parseLine(text).text;
+  const pieces = line.split(/(?=\([^()]*\)\s*$)/);
+  const found = new Set(), titles = new Set();
+  let generic = false;
+  for (const piece of pieces) {
+    const body = piece.replace(/^[\s"“'‘「『(]+|[\s"”'’」』)]+$/g, '');
+    const parts = body.split(/([,!?.…;:—–]+)/);
+    for (let i = 0; i < parts.length; i += 2) {
+      const after = parts[i + 1] || '';
+      const before = i ? parts[i - 1] : '';
+      const tail = !after || /^[.…]/.test(after);
+      if (!/^[,!?]/.test(after) && !(tail && /[,…]/.test(before))) continue;
+      let phrase = parts[i].trim().replace(HONORIFIC, '');
+      if (!phrase || phrase.split(/\s+/).length > 4) continue;
+      if (GENERIC.test(phrase)) { generic = true; titles.add(phrase.toLowerCase()); continue; }
+      if (hasLatin(phrase) && !/^\p{Lu}/u.test(phrase)) continue;
+      const korean = hasHangul(phrase) ? phrase.replace(KO_CALL, '').trim() : phrase;
+      const who = matchAlias(korean, names) || (korean !== phrase ? matchAlias(phrase, names) : null);
+      if (who) found.add(who);
+    }
+  }
+  return { names: [...found], generic, titles: [...titles] };
+}
+
+// ---- the address book (호칭 사전): terms a speaker uses for the person spoken to ----
+let addressProvider = null;
+/** How the service hands the rules the room's address book: () => Map(lower-cased term -> canonical name) or null. */
+function setAddressProvider(fn) {
+  addressProvider = typeof fn === 'function' ? fn : null;
+}
+function addressMap() {
+  try { return addressProvider ? addressProvider() : null; } catch { return null; }
+}
+// ---- the character state cards (인물 상태): where someone is, as a filter for guessed listeners ----
+let placeKeyProvider = null;
+/** How the service says whether the room keeps character states: () => (place name -> comparable key) or null. */
+function setStateProvider(fn) {
+  placeKeyProvider = typeof fn === 'function' ? fn : null;
+}
+function placeKeyFn() {
+  try { return placeKeyProvider ? placeKeyProvider() : null; } catch { return null; }
+}
+const TITLE_WORD = /^(?:signor(?:e|a|ina)?|sig\.?(?:ra)?|mr|mrs|ms|miss|sir|madam|don|donna|dott(?:ore|oressa|or)?\.?|avvocato|capo|zio|zia)$/i;
+const NOT_A_TERM = new Set(['yes', 'no', 'sì', 'si', 'ok', 'okay', 'well', 'so', 'but', 'and', 'then', 'now', 'please', 'thanks', 'sorry', 'grazie', 'prego', 'ma', 'allora', 'certo', 'bene', 'dunque', 'beh', 'ah', 'oh', 'eh', 'hey', 'hi', 'hello', 'ciao', 'what', 'why', 'how', 'when', 'where', 'who', 'look', 'listen', 'wait', 'come', 'go', 'right', 'sure', 'fine', 'good', 'great', 'maybe', 'anyway', 'here', 'there', 'dio', 'madonna', 'basta', 'forza', 'dai', 'scusa', 'scusi', 'fermo', 'aspetta', 'senti', 'ascolta', 'guarda', 'dimmi', 'vieni', 'andiamo', 'cosa', 'perché', 'dove', 'quando', 'chi', 'oddio', 'mamma',
+  '네', '예', '아니', '아니요', '응', '그래', '그래요', '음', '어', '아', '자', '글쎄', '정말', '제발', '미안', '고마워', '감사', '잠깐', '잠시', '여기', '저기', '거기', '이봐', '있잖아', '알겠어', '좋아', '싫어', '맞아', '그럼', '그런데', '하지만', '그리고', '그러니까', '그러면', '왜', '뭐', '어디', '언제', '누구', '어때', '괜찮아', '안녕', '어서', '아이고', '세상에', '맙소사', '진짜', '설마', '빨리', '천천히', '가자', '와', '봐', '들어', '말해', '조심해', '기다려', '잠깐만', '그만', '됐어', '어머', '오', '헉', '흠', '아유', '아니야', '맞지', '그치', '좋지', '알지', '있지', '그치', '좋지', '알지', '있지', '근데', '아무튼', '어쨌든', '그래도', '그냥', '일단', '먼저', '우선', '역시']);
+const KO_VERBISH = /(?:요|다|죠|까|네|서|게|고|며|면|니|군|걸|데|해|래|자)$/;
+// Discourse words, adverbs, conjunctions, imperatives and interjections that open a quote without calling anyone.
+const NOT_A_TERM_MORE = new Set(('besides still see though however anyway anyhow meanwhile moreover therefore thus hence otherwise instead indeed actually really basically honestly seriously frankly obviously clearly apparently perhaps probably possibly surely certainly definitely absolutely exactly precisely totally completely entirely simply merely just only even also too either neither both again once twice always never ever often sometimes usually already yet soon later earlier tonight today tomorrow yesterday first second third next last finally lastly afterwards afterward ' +
+  'look listen wait stop hold hang come go let tell say ask give take put get keep leave stay sit stand move run walk turn try think know remember forget imagine guess believe trust help hurry relax calm easy careful quiet silence shut enough fine okay ok alright all right yes yeah yep yup nope no nah well so oh ah eh uh um hmm huh ugh wow ouch oops damn hell god gosh jeez geez boy man dude hey hi hello bye goodbye please thanks thank sorry pardon excuse welcome sure right true false maybe nothing something anything everything nobody somebody anybody everybody someone anyone everyone ' +
+  'and but or nor for because since unless until while whereas whether if then than that this these those what which who whom whose when where why how now here there ' +
+  'good great bad nice cool fair real wrong ready done gone back away up down out off over under around about before after during through between against without within ' +
+  'one two three four five six seven eight nine ten sir madam lady lord mister miss mrs ms mr fuck shit christ jesus').split(/\s+/).filter(Boolean));
+const NOT_A_TERM_IT = new Set(('comunque piuttosto tieni capito guarda senti allora dai ecco beh insomma però pero quindi sì si no va bene certo aspetta vieni ascolta scusa scusami scusate grazie prego ciao ok okay magari forse ormai ancora già gia anche pure perfino persino invece infatti dunque ebbene orbene mentre intanto poi dopo prima adesso ora subito presto tardi sempre mai spesso talvolta davvero veramente proprio appunto esatto giusto vero falso sicuro sicuramente naturalmente ovviamente certamente finalmente purtroppo fortunatamente meno più molto troppo poco tanto abbastanza ' +
+  'senza perché perche siccome sebbene benché nonostante tuttavia eppure oppure ossia cioè cioe sennò altrimenti inoltre almeno soltanto solo ' +
+  'vai andiamo andate fermo ferma fermati fermatevi calma piano attento attenta attenzione aspettate venite dimmi dimmelo dammi dacci dammelo fammi lascia lasciami lasciate guardate ascoltate sentite pensa pensaci ricorda ricordati sai sa sapete credi crediamo immagina tranquillo tranquilla coraggio su giù via fuori dentro qui qua lì là ' +
+  'che chi cosa come dove quando quanto quale quali ' +
+  'cazzo merda alzati svegliati porca ehi ehm uffa mah boh oddio dio madonna cavolo accidenti diamine caspita mamma ecco eccoci eccomi eccolo basta stop sveglia forza avanti ' +
+  'signore signora signorina dottore dottoressa professore professoressa ragazzi ragazze gente scusi permesso salve buongiorno buonasera buonanotte arrivederci addio').split(/\s+/).filter(Boolean));
+const NOT_A_TERM_KO = new Set(['응', '으응', '으음', '어', '어어', '아', '아아', '네', '예', '그래', '알았어', '알겠어', '알겠습니다', '알았다', '들었지', '들었어', '봐', '봐봐', '자', '저기', '있잖아', '근데', '그러니까', '아니', '뭐', '왜', '진짜', '정말', '좋아', '됐어', '됐다', '맞아', '맞지', '글쎄', '그럼', '그러게', '그렇지', '그렇구나', '아하', '어휴', '에이', '이런', '저런', '그런', '아무래도', '사실', '솔직히', '씨발', '시발', '씨팔', '젠장', '제길', '빌어먹을', '일어나', '일어나요', '멍청', '아마', '혹시', '제발', '빨리', '얼른', '어서', '당장', '이제', '이미', '아직', '여기', '거기', '저쪽', '오늘', '내일', '어제', '나중에', '잠깐', '잠시', '가만', '가만히', '조용', '조용히', '다시', '또', '벌써', '역시', '결국', '일단', '그냥', '자꾸', '계속', '항상', '절대', '분명', '확실히', '물론', '당연', '당연히', '설마', '아이고', '어머나', '세상에', '맙소사', '헐', '앗', '엇', '음', '흠', '응응', '아냐', '아니야', '아니에요', '그만', '들어', '들어봐', '말해', '말해봐', '가자', '가', '와', '오', '이봐', '여봐', '안녕', '고마워', '미안', '미안해', '죄송', '감사']);
+const KO_SOUNDS = /^(?:으+[응음]|어+|아+|음+|응+|흠+|하+|헤+|오+|우+|에+)$/;
+// 지 only on longer words: 수지, 은지 are names, 들었지 is a sentence.
+const KO_ENDING = /(?:어|요|네|다|까|잖아|거든|[가-힣]{2}지)$/;
+// Terms of endearment: real forms of address even though they are ordinary words.
+const ENDEARMENTS = new Set(['tesoro', 'amore', 'cara', 'caro', 'honey', 'darling', 'babe', 'baby', 'sweetheart', 'sweetie', 'love', 'dear', 'bella', 'bello', 'piccola', 'piccolo', 'cucciolo', 'cucciola', 'stella', 'angelo', 'bimba', 'bimbo', 'gioia', 'cuore', '공주', '자기', '애기', '여보', '왕자', '아가', '달링', '허니', '공주님', '왕자님']);
+// Common English and Italian words that are not names (a capitalized one at the start of a line is just a sentence start).
+const COMMON_EN = new Set(('the a an of to in on at by with from into onto upon over under about above below between among near far close open shut ' +
+  'i me my mine you your yours he him his she her hers it its we us our ours they them their theirs ' +
+  'is am are was were be been being do does did done have has had having will would shall should can could may might must ' +
+  'not nor very much many more most less least some any all each every other another such own same different ' +
+  'time day night morning evening week month year hour minute moment way thing things people person man woman child children kid kids boy girl friend friends ' +
+  'home house room door window table chair bed street road city town place world life death hand hands head eyes face heart mind voice word words name ' +
+  'work job money food water coffee tea wine beer drink eat sleep dream story question answer problem trouble reason idea plan rule rules mistake truth lie secret ' +
+  'big small little long short high low old new young early late hot cold warm dark light heavy soft hard happy sad angry afraid tired sick alone ' +
+  'better worse worst best feel need want like make made saw seen found find lost lose win won played play pay paid ' +
+  'sweet pretty beautiful handsome gorgeous lovely stupid crazy mad silly idiot fool ' +
+  'mom dad mother father brother sister son daughter uncle aunt grandma grandpa').split(/\s+/).filter(Boolean));
+const COMMON_IT = new Set(('il lo la i gli le un uno una di a da in con su per tra fra del dello della dei degli delle al allo alla ai agli alle dal dallo dalla dai dagli dalle nel nello nella nei negli nelle sul sullo sulla sui sugli sulle ' +
+  'io tu lui lei noi voi loro mi ti si ci vi me te se ne mio mia miei mie tuo tua tuoi tue suo sua suoi sue nostro nostra vostro vostra ' +
+  'è sono sei siamo siete era ero eri erano ho hai ha abbiamo avete hanno avevo aveva faccio fai fa facciamo fate fanno vado va vanno ' +
+  'sto stai sta stiamo state stanno dico dici dice diciamo dite dicono voglio vuoi vuole vogliamo volete vogliono posso puoi può possiamo potete possono devo devi deve dobbiamo dovete devono ' +
+  'tempo giorno notte mattina sera settimana mese anno momento modo cose persona uomo donna bambino bambina ragazzo ragazza amico amica amici ' +
+  'casa stanza porta finestra tavolo sedia letto strada città mondo vita morte mano mani testa occhi faccia mente voce parola parole nome ' +
+  'lavoro soldi cibo acqua caffè vino birra sogno storia domanda risposta problema guaio ragione idea piano regola errore verità bugia segreto ' +
+  'grande lungo corto alto basso vecchio nuovo giovane caldo freddo buio luce pesante morbido duro facile felice triste arrabbiato stanco malato sola ' +
+  'brutto brutta buono buona cattivo cattiva migliore peggiore meglio peggio ' +
+  'madre padre fratello sorella figlio figlia zio zia nonno nonna ' +
+  'niente nulla qualcosa tutto tutti tutte ogni ognuno nessuno qualcuno').split(/\s+/).filter(Boolean));
+const normWord = (w) => String(w || '').normalize('NFC').toLowerCase().replace(/[.,!?'’]+$/g, '');
+const isStopword = (w) => { const k = normWord(w); return NOT_A_TERM.has(k) || NOT_A_TERM_MORE.has(k) || NOT_A_TERM_IT.has(k) || NOT_A_TERM_KO.has(k); };
+/** An endearment or a generic title: real forms of address even though ordinary words. */
+function termExempt(term) {
+  const t = String(term || '').trim();
+  return ENDEARMENTS.has(normWord(t)) || GENERIC.test(t);
+}
+/**
+ * Whether a term read as a call plausibly is one (no model): not a stop word, not a verb/sentence ending in Korean, no
+ * ordinary word among the words of a Latin term. Endearments and generic titles always pass.
+ */
+function plausibleTerm(term) {
+  const t = String(term || '').normalize('NFC').trim();
+  if (!t) return false;
+  if (termExempt(t)) return true;
+  const words = t.split(/\s+/);
+  const body = words.filter((w) => !TITLE_WORD.test(w.replace(/[.,]$/, '')));
+  if (!body.length) return false;
+  if (hasHangul(t)) return body.every((w) => !isStopword(w) && !KO_SOUNDS.test(w) && !KO_ENDING.test(w));
+  if (words.length > 3) return false;
+  return body.every((w) => /^\p{L}[\p{L}\p{N}'’-]+$/u.test(w) && !isStopword(w) && !COMMON_EN.has(normWord(w)) && !COMMON_IT.has(normWord(w)));
+}
+/**
+ * Terms used to call someone inside a line: the first or the last part of the line set off by , ! or ? ("보스,
+ * 가요.", "Hai sentito, Zeno?", "Signor Verdi, venga."). A part that is a known name is left out (addressedIn has
+ * it); so are interjections and anything that does not read like a name or a title. Returns [{ term, key, at }]: the
+ * term as written (a Korean call ending removed), its lower-cased key, and whether it opens ('start') or closes ('end') the line.
+ */
+function vocativeTerms(text, names, opts = {}) {
+  const mid = !!opts.mid;
+  const line = parseLine(text).text;
+  const pieces = line.split(/(?=\([^()]*\)\s*$)/);
+  const found = new Map();
+  for (const piece of pieces) {
+    const body = piece.replace(/^[\s"“'‘「『(]+|[\s"”'’」』)]+$/g, '');
+    const parts = body.split(/([,!?.…;:—–]+)/);
+    let last = -2;
+    for (let i = 0; i < parts.length; i += 2) if (parts[i].trim()) last = i;
+    for (let i = 0; i < parts.length; i += 2) {
+      const edge = i === 0 || i === last;
+      if (!edge && !mid) continue;
+      const after = parts[i + 1] || '';
+      const before = i ? parts[i - 1] : '';
+      const tail = !after || /^[.…]/.test(after);
+      // A part inside the line counts only when a comma sets it off ("…, 하루, 너도…", "…, 나미.").
+      if (edge ? (!/^[,!?]/.test(after) && !(tail && /[,…]/.test(before))) : !/,/.test(before + after)) continue;
+      const phrase = parts[i].trim();
+      const lead = (phrase.match(HONORIFIC) || [''])[0];
+      const rest = phrase.slice(lead.length).trim();
+      if (!rest || rest.split(/\s+/).length > 3) continue;
+      const titles = lead.split(/\s+/).map((w) => w.replace(/[.,]$/, '')).filter((w) => TITLE_WORD.test(w));
+      let term = null;
+      if (GENERIC.test(rest) || ENDEARMENTS.has(normWord(rest))) term = rest;
+      else if (hasHangul(rest)) {
+        const stem = /아가씨$/.test(rest) ? rest : rest.replace(KO_CALL, '').trim();
+        // With mid on, a two-word nickname ("고양이 아가씨") is read too.
+        const two = mid && /^[가-힣]{2,6} [가-힣]{2,6}$/.test(stem) && !KO_DETERMINER.test(stem.split(' ')[0]);
+        if ((/^[가-힣]{2,8}$/.test(stem) || two) && plausibleTerm(stem) && plausibleTerm(rest) && !NOT_A_TERM.has(stem) && !KO_VERBISH.test(stem) && !matchAlias(stem, names) && !matchAlias(rest, names)) term = stem;
+      } else if (hasLatin(rest)) {
+        const words = rest.split(/\s+/);
+        if (words.length <= 2 && words.every((w) => /^\p{Lu}[\p{L}'’-]+$/u.test(w) && !NOT_A_TERM.has(w.toLowerCase())) && plausibleTerm(rest) && !matchAlias(rest, names) && !words.some((w) => matchAlias(w, names))) term = rest;
+      }
+      if (!term) continue;
+      if (titles.length && !GENERIC.test(term)) term = `${titles.join(' ')} ${term}`;
+      const key = term.normalize('NFC').toLowerCase().replace(/\s+/g, ' ');
+      if (!found.has(key)) found.set(key, { term: term.replace(/\s+/g, ' '), key, at: i === 0 ? 'start' : i === last ? 'end' : 'mid' });
+    }
+  }
+  return [...found.values()];
+}
+/** The people the room's address book says these terms call. */
+function bookedIn(text, names, book) {
+  const out = [];
+  for (const { key } of vocativeTerms(text, names)) {
+    const who = book.get(key);
+    if (who && !out.includes(who)) out.push(who);
+  }
+  return out;
+}
+
+/** Someone the line asks to pass words on to ("전해 줘", "tell him", "dille") is mentioned, not spoken to. */
+function relayIn(text, names) {
+  const line = parseLine(text).text;
+  const named = new Set();
+  let pronoun = false;
+  for (const m of line.matchAll(/([가-힣]+(?:\s[가-힣]+)?)\s?(?:한테|에게|께|한텐|에겐)\s?(?:는|도)?\s?(?:[^,.!?"”]{0,12}?)(?:전해|전하|말해\s?줘|알려\s?줘|일러)/g)) {
+    const who = matchAlias(m[1], names);
+    if (who) named.add(who); else pronoun = true;
+  }
+  for (const m of line.matchAll(/\b(?:[Tt]ell|[Ll]et)\s+(\p{Lu}[\p{L}'’]+(?:\s+\p{Lu}[\p{L}'’]+)*)/gu)) { const who = matchAlias(m[1], names); if (who) named.add(who); }
+  for (const m of line.matchAll(/\b(?:[Dd][iì]|[Dd]ite|[Rr]iferisci|[Rr]acconta)\s+a\s+(\p{Lu}[\p{L}'’]+(?:\s+\p{Lu}[\p{L}'’]+)*)/gu)) { const who = matchAlias(m[1], names); if (who) named.add(who); }
+  if (/\b(?:tell|let)\s+(?:him|her|them)\b|\b(?:dille|digli|ditegli|ditele|riferiscigli|riferiscile|fagli sapere|falle sapere)\b/i.test(line)) pronoun = true;
+  return { names: [...named], pronoun };
+}
+
+// Unnamed roles that narration may use for the speaker until the scene names them.
+const ROLES = ['직원', '점원', '종업원', '웨이터', '웨이트리스', '지배인', '매니저', '바텐더', '소믈리에', '경비원', '경비', '경호원', '운전기사', '기사', '비서', '집사', '하녀', '메이드', '간호사', '의사', '안내원', '접수원', 'staff', 'waiter', 'waitress', 'clerk', 'bartender', 'sommelier', 'guard', 'bodyguard', 'driver', 'butler', 'maid', 'nurse', 'doctor', 'receptionist', 'cameriere', 'cameriera'];
+const roleIn = (text) => ROLES.find((r) => new RegExp(hasHangul(r) ? `${r}(?=의|이|가|은|는|을|를|에게|한테|도|\\s|[,.!?]|$)` : `\\b${r}\\b`, 'i').test(text)) || null;
+const INTRO = /(소개|이름|명찰|라는|이라는|라고|이라고|불리|자신을|introduc|named|called|name)/i;
+const SELF_INTRO = /(?:mi chiamo|my name is|i am|i'm|je m'appelle|sono|제 이름은|저는|전)\s*([\p{L}]+)/iu;
+/** The named person a role ("직원") stands for in this scene: only when the scene says so, and only one person. */
+const roleMemo = new WeakMap();
+function resolveRole(role, sentences, names) {
+  if (!role) return null;
+  const known = roleMemo.get(sentences) || new Map();
+  roleMemo.set(sentences, known);
+  const key = `${role}\u0000${names.join('\u0000')}`;
+  if (!known.has(key)) known.set(key, resolveRoleOf(role, sentences, names));
+  return known.get(key);
+}
+function resolveRoleOf(role, sentences, names) {
+  const hits = new Set();
+  const roleRe = new RegExp(hasHangul(role) ? role : `\\b${role}\\b`, 'i');
+  const plain = (x) => x != null && !isSpoken(parseLine(x).text) && !isTranslation(x);
+  sentences.forEach((s, i) => {
+    const line = parseLine(s);
+    const text = line.text;
+    if (isSpoken(text)) {
+      // "Mi chiamo Tommaso" said by the one the narration around it calls the staff member.
+      const intro = text.match(SELF_INTRO);
+      const who = intro && matchAlias(intro[1].replace(/(?:입니다|이에요|예요|이야|야|라고)$/, ''), names);
+      if (!who) return;
+      const near = sentences.slice(Math.max(0, i - 3), i + 4).filter(plain).map((x) => parseLine(x).text).join(' ');
+      if (roleRe.test(near) || (line.by && matchAlias(line.by, names) === who)) hits.add(who);
+      return;
+    }
+    if (!roleRe.test(text)) return;
+    const named = names.filter((n) => mentions(text, n, { sound: true }));
+    // "직원은 자신을 토마소라고 소개했다", "토마소라는 직원", "직원 토마소가": the role and one name together.
+    if (named.length === 1 && (INTRO.test(text) || roleNextToName(text, role, named[0]))) hits.add(named[0]);
+  });
+  // What the saved scene already says about the role: lines it gives to a named person with the role as the one
+  // speaking right next to them, and event text naming the role with one name ("직원 테오도로가 사과했다").
+  for (const who of sentences.roleHints?.get(role.toLowerCase()) || []) hits.add(who);
+  // The user's own character is never the staff member the narration means.
+  for (const p of sentences.personas || []) for (const h of [...hits]) if (samePerson(h, p, names)) hits.delete(h);
+  return hits.size === 1 ? [...hits][0] : null;
+}
+/** The role that narration right before or after a line has as its subject ("직원이 고개를 숙였다"), said or not. */
+function roleNear(sentences, at) {
+  const near = [];
+  let next = at + 1;
+  while (sentences[next] != null && isTranslation(sentences[next])) next++;
+  near.push(sentences[next], sentences[at - 1]);
+  for (const s of near) {
+    if (s == null || isSpoken(parseLine(s).text) || isTranslation(s)) continue;
+    const text = parseLine(s).text;
+    const owner = text.match(/([가-힣]+)의\s?말(?:이|은|을|끝|소리)/);
+    if (owner && roleIn(owner[1]) === owner[1]) return owner[1];
+    const subject = text.match(/^(?:그러자|그때|이내|곧)?\s*(?:젊은\s|나이 든\s|그\s)?([가-힣]+)(?:이|가|은|는)\s/);
+    if (subject && roleIn(subject[1]) === subject[1]) return subject[1];
+  }
+  return null;
+}
+/**
+ * Names the saved scene gives each role: a line stored with a named speaker (never the user's character) where the
+ * narration next to it has the role as its subject, and event or summary text with the role right next to a name.
+ */
+function roleHintsOf(scene, lines, names, personas) {
+  const hints = new Map();
+  const add = (role, who) => {
+    if (!role || !who || personas.some((p) => samePerson(p, who, names))) return;
+    const key = role.toLowerCase();
+    if (!hints.has(key)) hints.set(key, new Set());
+    hints.get(key).add(who);
+  };
+  for (const line of lines) {
+    if (line.stale || !line.m || !line.q.by) continue;
+    const who = matchAlias(line.q.by, names);
+    if (who) add(roleNear(line.m.sentences, line.q.sentence - 1), who);
+  }
+  for (const text of [...(scene.events || []).map((e) => e.text), scene.summary]) {
+    if (typeof text !== 'string' || !text) continue;
+    for (const role of ROLES) add(role, roleAppositive(text, role, names));
+  }
+  return hints;
+}
+/**
+ * The one person written as the role itself: "직원 테오도로가", "테오도로라는 직원", "the waiter Tommaso",
+ * "Tommaso, the waiter". Not "직원이 루치오에게" (the role and someone it acts on).
+ */
+function roleAppositive(text, role, names) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const bare = (w) => w.replace(/[,.!?;:"“”'‘’()]/g, '');
+  const isRole = (w) => { const b = bare(w); return hasHangul(role) ? b.replace(PARTICLE, '') === role || b === role : b.toLowerCase() === role.toLowerCase(); };
+  const found = new Set();
+  words.forEach((w, i) => {
+    if (!isRole(w)) return;
+    const after = words[i + 1], before = words[i - 1];
+    // "직원 테오도로가" / "the waiter Tommaso": the name right after the role, as the subject or plainly.
+    if (after && !/,$/.test(w)) {
+      const b = bare(after);
+      const stem = hasHangul(b) ? b.replace(/(?:이|가|은|는|씨가|씨는|씨|도)$/, '') : b;
+      if (!(hasHangul(b) && /(?:에게|한테|께|을|를|와|과|랑|의)$/.test(b))) { const who = matchAlias(stem, names); if (who) found.add(who); }
+    }
+    // "테오도로라는 직원" / "Tommaso, the waiter".
+    if (before) {
+      const b = bare(before);
+      const intro = hasHangul(b) && b.match(/^(.+?)(?:이라는|라는|이란|란)$/);
+      if (intro) { const who = matchAlias(intro[1], names); if (who) found.add(who); }
+      const prior = words[i - 2];
+      if (!hasHangul(role) && /^the$/i.test(b) && prior && /,$/.test(prior)) { const who = matchAlias(bare(prior), names); if (who) found.add(who); }
+    }
+  });
+  return found.size === 1 ? [...found][0] : null;
+}
+/** The role written right next to the name ("직원 토마소", "the waiter Tommaso", "Tommaso, the waiter"). */
+function roleNextToName(text, role, name) {
+  const at = text.search(new RegExp(hasHangul(role) ? role : `\\b${role}\\b`, 'i'));
+  if (at < 0) return false;
+  const around = text.slice(Math.max(0, at - 14), at + role.length + 16);
+  return mentions(around, name, { sound: true });
+}
+
+const SAID_AFTER = /(말했|말하며|말을\s?이었|덧붙|대답|답했|물었|되물|설명했|안내했|외쳤|소리쳤|속삭|중얼|사과했|투덜|대꾸|said|asked|replied|added|whispered|shouted|muttered|explained)/;
+const SAID_BEFORE = /(입을\s?열|말했|물었|외쳤|속삭|말을\s?꺼냈|said|asked|began)/;
+/** A narration subject: a name or a role, at the start of the sentence. */
+function subjectOf(text, names, sentences) {
+  const m = text.match(/^(?:그러자|그때|이내|곧|then|and)?\s*([가-힣]+(?:\s[가-힣]+){0,2}?)(?:이|가|은|는|께서)\s/) || text.match(/^(?:The\s+)?(\p{Lu}?[\p{L}]+(?:\s\p{Lu}[\p{L}]+)?)\s+(?:said|asked|replied|added|whispered|shouted|muttered|explained|began)/u);
+  if (!m) return null;
+  const who = matchAlias(m[1], names);
+  if (who) return who;
+  const role = roleIn(m[1]);
+  return role && m[1].trim().toLowerCase().endsWith(role.toLowerCase()) ? resolveRole(role, sentences, names) : null;
+}
+/**
+ * The speaker that narration right next to the line names: "직원의 말이 끊겼다" after it, "니코가 말했다" after
+ * it, or "렌조가 입을 열었다" just before it (only when that narration does not follow another line).
+ */
+// Narration with a speech word that still says nothing was said by its subject ("대답 대신 고개를 끄덕였다").
+const NOT_SAID = /대답\s?(?:대신|하지|도\s?(?:하지|않|없)|은\s?없|없이)|대답하기도\s?전|말없이|말하지\s?(?:않|못)|말을\s?잇지\s?못|아무\s?말도/;
+function narrationSpeaker(sentences, at, names, scope = sentences) {
+  const plain = (i) => { const s = sentences[i]; return s != null && !isSpoken(parseLine(s).text) && !isTranslation(s); };
+  // Someone the line calls by name is spoken to, so narration that seems to give them the line is about another
+  // moment (an interruption, the one listening): it does not attribute this line.
+  const called = sentences[at] != null ? addressedIn(parseLine(sentences[at]).text, names).names : [];
+  const add = (found, who) => { if (who && !called.some((n) => samePerson(n, who, names))) found.add(who); };
+  let next = at + 1;
+  while (sentences[next] != null && isTranslation(sentences[next])) next++;
+  const found = new Set();
+  if (plain(next)) {
+    const text = parseLine(sentences[next]).text;
+    for (const m of text.matchAll(/([가-힣]+)의\s?말(?:이|은|을|끝|소리)/g)) {
+      add(found, matchAlias(m[1], names) || (roleIn(m[1]) === m[1] ? resolveRole(m[1], scope, names) : null));
+    }
+    if (!found.size && SAID_AFTER.test(text) && !NOT_SAID.test(text) && !/말을\s?끊/.test(text)) add(found, subjectOf(text, names, scope));
+  }
+  const prev = at - 1;
+  if (!found.size && plain(prev) && !(sentences[prev - 1] != null && isSpoken(parseLine(sentences[prev - 1]).text))) {
+    const text = parseLine(sentences[prev]).text;
+    if (SAID_BEFORE.test(text) && !NOT_SAID.test(text)) add(found, subjectOf(text, names, scope));
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
+/** The role narration next to the line gives its speaker ("직원의 말이 끊겼다", "직원이 말했다"), named or not. */
+function narrationRole(sentences, at) {
+  let next = at + 1;
+  while (sentences[next] != null && isTranslation(sentences[next])) next++;
+  const s = sentences[next];
+  if (s == null || isSpoken(parseLine(s).text) || isTranslation(s)) return null;
+  const text = parseLine(s).text;
+  for (const m of text.matchAll(/([가-힣]+)의\s?말(?:이|은|을|끝|소리)/g)) if (roleIn(m[1]) === m[1]) return m[1];
+  const subject = text.match(/^(?:그러자|그때|이내|곧)?\s*([가-힣]+)(?:이|가|은|는)\s/);
+  if (subject && SAID_AFTER.test(text) && !/말을\s?끊/.test(text) && roleIn(subject[1]) === subject[1]) return subject[1];
+  return null;
+}
+
+/**
+ * Titles ("Boss", "보스") that the saved lines use for one person only. Counted from lines with one listener that
+ * call nobody by name; a line corrected by hand counts double. Two uses and no one else are needed.
+ */
+function titleMap(store) {
+  const tally = new Map();
+  for (const scene of store.scenes || []) {
+    for (const q of [...(scene.events || []).flatMap((e) => e.quotes || []), ...(scene.loose || [])]) {
+      const to = splitTo(q.to);
+      if (!q.by || q.toGuess || to.length !== 1 || !isDialogue(q) || !GENERIC_IN.test(quoteText(q))) continue;
+      const a = addressedIn(quoteText(q), sceneNames(store, scene));
+      if (a.names.length || !a.titles.length) continue;
+      for (const t of a.titles) {
+        const m = tally.get(t) || new Map();
+        m.set(to[0], (m.get(to[0]) || 0) + (q.manual ? 2 : 1));
+        tally.set(t, m);
+      }
+    }
+  }
+  const out = new Map();
+  for (const [t, m] of tally) {
+    const ranked = [...m].sort((a, b) => b[1] - a[1]);
+    const total = ranked.reduce((n, x) => n + x[1], 0);
+    if (ranked[0][1] >= 2 && ranked[0][1] === total) out.set(t, ranked[0][0]);
+  }
+  return out;
+}
+const GENERIC_IN = /boss|capo|signor|sir|madam|ma'am|보스|두목|사장님|손님|선생님|형님|아가씨/i;
+
+/** Everything the rules know about one saved line. */
+function quoteFacts(q, message, names, scope, ctx = {}) {
+  const at = q.sentence - 1;
+  const addressed = addressedIn(quoteText(q), names);
+  const titled = [...new Set(addressed.titles.map((t) => ctx.titles?.get(t)).filter(Boolean))];
+  // People the room's address book says these terms call (a nickname the story keeps using for one person).
+  const booked = ctx.address?.size ? bookedIn(quoteText(q), names, ctx.address).filter((n) => !addressed.names.some((a) => samePerson(a, n, names))) : [];
+  const tag = parseLine(message.sentences[at]).by || null;
+  const narration = narrationSpeaker(message.sentences, at, names, scope);
+  const role = narration ? null : narrationRole(message.sentences, at);
+  // A "Name |" tag written by the story model can be wrong. Narration right next to the line that names someone
+  // else wins over it, and so does a role ("직원의 말이 끊겼다") when the tag names the user's character.
+  const labelWrong = !!tag && (!!(narration && !samePerson(narration, tag, names)) || !!(role && (ctx.personas || []).some((p) => samePerson(p, tag, names))));
+  return {
+    label: labelWrong ? null : tag,
+    tag,
+    labelWrong,
+    addressed: [...addressed.names, ...booked],
+    booked,
+    genericCall: addressed.generic,
+    titles: addressed.titles,
+    titled,
+    relay: relayIn(quoteText(q), names),
+    narration,
+    narrationRole: role,
+    reply: null,
+  };
+}
+const splitTo = (to) => String(to || '').split('·').map((x) => x.trim()).filter(Boolean);
+/** The listeners a line is sure of: a listener that was only guessed (q.toGuess) is no listener to the rules. */
+const certainTo = (q) => (q.toGuess ? [] : splitTo(q.to));
+const GUESS_RULE = '추정한 상대';
+// Lines with a speaker and no listener are checked once more to get a guess; this marks the ones already asked.
+const GUESS_CHECKED = 1;
+// Which rule made a guessed listener. A guess stamped with an older number (or none) is checked once more; a certain
+// listener is never re-checked because of it. 2: a person only mentioned in narration is not present.
+const GUESS_RULE_VERSION = 2;
+/** The rule that makes a called person a listener: a name in the line, or a term of the address book. */
+const vocativeRule = (facts, n, same) => (facts.booked?.some((b) => same(b, n)) ? 'address-book' : 'vocative-listener');
+const samePerson = (a, b, names) => !!a && !!b && (a === b || (matchAlias(a, names) || a) === (matchAlias(b, names) || b));
+
+/** Which rules the stored speaker and listener break. */
+function ruleViolations(q, facts, names) {
+  const out = [];
+  const labelled = facts.label && samePerson(facts.label, q.by, names);
+  if (q.by && !labelled && facts.addressed.some((n) => samePerson(n, q.by, names))) out.push('vocative-speaker');
+  if (q.by && !labelled && facts.narration && !samePerson(facts.narration, q.by, names)) out.push('narration-speaker');
+  if (q.by && facts.labelWrong && !facts.narration && samePerson(facts.tag, q.by, names)) out.push('label-contradicted');
+  const to = splitTo(q.to);
+  if (to.some((t) => facts.relay.names.some((n) => samePerson(n, t, names)) && !facts.addressed.some((n) => samePerson(n, t, names)))) out.push('relay-listener');
+  if (q.by && to.some((t) => samePerson(t, q.by, names))) out.push('self-listener');
+  return out;
+}
+
+function sceneNames(store, scene) {
+  return [...new Set([...(store.cast || []), ...(scene.present || []), ...(scene.events || []).flatMap((e) => e?.with || []), ...(store.personas || []), ...(scene.recollections || []).map((r) => r.who)].filter((n) => typeof n === 'string' && n.trim()))];
+}
+/**
+ * All sentences of the scene's messages and of the message right after it, where a role may be given a name.
+ * The scene's messages are found by id (numbers can shift); a scene saved without ids uses its numbers.
+ */
+function sceneScope(scene, messages) {
+  const ids = new Set((scene.messages || []).map((m) => m?.id).filter(Boolean));
+  const byNumber = (m) => (scene.start == null || m.number >= scene.start) && (scene.end == null || m.number <= scene.end);
+  const pick = (test) => messages.flatMap((m, i) => (test(m) ? [i] : []));
+  let at = ids.size ? pick((m) => ids.has(m.id)) : [];
+  if (!at.length) at = pick(byNumber);
+  if (at.length && at.at(-1) + 1 < messages.length) at.push(at.at(-1) + 1);
+  return at.flatMap((i) => messages[i].sentences || []);
+}
+const TRAILING_TRANSLATION = /\s*\([^()]*[가-힣][^()]*\)\s*$/;
+/**
+ * The source sentence a saved line points to, or why it no longer matches. The sentence must be most of the saved
+ * line (its translation aside): a short piece that merely occurs inside it, as after a swipe or an edit, is not it.
+ */
+function quoteSource(q, byNumber, byId = null) {
+  // The message is found by its id first: a number can shift (rows read in another order, a row added before it)
+  // while the message and its text stay the same.
+  const numbered = byNumber.get(q.number);
+  const m = (q.messageId && byId?.get(q.messageId)) || numbered;
+  if (!m) return { stale: 'message-missing' };
+  if (q.messageId && q.messageId !== m.id) return { stale: 'message-changed' };
+  const sentences = m.sentences || [];
+  const saved = parseLine(q.text).text;
+  const core = squash(saved.replace(TRAILING_TRANSLATION, '')) || squash(saved);
+  // The source may carry a translation (or other text) the saved line does not: it still holds the whole line.
+  const holds = (source) => !!source && core.length >= 2 && (squash(parseLine(source).text.replace(TRAILING_TRANSLATION, '')) || squash(parseLine(source).text)).includes(core);
+  const matches = (source) => {
+    if (!source) return false;
+    if (holds(source)) return true;
+    const here = parseLine(source).text;
+    if (!saved.includes(here)) return false;
+    return squash(here).length >= 2 && squash(here).length >= core.length * 0.6;
+  };
+  if (matches(sentences[q.sentence - 1])) return { m, source: sentences[q.sentence - 1], sentence: q.sentence };
+  // Sentences before it were split differently (a translation added, a line break): the whole line found once
+  // elsewhere in the same message is that line.
+  const found = sentences.flatMap((x, i) => (holds(x) ? [i] : []));
+  if (found.length === 1) return { m, source: sentences[found[0]], sentence: found[0] + 1, moved: true };
+  return { stale: 'pointer-mismatch' };
+}
+const stampOf = (q, scene) => JSON.stringify([q.by || null, q.to || null, !!q.manual, !!scene.edited, scene.editedAt || null]);
+
+/**
+ * The line just before spoke to one person by name or with a question, and nothing and nobody else comes in
+ * between: if this line is said by that person, it answers the one who asked. Calling the asker back ("Sì, Boss")
+ * is fine; calling anyone else is not.
+ */
+function replyFact(prev, here, names, order) {
+  const p = prev.q, q = here.q;
+  const listeners = certainTo(p);
+  if (!p.by || listeners.length !== 1 || samePerson(p.by, listeners[0], names)) return null;
+  const toListener = (n) => samePerson(n, listeners[0], names);
+  if (!prev.facts.addressed.some(toListener) && !prev.facts.titled.some(toListener) && !/\?/.test(parseLine(p.text).text)) return null;
+  if ([...here.facts.addressed, ...here.facts.titled].some((n) => !samePerson(n, p.by, names))) return null;
+  let gap;
+  if (prev.m === here.m) gap = here.m.sentences.slice(p.sentence, q.sentence - 1);
+  else if (order.get(here.m.number) === order.get(prev.m.number) + 1) gap = [...prev.m.sentences.slice(p.sentence), ...here.m.sentences.slice(0, q.sentence - 1)];
+  else return null;
+  gap = gap.filter((s) => !isTranslation(s));
+  if (gap.length > 3 || gap.some((s) => isSpoken(parseLine(s).text))) return null;
+  if (names.some((n) => !samePerson(n, p.by, names) && !toListener(n) && gap.some((s) => mentions(s, n)))) return null;
+  return { asker: p.by, listener: listeners[0] };
+}
+
+/** Every saved spoken line of a scene in story order, with its source and what the rules know about it. */
+function sceneLines(store, scene, messages, byNumber, order, ctx) {
+  const names = sceneNames(store, scene);
+  const byId = ctx.byId || new Map(messages.map((m) => [m.id, m]));
+  const lines = [...(scene.events || []).flatMap((event) => (event.quotes || []).map((q) => ({ q, event }))), ...(scene.loose || []).map((q) => ({ q, event: null }))]
+    .filter(({ q }) => isDialogue(q));
+  for (const line of lines) {
+    const found = quoteSource(line.q, byNumber, byId);
+    if (found.stale) { line.stale = found.stale; continue; }
+    // The line is still in its message, under another number or sentence: the pointer is brought up to date.
+    if (found.m.number !== line.q.number || found.sentence !== line.q.sentence) {
+      line.moved = { number: line.q.number, sentence: line.q.sentence };
+      line.q.number = found.m.number;
+      line.q.sentence = found.sentence;
+    }
+    Object.assign(line, { m: found.m, source: found.source });
+  }
+  lines.sort((a, b) => a.q.number - b.q.number || a.q.sentence - b.q.sentence);
+  const scope = sceneScope(scene, messages);
+  // What the saved scene says about roles goes with the scope, so every role lookup in it sees the same thing.
+  scope.personas = ctx.personas || [];
+  scope.roleHints = roleHintsOf(scene, lines, names, scope.personas);
+  let prev = null;
+  for (const line of lines) {
+    if (line.stale) { prev = null; continue; }
+    line.facts = quoteFacts(line.q, line.m, names, scope, ctx);
+    if (prev) line.facts.reply = replyFact(prev, line, names, order);
+    prev = line;
+  }
+  return { names, scope, lines };
+}
+
+// Raised whenever the rules or the question change, so every line is checked once more under the new rules.
+const ATTRIBUTION_RULES_VERSION = 9;
+/**
+ * What a check of this line depended on: the source message, its text around the line, the stored values, the
+ * names, and the rules the stored values break. Worked out from the values as saved, so a line saved by a check
+ * matches its fingerprint on the next run and is not asked again.
+ */
+function attributionFingerprint(e) {
+  const violations = e.facts ? ruleViolations(e.q, e.facts, e.names) : [];
+  return L.hashText(JSON.stringify([ATTRIBUTION_RULES_VERSION, e.m.id || null, e.m.h || null, e.context, e.q.by || null, e.q.to || null, e.names, violations, ...(e.q.toGuess ? ['guess'] : []), ...(e.facts?.booked?.length ? ['book', ...e.facts.booked] : [])]));
+}
+
+/**
+ * The people around one line, for a guess at its listener: the other speakers of the lines near it (this message and
+ * the ones right before and after) and the characters the narration near it names. Known names only; the speaker is
+ * left out by the caller. The scene's own list of who is present counts as present too, but only for checking a
+ * model's guess. A name only mentioned in narration counts only when the scene's present list holds that person (an
+ * empty or missing list: not at all); someone merely thought of or talked about is not in the room.
+ */
+function peopleAround(lines, at, names, window, order, present = [], hereEvent = null) {
+  const known = (n) => (typeof n === 'string' && n.trim() ? matchAlias(n, names) : null);
+  const uniq = (list) => list.filter((n, i) => n && list.findIndex((u) => u && samePerson(u, n, names)) === i);
+  const here = lines[at];
+  const near = order.get(here.m.number);
+  const speakers = [];
+  for (let j = Math.max(0, at - 6); j <= Math.min(lines.length - 1, at + 3); j++) {
+    const other = lines[j];
+    if (j === at || other.stale || Math.abs(order.get(other.m.number) - near) > 1) continue;
+    // An event that lists who was there: a speaker of another event counts only if that list holds them too.
+    if (hereEvent?.with?.length && other.event !== hereEvent && !(present || []).some((p) => samePerson(p, other.q.by, names))) continue;
+    speakers.push(known(other.q.by));
+  }
+  // The user's message is written by the user's character, who is then in the scene without being named.
+  for (const m of [here.m, window.previousMessage]) if (m?.role === 'user') speakers.push(known(m.speaker));
+  const narrated = [...window.previous.slice(-3), ...window.before.slice(-6), ...window.after.slice(0, 6)].filter((s) => !isSpoken(parseLine(s).text) && !isTranslation(s));
+  const inScene = (n) => (present || []).some((p) => samePerson(p, n, names));
+  const named = names.filter((n) => inScene(n) && narrated.some((s) => mentions(s, n)));
+  return { speakers: uniq(speakers), named: uniq(named) };
+}
+
+/**
+ * The most likely listener when none can be proven, as a list of names, or null. The model's own guess (toGuess, or
+ * the names it gave as listeners without proof) is taken when it names someone present who is not the speaker;
+ * otherwise the people around the line are the guess. Never the speaker, never a person the line only asks to tell.
+ */
+function guessListeners(e, by, answers) {
+  const same = (x, y) => samePerson(x, y, e.names);
+  const f = e.facts;
+  const around = e.around || { speakers: [], named: [] };
+  const present = [...around.speakers, ...(e.presence || e.scene.present || [])];
+  const elsewhere = (n) => (e.away || []).some((a) => same(a, n)) && !around.speakers.some((s) => same(s, n));
+  const usable = (n) => !same(n, by) && !(f.relay.names.some((r) => same(r, n)) && !f.addressed.some((a) => same(a, n))) && !elsewhere(n);
+  const lists = answers.filter((j) => j?.valid)
+    .map((j) => (j.guessNamed.length ? j.guessNamed : j.toNamed).filter((n) => usable(n) && present.some((p) => same(p, n))))
+    .filter((l) => l.length);
+  let list = lists[0] || [];
+  if (lists.length > 1) { const both = lists[0].filter((n) => lists[1].some((u) => same(n, u))); if (both.length) list = both; }
+  if (list.length) return { to: list.slice(0, 5), source: 'model' };
+  const nearby = [...around.speakers, ...around.named].filter((n, i, all) => usable(n) && all.findIndex((u) => same(u, n)) === i);
+  return nearby.length ? { to: nearby.slice(0, 5), source: 'nearby' } : null;
+}
+const ROLE_NOTE_MAX = 4;
+/** Sentences of the scene that may give a role its name ("Mi chiamo …", "…라는 직원"), for the model. */
+function roleNotes(scope, role, source) {
+  if (!role) return [];
+  const roleRe = new RegExp(hasHangul(role) ? role : `\\b${role}\\b`, 'i');
+  return scope.filter((s) => s !== source && ((roleRe.test(s) && INTRO.test(s)) || SELF_INTRO.test(parseLine(s).text))).slice(0, ROLE_NOTE_MAX).map((s) => String(s).slice(0, 300));
+}
+
+/**
+ * Saved lines to check. A line whose fingerprint is unchanged since its last check and that breaks no rule is left
+ * out (counted in stats.skipped), on every run including a resume; `force` (or the older `retryUnresolved`) takes
+ * them all. Lines come in story order within each scene.
+ */
+function attributionCandidates(store, messages, limit = 20, attempted = new Set(), { retryUnresolved = false, force = retryUnresolved, stats = null } = {}) {
+  const byNumber = new Map(messages.map((m) => [m.number, m]));
+  const order = new Map(messages.map((m, i) => [m.number, i]));
+  const ctx = { titles: titleMap(store), address: addressMap(), placeKey: placeKeyFn(), personas: store.personas || [], byId: new Map(messages.map((m) => [m.id, m])) };
+  const result = [];
+  for (const scene of store.scenes || []) {
+    if (scene.edited) continue;
+    const { names, scope, lines } = sceneLines(store, scene, messages, byNumber, order, ctx);
+    for (const [at, line] of lines.entries()) {
+      const { q, event } = line;
+      // A line the user corrected by hand is theirs; the check never touches it.
+      if (line.stale || attempted.has(q) || q.manual) continue;
+      const { m, source, facts } = line;
+      const violations = ruleViolations(q, facts, names);
+      const window = lineContext(line, messages, order);
+      const { after, context, externalContext } = window;
+      // Include the sender as a candidate when a user message has one unlabelled utterance.
+      // Auto-fill only when the entire message consists of that utterance.
+      const onlySpeech = m.sentences.filter((part) => isSpoken(parseLine(part).text)).length === 1;
+      const sender = m.role === 'user' && m.speaker && m.speaker !== 'User' && onlySpeech && !parseLine(source).by ? m.speaker : null;
+      const senderAlone = sender && m.sentences.length === 1;
+      const e = {
+        id: String(result.length), q, scene, names, scope, facts, violations, stamp: stampOf(q, scene), context, externalContext, source, sender, senderAlone,
+        eventText: event?.text || '', m, at: `${m.number}.${q.sentence}`, window: [Math.max(1, q.sentence - 8), Math.min(m.sentences.length, q.sentence + 20)],
+        previous: order.get(m.number) > 0 ? messages[order.get(m.number) - 1] : null, personas: ctx.personas,
+        roleNotes: roleNotes(scope, facts.narrationRole || roleIn(after.slice(0, 2).join(' ')), source),
+      };
+      e.fingerprint = attributionFingerprint(e);
+      // A speaker with no listener is asked once more for a guess, even when it was checked before; only these.
+      const wantsGuess = !!q.by && !q.to && !q.toGuess && q.toGuessChecked !== GUESS_CHECKED;
+      // A guessed listener made under an older guess rule is checked once more (certain listeners never are).
+      const staleGuess = !!q.by && !!q.toGuess && q.guessRule !== GUESS_RULE_VERSION;
+      // Checked before with exactly this input: the same question would get the same answer. A rule the saved
+      // values still break is part of the fingerprint, so it was weighed when they were saved.
+      if (!force && !wantsGuess && !staleGuess && q.attributionFp === e.fingerprint) {
+        if (stats) { stats.skipped = (stats.skipped || 0) + 1; if (stats.byScene) stats.byScene[scene.id || ''] = (stats.byScene[scene.id || ''] || 0) + 1; }
+        continue;
+      }
+      e.eventAt = eventAt(scene, event, q);
+      e.presence = presenceOf(scene, e.eventAt);
+      // An event with no list of who was there: people whose recorded place clearly differs from the scene's are probably only on the phone.
+      if (ctx.placeKey && !e.eventAt?.with?.length) e.away = St.awayFrom(store, scene, ctx.placeKey);
+      if (q.by) e.around = peopleAround(lines, at, names, window, order, e.presence, e.eventAt);
+      result.push(e);
+      if (result.length >= limit) return result;
+    }
+  }
+  return result;
+}
+
+/**
+ * A line the rules settle on their own, so the model is not asked: the speaker comes from a trusted tag, narration
+ * right next to it or the sender of a one-line message, and the listeners are exactly the people the line calls
+ * (by name or by a title used for one person) or the one it answers. Returns the reason, or null.
+ */
+function settledByRules(e) {
+  const f = e.facts, same = (x, y) => samePerson(x, y, e.names);
+  if (e.violations.length || !e.q.by) return null;
+  const speaker = f.label && same(f.label, e.q.by) ? 'label' : f.narration && same(f.narration, e.q.by) ? 'narration' : e.senderAlone && same(e.sender, e.q.by) ? 'sender' : null;
+  if (!speaker) return null;
+  const want = [...f.addressed, ...f.titled].filter((n) => !same(n, e.q.by));
+  if (f.reply && same(f.reply.listener, e.q.by)) want.push(f.reply.asker);
+  const to = certainTo(e.q);
+  if (!want.length || !to.length) return null;
+  return to.every((t) => want.some((w) => same(w, t))) && want.every((w) => to.some((t) => same(t, w))) ? `settled-${speaker}` : null;
+}
+
+/** Record that a line was checked as it now stands (after its values were saved). */
+function stampAttribution(e) {
+  e.q.attributionChecked = 7;
+  e.q.toGuessChecked = GUESS_CHECKED;
+  e.q.attributionFp = attributionFingerprint(e);
+}
+
+/**
+ * "Rules only" check: no model answer exists, so a speaker with no certain listener gets the deterministic guess (the
+ * speakers of nearby lines and people the narration near it names, who are present), marked as a guess. Nothing is
+ * stamped as checked, so a later, fuller check still looks at these lines. Returns the diagnostics entries.
+ */
+function applyRulesGuesses(candidates) {
+  const out = [];
+  for (const e of candidates) {
+    const { q } = e;
+    if (e.scene.edited || q.manual || !q.by || certainTo(q).length) continue;
+    if (q.toGuess && q.guessRule === GUESS_RULE_VERSION) continue;
+    const guess = guessListeners(e, q.by, []);
+    if (!guess) continue;
+    const before = { by: q.by || null, to: q.to || null };
+    q.to = guess.to.join('·'); q.toGuess = true; q.guessRule = GUESS_RULE_VERSION;
+    delete q.viaBook;
+    out.push({ scene: e.scene.id || '', number: q.number, sentence: q.sentence, source: 'rule', decision: 'applied', rule: GUESS_RULE, fired: [GUESS_RULE], before, after: { by: q.by, to: q.to, guess: true } });
+  }
+  return out;
+}
+
+/**
+ * Candidates in groups for one model call each: lines of the same message stay together, so the text around them
+ * is sent once. A group holds up to maxItems lines and about maxChars characters of source text.
+ */
+function attributionBatches(candidates, { maxItems = 16, maxChars = 24000 } = {}) {
+  const out = [];
+  let batch = [], chars = 0, last = null;
+  const cost = (e) => e.m.sentences.slice(e.window[0] - 1, e.window[1]).reduce((n, s) => n + s.length + 8, 0);
+  for (const e of candidates) {
+    const add = () => (e.m !== last ? cost(e) + (e.previous ? 600 : 0) : Math.ceil(cost(e) / 4));
+    if (batch.length && (batch.length >= maxItems || chars + add() > maxChars)) { out.push(batch); batch = []; chars = 0; last = null; }
+    chars += add();
+    batch.push(e);
+    last = e.m;
+  }
+  if (batch.length) out.push(batch);
+  return out;
+}
+
+/**
+ * The input of one call: each source message once, as numbered sentences covering the windows of its lines, and
+ * the lines pointing into it. `flagged` adds what the first answer got wrong (notSpeaker) for the second call.
+ */
+function attributionInput(batch, { second = false } = {}) {
+  const messages = new Map();
+  for (const e of batch) {
+    const entry = messages.get(e.m) || { number: e.m.number, from: e.window[0], to: e.window[1], previous: e.previous?.sentences?.slice(-6) || [] };
+    entry.from = Math.min(entry.from, e.window[0]);
+    entry.to = Math.max(entry.to, e.window[1]);
+    messages.set(e.m, entry);
+  }
+  const context = [...messages].map(([m, x]) => ({
+    message: x.number,
+    ...(x.from === 1 && x.previous.length ? { previousMessageEnd: x.previous } : {}),
+    sentences: m.sentences.slice(x.from - 1, x.to).map((s, i) => `[${x.number}.${x.from + i}] ${s}`),
+  }));
+  const scenes = new Map();
+  for (const e of batch) if (!scenes.has(e.scene)) scenes.set(e.scene, { names: e.names, roleNotes: [] });
+  for (const e of batch) for (const n of e.roleNotes || []) { const s = scenes.get(e.scene); if (!s.roleNotes.includes(n)) s.roleNotes.push(n); }
+  const sceneIds = new Map([...scenes.keys()].map((s, i) => [s, String(i)]));
+  return {
+    scenes: [...scenes].map(([s, x]) => ({ scene: sceneIds.get(s), names: x.names, ...(x.roleNotes.length ? { roleIntroductions: x.roleNotes.slice(0, 6) } : {}) })),
+    context,
+    items: batch.map((e) => ({
+      id: e.id, at: e.at, scene: sceneIds.get(e.scene), quote: quoteText(e.q), addressedInQuote: e.facts.addressed,
+      ...(e.facts.titled.length ? { calledByTitle: e.facts.titled } : {}),
+      ...(e.facts.labelWrong ? { speakerTagDoubtful: e.facts.tag } : {}),
+      sceneEvent: e.eventText, messageSender: e.sender,
+      ...(second && e.flag?.notSpeaker?.length ? { notSpeaker: e.flag.notSpeaker } : {}),
+    })),
+  };
+}
+
+/** The name as the one acting in the narration, not as the one spoken to ("…에게", "…를"). */
+function anchors(evidence, who, e) {
+  const text = String(evidence || '');
+  for (const a of nameAliases(who)) {
+    if (!hasHangul(a)) continue;
+    for (let i = text.indexOf(a); i >= 0; i = text.indexOf(a, i + 1)) {
+      if (!/^\s?(?:에게|한테|께(?!서)|을|를|와|과|랑|쪽|앞|에게서|한테서)/.test(text.slice(i + a.length))) return true;
+    }
+  }
+  if (hasLatin(text) && !hasHangul(text) && mentions(text, who)) return true;
+  const role = roleIn(text);
+  return !!role && resolveRole(role, e.scope, e.names) === who;
+}
+
+/**
+ * One model answer checked against the source. A name is kept only with proof the code can see: the speaker
+ * label, the sender of a one-line user message, narration next to the line, or evidence outside the line that
+ * names the speaker (or a role the scene gives that name). A person called by name in the line is never its speaker.
+ * toNamed lists every known listener the answer gave, before the evidence check, for comparing with stored values.
+ */
+function judgeAnswer(e, a) {
+  if (!a || !(a.by === null || typeof a.by === 'string') || !Array.isArray(a.to)) return { valid: false, by: null, to: [], toNamed: [], guessNamed: [], byReason: 'malformed', toReasons: [] };
+  // Evidence copied with the sentence number the input put in front of it.
+  const unnumber = (x) => (typeof x === 'string' ? x.replace(/\[\d+\.\d+\]\s*/g, '') : x);
+  a = { ...a, byEvidence: unnumber(a.byEvidence), toEvidence: unnumber(a.toEvidence) };
+  const same = (x, y) => samePerson(x, y, e.names);
+  const inContext = (s) => typeof s === 'string' && squash(s).length >= 4 && squash(e.context).includes(squash(s));
+  const outside = (s) => typeof s === 'string' && squash(s).length >= 4 && squash(e.externalContext).includes(squash(s));
+  const resolve = (s) => {
+    if (typeof s !== 'string' || !s.trim() || s.trim().length > 40) return null;
+    const t = s.trim();
+    const known = matchAlias(t, e.names);
+    if (known) return known;
+    const role = roleIn(t);
+    if (role && t.toLowerCase().endsWith(role.toLowerCase())) return resolveRole(role, e.scope, e.names);
+    const titled = e.facts.titles?.includes(t.toLowerCase()) && e.facts.titled.length === 1 ? e.facts.titled[0] : null;
+    if (titled) return titled;
+    return e.externalContext.includes(t) ? t : null;
+  };
+  const f = e.facts;
+  let by = null, byReason = 'blank', said = null;
+  if (typeof a.by === 'string' && a.by.trim()) {
+    const who = resolve(a.by);
+    said = who;
+    const labelled = who && f.label && same(f.label, who);
+    if (!who) byReason = roleIn(a.by) ? 'role-unresolved' : 'unknown-name';
+    else if (!labelled && f.addressed.some((n) => same(n, who))) byReason = 'vocative';
+    else if (labelled) { by = who; byReason = 'label'; }
+    else if (f.narration && !same(f.narration, who)) byReason = 'narration-conflict';
+    else if (f.narration) { by = who; byReason = 'narration'; }
+    else if (f.labelWrong && same(f.tag, who)) byReason = 'label-contradicted';
+    else if (e.sender && same(e.sender, who)) { by = who; byReason = 'sender'; }
+    // The narration next to the line has a role as its subject and the scene names that role as this person.
+    else if (f.narrationRole && same(resolveRole(f.narrationRole, e.scope, e.names), who)) { by = who; byReason = 'role-name'; }
+    else if (!outside(a.byEvidence)) byReason = inContext(a.byEvidence) ? 'evidence-in-quote' : 'evidence-missing';
+    else if (!anchors(a.byEvidence, who, e)) byReason = 'evidence-unanchored';
+    else { by = who; byReason = 'evidence'; }
+  }
+  const relayed = (who) => !f.addressed.some((n) => same(n, who)) && f.relay.names.some((n) => same(n, who));
+  const toNamed = [];
+  for (const raw of a.to) {
+    const who = resolve(raw);
+    if (who && !(said && same(who, said)) && !relayed(who) && !toNamed.some((t) => same(t, who))) toNamed.push(who);
+  }
+  const to = [], toReasons = [];
+  if (by) {
+    for (const raw of a.to) {
+      const who = resolve(raw);
+      if (!who) { toReasons.push('unknown-name'); continue; }
+      if (same(who, by) || to.some((t) => same(t, who))) continue;
+      const called = f.addressed.some((n) => same(n, who)) || f.titled.some((n) => same(n, who));
+      if (!called && relayed(who)) toReasons.push('relay');
+      else if (called || (inContext(a.toEvidence) && mentions(a.toEvidence, who))) to.push(who);
+      else toReasons.push('evidence');
+    }
+    // "저 남자한텐 전해 줘": with several listeners, keep only the ones the line or narration speaks to directly.
+    if (f.relay.pronoun && to.length > 1) {
+      const direct = to.filter((t) => f.addressed.some((n) => same(n, t)) || nameAliases(t).some((x) => new RegExp(`${x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s?(?:에게|한테|께(?!서))`).test(String(a.toEvidence || ''))));
+      if (direct.length !== to.length) toReasons.push('relay');
+      to.splice(0, to.length, ...direct);
+    }
+  }
+  // The model's guess at the listener when it could not prove one: known names only (no evidence is asked for).
+  const guessNamed = [];
+  const guessed = Array.isArray(a.toGuess) ? a.toGuess : typeof a.toGuess === 'string' ? splitTo(a.toGuess) : [];
+  for (const raw of guessed) {
+    const who = typeof raw === 'string' && raw.trim().length <= 40 ? matchAlias(raw, e.names) : null;
+    if (who && !(said && same(who, said)) && !relayed(who) && !guessNamed.some((t) => same(t, who))) guessNamed.push(who);
+  }
+  return { valid: true, by, said, to, toNamed, guessNamed: guessNamed.slice(0, 5), byReason, toReasons, raw: { by: typeof a.by === 'string' ? a.by.trim().slice(0, 40) : null, to: a.to.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 40)).slice(0, 5) } };
+}
+
+/**
+ * Whether one answer needs a second look before it is saved. Only: no usable answer; a rule the stored values break
+ * or the answer breaks (narration or tag against it); a call by name or a role to be named; an answer that names
+ * another speaker or other listeners than the stored ones; or a line with no stored speaker that the answer does not
+ * settle. A clean answer that agrees with stored values is saved as it is, even when its evidence is weak.
+ * Returns the reasons.
+ */
+function attributionFlags(e, item) {
+  const j = judgeAnswer(e, item);
+  const same = (x, y) => samePerson(x, y, e.names);
+  const out = [];
+  if (!item) out.push('unanswered');
+  else if (!j.valid) out.push('malformed');
+  if (e.violations.length) out.push(...e.violations);
+  if (['vocative', 'role-unresolved', 'narration-conflict', 'label-contradicted'].includes(j.byReason)) out.push(j.byReason);
+  const stored = certainTo(e.q);
+  if (j.valid) {
+    // What the answer named, before the evidence check: weak evidence for the stored speaker is no disagreement.
+    const named = j.by || j.said;
+    if (e.q.by && !(named && same(named, e.q.by))) out.push('differs-from-stored');
+    else if (e.q.by && stored.length && (stored.length !== j.toNamed.length || stored.some((t) => !j.toNamed.some((u) => same(t, u))))) out.push('listener-differs');
+    if (!e.q.by && !j.by) out.push('empty-speaker');
+  }
+  if (e.facts.narrationRole && !e.facts.narration) out.push('role');
+  return { flagged: out.length > 0, reasons: [...new Set(out)], notSpeaker: j.byReason === 'vocative' ? e.facts.addressed : [] };
+}
+
+/**
+ * Two answers for the same lines. Each is checked on its own first; a speaker both prove the same way is kept,
+ * one proven speaker is kept when the other answer has none, and two different proven speakers are not decided.
+ */
+function confirmAttributionResults(candidates, first, second) {
+  if (!Array.isArray(first) && !Array.isArray(second)) return [];
+  const pick = (list) => new Map((Array.isArray(list) ? list : []).map((x) => [String(x?.id), x]));
+  const A = pick(first), B = pick(second);
+  const out = [];
+  for (const e of candidates) {
+    const a = A.get(e.id), b = B.get(e.id);
+    if (!a && !b) continue;
+    const ja = judgeAnswer(e, a), jb = judgeAnswer(e, b);
+    if (!ja.valid && !jb.valid) continue;
+    let by = null, reason;
+    if (ja.by && jb.by) [by, reason] = samePerson(ja.by, jb.by, e.names) ? [ja.by, 'agree'] : [null, 'disagree'];
+    else if (ja.by || jb.by) [by, reason] = [ja.by || jb.by, a && b ? 'one-proven' : 'single-answer'];
+    else reason = [ja.byReason, jb.byReason].includes('vocative') ? 'vocative' : 'no-proven-speaker';
+    const lists = [ja, jb].filter((j) => by && j.by && samePerson(j.by, by, e.names)).map((j) => j.to);
+    const to = lists.length === 2 ? lists[0].filter((t) => lists[1].some((u) => samePerson(t, u, e.names))) : lists[0] || [];
+    out.push({ id: e.id, decided: true, independentReview: true, by, to, reason, first: ja, second: jb });
+  }
+  return out;
+}
+
+/** Lines whose answers named the person the line calls by name: worth one more question with that rule spelled out. */
+function reaskCandidates(candidates, decided) {
+  const byId = new Map(decided.map((d) => [d.id, d]));
+  return candidates.filter((e) => { const d = byId.get(e.id); return d && !d.by && !e.facts.narration && [d.first?.byReason, d.second?.byReason].includes('vocative'); });
+}
+function mergeReask(candidates, decided, answers) {
+  const byId = new Map((Array.isArray(answers) ? answers : []).map((x) => [String(x?.id), x]));
+  for (const d of decided) {
+    const e = candidates.find((x) => x.id === d.id), answer = byId.get(d.id);
+    if (!e || !answer || d.by) continue;
+    const j = judgeAnswer(e, answer);
+    d.reask = j;
+    if (j.by) { d.by = j.by; d.to = j.to; d.reason = 'reask'; }
+  }
+  return decided;
+}
+
+/**
+ * Save the checked answers. A quote the user edited, or one that changed while the model was asked, is left alone.
+ * When no speaker is proven, an existing one that breaks no rule is kept; one the line calls by name, one the
+ * narration contradicts, and one every answer names as the person spoken to are not. Stored listeners that every
+ * answer also gives are kept, and a direct reply goes back to the one who asked.
+ */
+function applyAttributionResults(candidates, results) {
+  if (!Array.isArray(results)) return 0;
+  let changed = 0;
+  const entries = new Map(candidates.map((e) => [e.id, e])), seen = new Set();
+  for (const item of results) {
+    const e = entries.get(String(item?.id));
+    if (!e || seen.has(e.id)) continue;
+    seen.add(e.id);
+    const prev = { by: e.q.by || null, to: e.q.to || null };
+    // A listener that was only guessed is not one the rules or the answers may keep as certain.
+    const prevTo = certainTo(e.q), prevGuess = !!e.q.toGuess;
+    if (e.scene.edited || e.q.manual) { e.outcome = { decision: 'skipped', rule: 'manual', before: prev }; continue; }
+    if (stampOf(e.q, e.scene) !== e.stamp) { e.outcome = { decision: 'skipped', rule: 'changed-during-check', before: prev }; continue; }
+    const d = item.decided ? item : (() => { const j = judgeAnswer(e, item); return { by: j.by, to: j.to, reason: j.valid ? 'single-answer' : 'malformed', first: j, valid: j.valid }; })();
+    if (d.valid === false) { e.outcome = { decision: 'skipped', rule: 'malformed', before: prev }; continue; }
+    const same = (x, y) => samePerson(x, y, e.names);
+    const f = e.facts;
+    const answers = [d.first, d.second].filter((j) => j?.valid);
+    const fired = [];
+    // Both answers give the stored speaker as the one spoken to: the stored pair is the wrong way round.
+    const reversed = !!prev.by && answers.length >= 2 && answers.every((j) => j.toNamed.some((t) => same(t, prev.by)) && !(j.said && same(j.said, prev.by)));
+    const breaksRule = reversed || e.violations.some((v) => v === 'vocative-speaker' || v === 'narration-speaker' || v === 'label-contradicted');
+    let by = d.by, to = [...(d.to || [])], rule = d.reason;
+    if (!by) {
+      const listeners = prevTo;
+      // The answers name only a role nobody in the scene is named for (or the stored listener) as the speaker:
+      // the stored pair is turned round rather than kept, when the stored listener is not the user's character.
+      const swap = reversed && listeners.length === 1 && !same(listeners[0], prev.by) && !f.addressed.some((n) => same(n, listeners[0]))
+        && !(e.personas || []).some((p) => same(p, listeners[0]))
+        && answers.every((j) => j.byReason === 'role-unresolved' || (j.said && same(j.said, listeners[0])));
+      // Every answer names the stored speaker, nobody calls that speaker in the line, and the stored listeners are
+      // the people the line calls: the rules and the answers agree, so the value is not wiped by a weaker rule.
+      const agreedStored = !!prev.by && !reversed && answers.length >= 2 && answers.every((j) => j.said && same(j.said, prev.by))
+        && !f.addressed.some((n) => same(n, prev.by)) && !(f.labelWrong && same(f.tag, prev.by))
+        && f.addressed.length > 0 && f.addressed.every((n) => prevTo.some((t) => same(t, n)));
+      if (f.narration && !f.addressed.some((n) => same(n, f.narration))) [by, rule] = [f.narration, 'narration'];
+      else if (agreedStored) [by, rule] = [prev.by, 'kept-agreed'];
+      else if (prev.by && !breaksRule) [by, rule] = [prev.by, d.reason === 'disagree' ? 'kept-disagree' : 'kept'];
+      else if (e.senderAlone && !item.decided && item.by === null) [by, rule] = [e.sender, 'sender'];
+      else if (swap) { [by, rule] = [listeners[0], 'swapped-reversed']; to = []; }
+      else if (prev.by) rule = reversed ? 'cleared-reversed' : e.violations.includes('vocative-speaker') ? 'cleared-vocative' : e.violations.includes('label-contradicted') ? 'cleared-label' : 'cleared-narration';
+    }
+    if (by) {
+      const relayed = (t) => f.relay.names.some((n) => same(n, t)) && !f.addressed.some((n) => same(n, t));
+      const storedTo = same(by, prev.by) ? prevTo : [];
+      if (!to.length && storedTo.length) to = storedTo.filter((t) => !relayed(t));
+      const add = (t, code) => { if (t && !same(t, by) && !relayed(t) && !to.some((u) => same(u, t))) { to.push(t); fired.push(code); } };
+      // A stored listener every answer also gives is kept: an agreed value is not cut down without a broken rule.
+      for (const t of storedTo) if (answers.length && answers.every((j) => j.toNamed.some((u) => same(t, u)))) add(t, 'kept-listener');
+      // A listener both answers give, who is called in the line or named around it.
+      if (answers.length >= 2) for (const t of answers[0].toNamed) if (answers.slice(1).every((j) => j.toNamed.some((u) => same(t, u))) && (f.titled.some((n) => same(n, t)) || mentions(e.context, t))) add(t, 'agreed-listener');
+      if (reversed) add(prev.by, 'reversed-listener');
+      for (const n of f.addressed) add(n, vocativeRule(f, n, same));
+      for (const n of f.titled) add(n, 'title-listener');
+      if (!to.length && f.reply && same(by, f.reply.listener) && !same(by, f.reply.asker)) add(f.reply.asker, 'reply');
+      to = to.filter((t) => !same(t, by) && !relayed(t));
+    } else {
+      // No speaker: the people the line calls are still its listeners, and when only the speaker was in doubt
+      // (a doubtful tag or narration, not a reversed pair or a call by name) the stored listeners stay as well.
+      const relayed = (t) => f.relay.names.some((n) => same(n, t)) && !f.addressed.some((n) => same(n, t));
+      const onlySpeaker = !reversed && !e.violations.includes('vocative-speaker');
+      to = [...(onlySpeaker ? prevTo.filter((t) => !same(t, prev.by)) : []), ...f.addressed].filter((t, i, all) => !relayed(t) && all.findIndex((u) => same(u, t)) === i);
+      if (to.length && !prevTo.length) fired.push('vocative-listener');
+    }
+    // Nothing certain: the most likely listener is stored as a guess, marked as one. A certain value never gets here.
+    let guess = null;
+    if (by && !to.length) {
+      guess = guessListeners(e, by, [d.first, d.second, d.reason === 'reask' ? d.reask : null]);
+      if (guess) { to = guess.to; fired.push(GUESS_RULE); }
+    }
+    const recipient = [...new Set(to)].join('·') || null;
+    if (e.q.by !== by || (e.q.to || null) !== recipient || prevGuess !== !!guess) changed++;
+    e.q.by = by; e.q.to = recipient;
+    if (fired.includes('address-book')) e.q.viaBook = true; else if (recipient !== prev.to) delete e.q.viaBook;
+    if (guess) { e.q.toGuess = true; e.q.guessRule = GUESS_RULE_VERSION; } else { delete e.q.toGuess; delete e.q.guessRule; }
+    stampAttribution(e);
+    e.outcome = { decision: prev.by === by && prev.to === recipient && prevGuess === !!guess ? 'unchanged' : 'applied', rule: [rule, ...fired].filter(Boolean).join(','), fired, before: prev, after: { by, to: recipient, ...(guess ? { guess: true } : {}) } };
+  }
+  return changed;
+}
+
+/**
+ * The rules applied to every saved line, with or without a model answer: a speaker the line calls by name is
+ * removed, narration next to the line names the speaker (over a doubtful tag), a person only to be told something
+ * is not a listener, the person called by name or by their title is a listener, and a direct reply goes back to
+ * the one who asked. Hand-edited lines and scenes are left alone; lines whose source changed are reported, not
+ * touched. A line already checked under the current rules stays checked after a rule changes it.
+ */
+function enforceAttributionRules(store, messages) {
+  const byNumber = new Map(messages.map((m) => [m.number, m]));
+  const order = new Map(messages.map((m, i) => [m.number, i]));
+  const ctx = { titles: titleMap(store), address: addressMap(), personas: store.personas || [], byId: new Map(messages.map((m) => [m.id, m])) };
+  const out = [];
+  for (const scene of store.scenes || []) {
+    if (scene.edited) continue;
+    const { names, lines } = sceneLines(store, scene, messages, byNumber, order, ctx);
+    for (const line of lines) if (line.moved) out.push({ scene: scene.id || '', number: line.q.number, sentence: line.q.sentence, decision: 'relocated', rule: 'pointer-updated', from: line.moved });
+    const same = (x, y) => samePerson(x, y, names);
+    let prev = null;
+    for (const line of lines) {
+      const { q } = line;
+      if (line.stale) { out.push({ scene: scene.id || '', number: q.number, sentence: q.sentence, decision: 'skipped', rule: line.stale }); prev = null; continue; }
+      const facts = line.facts;
+      // The line before may just have been corrected: the reply is worked out from its values as they are now.
+      facts.reply = prev ? replyFact(prev, line, names, order) : null;
+      if (q.manual) { prev = line; continue; }
+      const before = { by: q.by || null, to: q.to || null };
+      const rules = [];
+      const labelled = facts.label && same(facts.label, q.by);
+      // A guessed listener is not certain: the rules below decide on certain listeners only, and a guess survives
+      // them only while its speaker is unchanged and it is still not the speaker or a person only to be told.
+      const guessed = !!q.toGuess;
+      let by = before.by, to = certainTo(q);
+      // A speaker the line calls by name: the stored pair is likely the wrong way round, so its listeners go too
+      // (the person called is added back below). A doubtful tag only puts the speaker in doubt: listeners stay.
+      if (by && !labelled && facts.addressed.some((n) => same(n, by))) { by = null; to = []; rules.push('vocative-speaker'); }
+      if (by && facts.labelWrong && !facts.narration && same(facts.tag, by)) { to = to.filter((t) => !same(t, by)); by = null; rules.push('label-contradicted'); }
+      if (!labelled && facts.narration && !same(facts.narration, by)) {
+        rules.push(by ? 'narration-speaker' : 'narration-fill');
+        // Narration names this line's speaker: the stored listeners stay unless one of them is that speaker.
+        to = to.filter((t) => !same(t, facts.narration));
+        by = facts.narration;
+      }
+      const relayed = (t) => facts.relay.names.some((n) => same(n, t)) && !facts.addressed.some((n) => same(n, t));
+      const kept = to.filter((t) => !same(t, by) && !relayed(t));
+      if (kept.length !== to.length) rules.push('relay-listener');
+      to = kept;
+      for (const n of facts.addressed) if (!same(n, by) && !to.some((t) => same(t, n))) { to.push(n); rules.push(vocativeRule(facts, n, same)); }
+      if (by) {
+        for (const n of facts.titled) if (!same(n, by) && !to.some((t) => same(t, n))) { to.push(n); rules.push('title-listener'); }
+        if (!to.length && facts.reply && same(by, facts.reply.listener) && !same(by, facts.reply.asker)) { to = [facts.reply.asker]; rules.push('reply'); }
+      }
+      let keepGuess = false;
+      if (guessed && !to.length && by && by === before.by) {
+        to = splitTo(before.to).filter((t) => !same(t, by) && !relayed(t));
+        keepGuess = to.length > 0;
+      }
+      const recipient = to.join('·') || null;
+      if (by !== before.by || recipient !== before.to || guessed !== keepGuess) {
+        const window = lineContext(line, messages, order);
+        const current = q.attributionFp && q.attributionFp === attributionFingerprint({ m: line.m, q, names, facts, context: window.context });
+        q.by = by; q.to = recipient;
+        // A listener the address book gave is marked so that the book never learns from its own answers.
+        if (rules.includes('address-book')) q.viaBook = true; else delete q.viaBook;
+        if (keepGuess) q.toGuess = true; else delete q.toGuess;
+        if (current) q.attributionFp = attributionFingerprint({ m: line.m, q, names, facts, context: window.context });
+        out.push({ scene: scene.id || '', number: q.number, sentence: q.sentence, decision: 'applied', rule: rules.join(','), fired: rules, before, after: { by, to: recipient } });
+      }
+      prev = line;
+    }
+  }
+  return out;
+}
+
+/** The text around a line that its check is based on (also what its fingerprint covers). */
+function lineContext(line, messages, order) {
+  const { q, m, source } = line;
+  const before = m.sentences.slice(Math.max(0, q.sentence - 9), q.sentence - 1);
+  const after = m.sentences.slice(q.sentence, q.sentence + 20);
+  const previous = messages[order.get(m.number) - 1]?.sentences?.slice(-6) || [];
+  return {
+    before, after, previous, previousMessage: messages[order.get(m.number) - 1] || null,
+    context: [...previous, ...before, source, ...after].join('\n'),
+    externalContext: [...previous, ...before, ...after].filter((s) => !s.includes(parseLine(source).text)).join('\n'),
+  };
+}
+
+// Diagnostics deliberately omit source text, quotations, and evidence excerpts: only positions, names and reasons.
+function attributionDiagnostics(candidates, first, second, agreed, before) {
+  const maps = [first, second, agreed].map((items) => new Map((Array.isArray(items) ? items : []).map((x) => [String(x?.id), x])));
+  const name = (x) => typeof x === 'string' ? x.trim().slice(0, 40) : null;
+  const clean = (item, e, judged) => {
+    if (!item) return null;
+    const proof = (x, context) => typeof x === 'string' && squash(x).length >= 4 && squash(context).includes(squash(x));
+    return { by: name(item.by), to: Array.isArray(item.to) ? item.to.map(name).filter(Boolean).slice(0, 5) : [], ...(Array.isArray(item.toGuess) && item.toGuess.length ? { toGuess: item.toGuess.map(name).filter(Boolean).slice(0, 5) } : {}), byEvidenceFound: proof(item.byEvidence, e.context), byExternalEvidenceFound: proof(item.byEvidence, e.externalContext), toEvidenceFound: proof(item.toEvidence, e.context), ...(judged ? { byReason: judged.byReason, toRejected: judged.toReasons } : {}) };
+  };
+  return candidates.map((e, i) => {
+    const d = maps[2].get(e.id);
+    const judged = [d?.first, d?.second].filter((j) => j?.valid);
+    const rejected = [...new Set(judged.flatMap((j) => [...(!j.by && j.byReason !== 'blank' ? [j.byReason] : []), ...j.toReasons.map((r) => `listener-${r}`)]))];
+    return {
+      scene: e.scene.id || '', number: e.q.number, sentence: e.q.sentence,
+      before: before?.[i] || e.outcome?.before || null,
+      first: clean(maps[0].get(e.id), e, d?.first), second: clean(maps[1].get(e.id), e, d?.second),
+      asked: e.asked ?? (maps[1].has(e.id) ? 2 : 1), flags: e.flag?.reasons || [],
+      reask: d?.reask ? { by: d.reask.raw?.by || null, to: d.reask.raw?.to || [], byReason: d.reask.byReason } : null,
+      agreed: d ? { by: d.by || null, to: d.to || [], reason: d.reason } : clean(maps[2].get(e.id), e),
+      ...(e.facts?.narrationRole ? { role: e.facts.narrationRole, roleName: resolveRole(e.facts.narrationRole, e.scope, e.names) } : {}),
+      violations: e.violations || [], decision: e.outcome?.decision || 'unanswered', rule: e.outcome?.rule || null,
+      fired: e.outcome?.fired || [], rejected,
+      after: { by: e.q.by || null, to: e.q.to || null, ...(e.q.toGuess ? { guess: true } : {}) },
+    };
+  });
+}
+
+/**
+ * Story order inside each scene. Lines of one event are kept in source order (message, then sentence). Events
+ * whose source ranges are strictly reversed are swapped. A line an event holds that comes after every line of the
+ * next event, while the event has other lines before that next event starts, happened later: it moves to the last
+ * event that has started by then. Overlapping or unanchored events otherwise stay put; edited scenes are left alone.
+ * Returns the number of changes.
+ */
+function orderSceneEvents(store, messages) {
+  const byNumber = new Map(messages.map((m) => [m.number, m]));
+  const byId = new Map(messages.map((m) => [m.id, m]));
+  let swaps = 0;
+  const placed = (q) => { const found = quoteSource(q, byNumber, byId); return found.stale ? null : [found.m.number, found.sentence]; };
+  const range = (event) => {
+    const positions = (event.quotes || []).map(placed).filter(Boolean).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    return positions.length ? [positions[0], positions.at(-1)] : null;
+  };
+  const earlier = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+  const byPlace = (a, b) => a.number - b.number || a.sentence - b.sentence;
+  for (const scene of store.scenes || []) {
+    if (scene.edited || !Array.isArray(scene.events)) continue;
+    for (const event of scene.events) {
+      if (!Array.isArray(event.quotes) || event.quotes.length < 2) continue;
+      const sorted = [...event.quotes].sort(byPlace);
+      if (sorted.some((q, i) => q !== event.quotes[i])) { event.quotes = sorted; swaps++; }
+    }
+    for (let pass = 0; pass < scene.events.length; pass++) {
+      let moved = false;
+      for (let i = 0; i + 1 < scene.events.length; i++) {
+        const left = range(scene.events[i]), right = range(scene.events[i + 1]);
+        if (left && right && earlier(right[1], left[0])) {
+          [scene.events[i], scene.events[i + 1]] = [scene.events[i + 1], scene.events[i]];
+          swaps++; moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    for (let i = 0; i + 1 < scene.events.length; i++) {
+      const event = scene.events[i], next = range(scene.events[i + 1]);
+      if (!next) continue;
+      const late = (event.quotes || []).filter((q) => { const at = placed(q); return at && earlier(next[1], at); });
+      const stays = (event.quotes || []).some((q) => { const at = placed(q); return at && earlier(at, next[0]); });
+      if (!late.length || !stays) continue;
+      for (const q of late) {
+        const at = placed(q);
+        let target = i + 1;
+        for (let j = i + 2; j < scene.events.length; j++) { const r = range(scene.events[j]); if (r && earlier(r[0], at)) target = j; }
+        event.quotes = event.quotes.filter((x) => x !== q);
+        scene.events[target].quotes = [...(scene.events[target].quotes || []), q].sort(byPlace);
+        swaps++;
+      }
+    }
+  }
+  return swaps;
 }
 
 // Use the original message and known participants; never invent a listener when evidence is ambiguous.
@@ -755,7 +2437,7 @@ function recipientCandidates(store, messages, limit = 20, attempted = new Set())
     const names = [...new Set([...(scene.present || []), ...(store.personas || []), ...(scene.recollections || []).map((r) => r.who)].filter((x) => typeof x === 'string' && x.trim()))];
     for (const quotes of [...(scene.events || []).map((e) => e.quotes || []), scene.loose || []]) {
       for (const q of quotes) {
-        if (q.to || !q.by || attempted.has(q) || !isSpoken(parseLine(q.text).text)) continue;
+        if (q.to || !q.by || attempted.has(q) || !isDialogue(q)) continue;
         const message = byNumber.get(q.number);
         if (!message || (q.messageId && q.messageId !== message.id)) continue;
         const source = message.sentences?.[q.sentence - 1];
@@ -798,6 +2480,8 @@ function setKnowing(fact, who, inScene, { unaware, guess }) {
   if (unaware !== undefined) fact.unaware = unaware ? [...new Set([...(fact.unaware || []), who])] : (fact.unaware || []).filter((n) => n !== who);
   if (guess !== undefined) fact.guess = guess ? [...new Set([...(fact.guess || []), who])] : (fact.guess || []).filter((n) => n !== who);
   const after = { unaware: !!fact.unaware?.includes(who), guess: !!fact.guess?.includes(who) };
+  // A list of who knows it (if the fact has one) follows: a person who learned it is added, one who no longer knows is taken off.
+  K.syncKnownBy(fact, who, (before.unaware || before.guess) && !after.unaware && !after.guess);
   if (inScene && (after.unaware !== before.unaware || after.guess !== before.guess)) {
     fact.knowHistory = [...(fact.knowHistory || []), before];
     // A later scene changed it again: undoing that scene goes back to what the user had set.
@@ -810,7 +2494,7 @@ function setKnowing(fact, who, inScene, { unaware, guess }) {
  * A hand edit of a fact. Fixing its wording and changing who knows it are recorded apart: only the people whose
  * knowing the user set by hand (fact.knowSet) are kept when a scene is undone; a typo fix protects nobody's.
  */
-function editFact(fact, { text, about, unaware, guess }) {
+function editFact(fact, { text, about, unaware, guess, knownBy }) {
   // Edits from now on are recorded apart; a fact hand-edited before this (edited, no mark) keeps the old rule.
   if (!fact.edited) fact.editsSplit = true;
   else if (!fact.editsSplit && !fact.knowSet) fact.knowSet = [...new Set([...(fact.unaware || []), ...(fact.guess || []), ...(fact.knowHistory || []).map((h) => h.who)])];
@@ -832,6 +2516,14 @@ function editFact(fact, { text, about, unaware, guess }) {
     fact[key] = [...after];
   }
   if (changed.size) fact.knowSet = [...new Set([...(fact.knowSet || []), ...changed])];
+  // Who knows it, set by hand: kept as written (locked against what later scenes say) until the user empties the list.
+  if (knownBy !== undefined) {
+    const list = [...new Set(knownBy.filter((n) => typeof n === 'string' && n.trim()))];
+    if (JSON.stringify(list) !== JSON.stringify(fact.knownBy || [])) {
+      if (list.length) { fact.knownBy = list; fact.knownLock = true; } else { delete fact.knownBy; delete fact.knownLock; }
+    }
+  }
+  K.reconcile(fact);
   return fact;
 }
 
@@ -853,6 +2545,7 @@ function undoKnowing(facts, droppedIds) {
       if (handSet.has(h.who)) continue;
       f.unaware = h.unaware ? [...new Set([...(f.unaware || []), h.who])] : (f.unaware || []).filter((n) => n !== h.who);
       f.guess = h.guess ? [...new Set([...(f.guess || []), h.who])] : (f.guess || []).filter((n) => n !== h.who);
+      K.syncKnownBy(f, h.who, true);
     }
     if (state(f) !== was) changed.add(f.id);
   }
@@ -891,6 +2584,11 @@ function applyLearned(store, learned) {
 }
 
 function commitScenes(store, applied) {
+  // People renamed by hand keep the name the user chose in what the model writes next.
+  A.rewriteDeep(applied.scenes);
+  A.rewriteDeep(applied.facts);
+  A.rewriteDeep(applied.later);
+  A.rewriteDeep(applied.learned);
   store.scenes.push(...applied.scenes);
   for (const f of applied.facts) {
     const old = f.replaces && store.facts.find((k) => k.id === f.replaces);
@@ -1019,17 +2717,20 @@ function sceneHead(scene, n) {
 
 /** 하준 → 서아: "I love you, Seoa." (사랑해, 서아야.) — narration stays as it is. */
 function quoteLine(q) {
-  const text = cleanQuote(q.text);
+  const text = cleanQuote(quoteText(q));
   const by = q.by || parseLine(q.text).by;
-  if (!by) return isSpoken(text) ? text : `(서술) ${text}`;
-  return `${by}${q.to ? ` → ${q.to}` : ''}: ${isSpoken(text) ? text : `"${text}"`}`;
+  const spoken = q.kind ? q.kind === 'dialogue' : isSpoken(text);
+  if (!by) return spoken ? text : `(서술) ${text}`;
+  // A listener that was only guessed is marked, so the story model is not told it is certain.
+  return `${by}${q.to ? ` → ${q.to}${q.toGuess ? '(추정)' : ''}` : ''}: ${spoken ? text : `"${text}"`}`;
 }
 
-function renderExpanded(scene, n, personas = [], cast = []) {
+function renderExpanded(scene, n, personas = [], cast = [], { npc = false } = {}) {
   const lines = [sceneHead(scene, n), scene.summary];
   const note = presenceNotes(scene, cast).join(', ');
   if (scene.present?.length && cast.length >= 2) lines.push(`있던 사람: ${scene.present.join('·')}${note ? ` / ${note}` : ''}`);
   else if (note) lines.push(note);
+  if (npc && scene.extras?.length) lines.push(`주변 인물: ${scene.extras.join('·').slice(0, 60)}`);
   if (scene.events.length) {
     lines.push('사건:');
     for (const e of scene.events) {
@@ -1203,12 +2904,13 @@ function naturalCut(scenes) {
 }
 
 function commitChapter(store, chapter) {
+  A.rewriteDeep(chapter);
   store.chapters = [...(store.chapters || []), chapter];
   store.nextChapter = Number(chapter.id.slice(1)) + 1;
 }
 
 /** "[지난 이야기 흐름]": newest chapters whole, older ones shorter, the oldest just their titles, in order. */
-function renderChapters(store, limit = 4000, query = '', today = null) {
+function renderChapters(store, limit = 4000, query = '', today = null, { pin = null, trace = null } = {}) {
   // A chapter or arc whose parts were changed by hand is left out until it is summarized again: its scenes (or
   // chapters) are shown instead, so the hand fix is what goes in, never the old summary.
   const all = (store.chapters || []).filter((c) => !c.stale);
@@ -1225,6 +2927,8 @@ function renderChapters(store, limit = 4000, query = '', today = null) {
       ? all.filter((c) => arced.has(c.id)).map((c) => ({ c, s: overlap(`${c.title} ${c.summary} ${(c.keep || []).join(' ')}`, query) })).filter((x) => x.s >= 0.3).sort((a, b) => b.s - a.s).slice(0, 3)
       : [];
     for (const x of touched) pinned.add(x.c.id);
+    // Chapters the user marked 중요 are named on their own even inside an arc.
+    for (const id of pin || []) if (all.some((c) => c.id === id && arced.has(id))) pinned.add(id);
     if (today) {
       const ahead = all.filter((c) => arced.has(c.id) && (c.keep || []).some((t) => (L.parseClock(t, today)?.date || '') >= today));
       for (const c of ahead.slice(-3)) pinned.add(c.id);
@@ -1268,6 +2972,8 @@ function renderChapters(store, limit = 4000, query = '', today = null) {
     const touched = query
       ? list.map((c, i) => ({ i, s: overlap(`${c.title} ${c.summary} ${(c.keep || []).join(' ')}`, query) })).filter((x) => x.s >= 0.3).sort((a, b) => b.s - a.s).slice(0, 5)
       : [];
+    // Marked 중요: named first, so they win the room over the rest.
+    list.forEach((c, i) => { if (pin?.has(c.id)) add(i); });
     for (const x of touched) add(x.i);
     for (const i of [...new Set(details.filter((d) => rank(d) === 1).map((d) => d.i))].slice(0, 5)) add(i);
     for (let i = list.length - 1; i >= 0; i--) if (!shown.has(i) && !add(i)) break;
@@ -1313,6 +3019,7 @@ function renderChapters(store, limit = 4000, query = '', today = null) {
       lines[i] = next;
     }
   }
+  if (trace) list.forEach((c, i) => { if (lines[i] !== null) trace.push(c.id); });
   return `${HEAD}${[...arcText, ...folded()].join('\n')}`;
 }
 
@@ -1364,7 +3071,7 @@ function applyRedo(store, redo, result, now = new Date().toISOString()) {
   const last = redo.parts.at(-1).id;
   const made = redo.kind === 'chapter' ? applyChapter(store, { ...result, end: last }, redo.parts, now) : applyArc(store, { ...result, end: last }, redo.parts, now);
   if (made.error) return made;
-  const fresh = made.chapter || made.arc;
+  const fresh = A.rewriteDeep(made.chapter || made.arc);
   const list = redo.kind === 'chapter' ? store.chapters : store.arcs;
   list[list.indexOf(redo.target)] = { ...fresh, id: redo.target.id, redoneAt: now };
   return { done: redo.target.id };
@@ -1440,6 +3147,7 @@ function applyArc(store, result, offered, now = new Date().toISOString()) {
 }
 
 function commitArc(store, arc) {
+  A.rewriteDeep(arc);
   store.arcs = [...(store.arcs || []), arc];
   store.nextArc = Number(arc.id.slice(1)) + 1;
 }
@@ -1537,6 +3245,7 @@ function applyFactMerge(store, about, facts, result, now = new Date().toISOStrin
     const text = stripAbout(cleanText(item?.text, 320), about);
     if (!text || sources.length < 2 || sources.length !== ids.length || sources.some((f) => used.has(f.id))) continue;
     if (!sources.every((f) => sameSet(f.unaware, sources[0].unaware) && sameSet(f.guess, sources[0].guess))) continue;
+    const knownBy = K.mergeKnownBy(sources);
     const guessed = (f) => /\(추정\)/.test(f.text);
     if (sources.some(guessed) !== sources.every(guessed)) continue;
     const latest = [...sources].sort((a, b) => (order.get(a.sceneId) ?? 0) - (order.get(b.sceneId) ?? 0)).at(-1);
@@ -1545,12 +3254,13 @@ function applyFactMerge(store, about, facts, result, now = new Date().toISOStrin
     store.facts.push({
       id,
       about: sources[0].about,
-      text: sources.every(guessed) && !guessed({ text }) ? `${text.replace(/[.。]\s*$/, '')} (추정)` : text,
+      text: A.rewriteText(sources.every(guessed) && !guessed({ text }) ? `${text.replace(/[.。]\s*$/, '')} (추정)` : text),
       evidence: sources.flatMap((f) => f.evidence || []).slice(0, 6),
       sceneId: latest.sceneId,
       when: whens.length === 1 ? whens[0] : null,
       unaware: [...(sources[0].unaware || [])],
       guess: [...(sources[0].guess || [])],
+      ...(knownBy.length ? { knownBy, ...(sources.some((f) => f.knownLock) ? { knownLock: true } : {}) } : {}),
       // Who learned it in which scene comes along, so undoing that scene undoes it on the merged fact as well.
       ...inheritKnowing(sources),
       sources: sources.map((f) => f.id),
@@ -1572,29 +3282,33 @@ function applyFactMerge(store, about, facts, result, now = new Date().toISOStrin
  * The memory text for scenes that have left the context window (start before `firstInside`).
  * All of them get a one-line summary (newest `maxSummaries`); the newest `expand` get events and recollections.
  */
-function renderScenes(store, firstInside, { maxChars = 9000, maxSummaries = 40, expand = 2, maxFacts = 70, factChars = 4500, chapterChars = 4000, query = '', today = null } = {}) {
+function renderScenes(store, firstInside, { maxChars = 9000, maxSummaries = 40, expand = 2, maxFacts = 70, factChars = 4500, chapterChars = 4000, query = '', today = null, npc = false, present = [], hideFacts = null, skipScenes = null, skipChapters = null, pin = null, trace = null } = {}) {
   // Scenes already folded into a chapter are told by the chapter.
   // (a chapter waiting to be summarized again after a hand edit does not count: its scenes speak for themselves)
   const chaptered = new Set((store.chapters || []).filter((c) => !c.stale).flatMap((c) => c.scenes));
-  const outside = store.scenes.filter((s) => (firstInside == null || s.start < firstInside) && !chaptered.has(s.id));
+  const outside = store.scenes.filter((s) => (firstInside == null || s.start < firstInside) && !chaptered.has(s.id) && !skipScenes?.has(s.id));
   const out = [];
-  const flow = renderChapters(store, chapterChars, query, today);
+  // Chapters the user left out (빼기) are not told; their scenes stay out too (skipScenes).
+  const told = skipChapters?.size ? { ...store, chapters: (store.chapters || []).filter((c) => !skipChapters.has(c.id)) } : store;
+  const flow = renderChapters(told, chapterChars, query, today, { pin: pin?.chapters, trace: trace?.chapters });
   if (flow) out.push(flow);
   if (outside.length) {
     const shown = outside.slice(-maxSummaries);
     const offset = outside.length - shown.length;
     const cast = castOf(store);
     const blocks = shown.map((s, i) => `${sceneHead(s, offset + i)}: ${s.summary}${memoryNote(s, cast)}`);
+    const blockIds = shown.map((s) => s.id);
     let used = blocks.join('\n').length;
     // Expand the newest scenes first, as long as the budget holds.
     for (let k = 0; k < Math.min(expand, shown.length); k++) {
       const i = shown.length - 1 - k;
-      const full = renderExpanded(shown[i], offset + i, store.personas || [], cast);
+      const full = renderExpanded(shown[i], offset + i, store.personas || [], cast, { npc });
       if (used - blocks[i].length + full.length > maxChars) break;
       used += full.length - blocks[i].length;
       blocks[i] = full;
     }
-    while (blocks.length > 1 && blocks.join('\n').length > maxChars) blocks.shift();
+    while (blocks.length > 1 && blocks.join('\n').length > maxChars) { blocks.shift(); blockIds.shift(); }
+    if (trace) trace.scenes?.push(...blockIds);
     // One-line summaries sit together; an expanded scene gets a blank line around it.
     const text = blocks.reduce((acc, block, i) => {
       if (!i) return block;
@@ -1605,19 +3319,43 @@ function renderScenes(store, firstInside, { maxChars = 9000, maxSummaries = 40, 
   }
   // Facts grouped by person, in story order. When there are too many, each person keeps their newest ones
   // first (merged facts are new too, and carry the old groundwork), so no one is left out.
-  const facts = pickFacts(liveFacts(store), maxFacts, factChars);
+  // Facts the user decided against in a record conflict (기록 충돌) are left out; the people of the scene shown now are told
+  // which facts they do not know.
+  const facts = pickFacts(liveFacts(store).filter((f) => !hideFacts?.has(f.id)), maxFacts, factChars);
   const group = castOf(store).length >= 2;
+  // Only people of the story are told what they do not know (not a bystander named by role).
+  const story = new Set([...castOf(store), ...(store.personas || [])]);
+  const here = (present || []).filter((n) => story.has(n));
   if (facts.length) {
     const groups = new Map();
     let used = 0;
-    for (const f of facts) {
+    // Facts marked 중요 take their room first; the rest keep the story order in what is left.
+    let accepted = null;
+    if (pin?.facts?.size) {
+      accepted = new Set();
+      let spent = 0;
+      const fits = (f) => {
+        const base = stripAbout(f.text, f.about);
+        const when = f.when || store.scenes.find((s) => s.id === f.sceneId)?.time;
+        const dated = when && DATED.test(base) && !/\d{2}-\d{1,2}-\d{1,2}/.test(base) ? `${base} (${when.split(/[~·]/)[0].trim()})` : base;
+        const marks = group ? [f.unaware?.length ? `모름: ${f.unaware.join('·')}` : null, f.guess?.length ? `짐작만: ${f.guess.join('·')}` : null].filter(Boolean) : [];
+        const unknown = K.unknownMarker(f, here, { personas: store.personas || [], covered: group ? f.unaware || [] : [] });
+        return ((marks.length ? `${dated} [${marks.join(' / ')}]` : dated) + unknown).length + 4;
+      };
+      const marked = liveFacts(store).filter((f) => pin.facts.has(f.id) && !hideFacts?.has(f.id));
+      for (const f of marked) { const c = fits(f); if (spent + c > factChars) continue; accepted.add(f.id); spent += c; }
+      for (const f of facts) { if (accepted.has(f.id)) continue; const c = fits(f); if (spent + c > factChars) break; accepted.add(f.id); spent += c; }
+    }
+    for (const f of accepted ? liveFacts(store).filter((x) => accepted.has(x.id)) : facts) {
       const base = stripAbout(f.text, f.about);
       const when = f.when || store.scenes.find((s) => s.id === f.sceneId)?.time;
       const dated = when && DATED.test(base) && !/\d{2}-\d{1,2}-\d{1,2}/.test(base) ? `${base} (${when.split(/[~·]/)[0].trim()})` : base;
       const marks = group ? [f.unaware?.length ? `모름: ${f.unaware.join('·')}` : null, f.guess?.length ? `짐작만: ${f.guess.join('·')}` : null].filter(Boolean) : [];
-      const text = marks.length ? `${dated} [${marks.join(' / ')}]` : dated;
-      if (used + text.length + 4 > factChars) break;
+      const unknown = K.unknownMarker(f, here, { personas: store.personas || [], covered: group ? f.unaware || [] : [] });
+      const text = (marks.length ? `${dated} [${marks.join(' / ')}]` : dated) + unknown;
+      if (!accepted && used + text.length + 4 > factChars) break;
       used += text.length + 4;
+      trace?.facts?.push(f.id);
       const key = f.about || '기타';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(text);
@@ -1629,6 +3367,12 @@ function renderScenes(store, firstInside, { maxChars = 9000, maxSummaries = 40, 
 }
 
 module.exports = {
+  hangulOutline,
+  latinOutlines,
+  splitBilingual,
+  quoteText,
+  setQuoteText,
+  nameAliases,
   markStale,
   nextRedo,
   applyRedo,
@@ -1654,6 +3398,10 @@ module.exports = {
   liveFacts,
   castOf,
   castNames,
+  extrasOf,
+  placeStray,
+  quoteLimit,
+  isDialogue,
   reasonedNames,
   tidyKnowledge,
   awarenessIn,
@@ -1661,6 +3409,49 @@ module.exports = {
   applyLearned,
   parseScenesReply,
   attachTranslations,
+  repairFragmentQuotes,
+  attachLedgerTranslations,
+  orderSceneEvents,
+  attributionDiagnostics,
+  confirmAttributionResults,
+  enforceAttributionRules,
+  reaskCandidates,
+  mergeReask,
+  judgeAnswer,
+  addressedIn,
+  vocativeTerms,
+  plausibleTerm,
+  termExempt,
+  setAddressProvider,
+  setStateProvider,
+  sceneStateOf,
+  sceneNotesOf,
+  sceneKeepsakesOf,
+  sceneNames,
+  isDialogue,
+  quoteText,
+  splitTo,
+  samePerson,
+  relayIn,
+  matchAlias,
+  narrationSpeaker,
+  attributionCandidates,
+  GUESS_RULE,
+  attributionBatches,
+  attributionInput,
+  attributionFlags,
+  attributionFingerprint,
+  settledByRules,
+  stampAttribution,
+  applyRulesGuesses,
+  titleMap,
+  resolveRole,
+  roleAppositive,
+  quoteSource,
+  sceneScope,
+  ATTRIBUTION_RULES_VERSION,
+  GUESS_RULE_VERSION,
+  applyAttributionResults,
   recipientCandidates,
   applyRecipientResults,
   uncited,

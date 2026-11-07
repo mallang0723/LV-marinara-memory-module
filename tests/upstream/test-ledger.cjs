@@ -1,3 +1,4 @@
+// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
 // node --test tests/test-ledger.cjs
 'use strict';
 const test = require('node:test');

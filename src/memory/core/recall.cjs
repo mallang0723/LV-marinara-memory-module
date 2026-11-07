@@ -237,7 +237,7 @@ function words(text) {
 }
 
 function sceneText(scene) {
-  return [scene.title, scene.summary, ...(scene.later || []).map((x) => x.what), ...scene.events.map((e) => e.text), ...scene.events.flatMap((e) => e.quotes.map((q) => q.text))].join(' ');
+  return [scene.title, scene.summary, ...(scene.later || []).map((x) => x.what), ...scene.events.map((e) => e.text), ...scene.events.flatMap((e) => e.quotes.map((q) => S.quoteText(q)))].join(' ');
 }
 
 /** Rarer shared words count more, so names that are in every scene do not decide. */
@@ -313,16 +313,17 @@ function shownPicks(picks, max) {
   return out;
 }
 
-function renderRecalled(store, picks, { maxChars = 16000 } = {}) {
+function renderRecalled(store, picks, { maxChars = 16000, npc = false, trace = null } = {}) {
   const blocks = [];
   let used = 0;
   for (const pick of picks) {
     const index = store.scenes.findIndex((s) => s.id === pick.id);
     if (index < 0) continue;
-    const body = S.renderExpanded(store.scenes[index], index, store.personas || [], S.castOf(store));
+    const body = S.renderExpanded(store.scenes[index], index, store.personas || [], S.castOf(store), { npc });
     const block = pick.follow ? `(${pick.from}에 이어진 장면)\n${body}` : body;
     if (used + block.length > maxChars) break;
     blocks.push(block);
+    trace?.push(pick);
     used += block.length;
   }
   return blocks.length ? `[지금 떠오르는 지난 장면]\n${blocks.join('\n\n')}` : '';
@@ -332,7 +333,7 @@ function renderRecalled(store, picks, { maxChars = 16000 } = {}) {
  * Close-in-meaning scenes that did not come up in full: just the event that matched, with its lines.
  * Cheap, and enough for a character to remember "oh, that".
  */
-function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000 } = {}) {
+function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000, trace = null } = {}) {
   const shown = new Set(picks.map((p) => p.id));
   const blocks = [];
   let used = 0;
@@ -347,9 +348,10 @@ function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000 } =
     const block = lines.join('\n');
     if (used + block.length > maxChars) break;
     blocks.push(block);
+    trace?.push(x);
     used += block.length;
   }
   return blocks.length ? `[뜻이 가까운 지난 사건]\n${blocks.join('\n')}` : '';
 }
 
-module.exports = { MAX_PICKS, renderNearEvents, buildToc, rawHits, renderRaw, latestUser, directHit, withDirectHit, MAX_RECALL, RECALL_PROMPT, candidates, buildRecallPrompt, applyRecall, fastRecall, renderRecalled, words, withFollowUps, shownPicks };
+module.exports = { stems, MAX_PICKS, renderNearEvents, buildToc, rawHits, renderRaw, latestUser, directHit, withDirectHit, MAX_RECALL, RECALL_PROMPT, candidates, buildRecallPrompt, applyRecall, fastRecall, renderRecalled, words, withFollowUps, shownPicks };

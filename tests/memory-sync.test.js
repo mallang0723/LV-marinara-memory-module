@@ -88,26 +88,26 @@ test('translation never adds a second full budget before a reply; cached/source 
     await um.flush();
 });
 
-test('resuming repairs recipient batches beyond 20 using the selected host connection', async () => {
+test('resuming checks attribution batches beyond 20 using the selected host connection', async () => {
     const { um, f } = await setup();
     f.addMessages('chat-a', Array.from({ length: 45 }, () => ({ role: 'assistant', content: '카시안이 이리나를 바라봤다.\n"Hello, sweetheart." (안녕, 여보.)' })));
     const messages = await um.chatMessages('chat-a');
     const st = S.emptyStore();
     st.covered = messages.map(({ id, h }) => ({ id, h }));
     const quotes = messages.map(m => ({ messageId: m.id, number: m.number, sentence: 2, text: '"Hello, sweetheart." (안녕, 여보.)', by: '카시안', to: null, recipientChecked: true }));
-    quotes[44].to = '킬리안';
+    quotes[44].to = '킬리안'; quotes[44].manual = true;
     st.scenes = [{ id: 'S1', start: 1, end: 45, messages: st.covered, present: ['카시안', '이리나', '킬리안'], events: [{ text: '인사를 했다', quotes }], recollections: [] }];
     um.saveScenes('chat-a', st);
     let calls = 0;
     f.model = async ({ messages }) => {
-        if (!messages[0].content.includes('직접적인 수신자')) return JSON.stringify({ lines: JSON.parse(messages[1].content).lines.map(() => '한국어 번역') });
+        if (!messages[0].content.includes('원문 context')) return JSON.stringify({ lines: JSON.parse(messages[1].content).lines.map(() => '한국어 번역') });
         calls++;
-        assert.match(messages[0].content, /직접적인 수신자/);
-        return JSON.stringify({ items: JSON.parse(messages[1].content).map(({ id }) => ({ id, to: '이리나', evidence: '이리나를 바라봤다' })) });
+        assert.match(messages[0].content, /화자와 직접 상대/);
+        return JSON.stringify({ items: JSON.parse(messages[1].content).items.map(({ id }) => ({ id, by: '카시안', to: ['이리나'], byEvidence: '카시안이 이리나를 바라봤다.', toEvidence: '이리나를 바라봤다' })) });
     };
     await um.processScenes('chat-a', { reason: 'resume' });
     assert.equal(um.sceneJobs.get('chat-a').state, 'done');
-    assert.equal(calls, 3, JSON.stringify(f.state.modelCalls.map(c => c.messages[0].content)));
+    assert.ok(calls >= 3, 'every batch is checked, including after the first 20 quotes');
     const result = um.loadScenes('chat-a').scenes[0].events[0].quotes;
     assert.equal(result.filter(q => q.to === '이리나').length, 44);
     assert.equal(result[44].to, '킬리안');

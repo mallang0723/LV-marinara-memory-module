@@ -85,7 +85,7 @@ test('the model cannot give JSON: one retry, then the batch is halved, then it w
     const { f, um } = await setup({ tunables: { REBUILD_BATCH_CHARS: 100000 } }, 7);
     let ledgerAsks = 0;
     f.model = async ({ messages }) => {
-        const isLedger = !/지난 장면을 목차|한 챕터|한 '막'|사실' 목록|장면으로|풀렸는지|열린 항목/.test(messages[0].content);
+        const isLedger = messages.some(m => m.role === 'user' && m.content.includes('## 현재 장부 (열린 항목)'));
         if (isLedger) { ledgerAsks++; if (ledgerAsks <= 2) return '죄송합니다, JSON을 드릴 수 없어요'; }
         return replyFor(messages, f.state.modelCounts);
     };

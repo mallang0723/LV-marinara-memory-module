@@ -1,8 +1,9 @@
+// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
-const S = require('../../src/memory/core/scenes.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
 
 test('recipient repair uses source context, known names, and preserves existing targets', () => {
   const messages = L.prepareMessages([{ id: 'm1', number: 1, role: 'assistant', content: '카시안이 이리나를 바라봤다.\n"Wait, sweetheart." (잠깐만, 여보.)' }]);
