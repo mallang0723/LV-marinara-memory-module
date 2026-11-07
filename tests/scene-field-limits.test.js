@@ -146,3 +146,23 @@ test('service folding, persisted edit route, prompt and Korean library keep full
     assert.deepEqual(TR.readTranslation({ lines: [header] }, [header]), [header], 'translation validation has no old field cap');
     assert.ok([...f.files.values()].some(value => value.includes(editedFields.time)), 'edit flushed to storage');
 });
+
+test('live QA C: the 120/120/60 caps belong to the model fold; the edit route (same as upstream service.cjs) stores a hand edit as typed, trimmed', async t => {
+    const f = fake();
+    const stop = start(f.api, { store: { debounceMs: 0 }, tunables: { SCENE_MIN_PENDING: 1 } });
+    t.after(stop);
+    story(f, 'chat-a', 15);
+    const rpc = async (method, path, body) => { const response = await f.rpc(method, 'memory-module/' + path, body); assert.equal(response.ok, true, response.error); return response.data; };
+    await f.rpc('POST', 'ext/settings', { window: 4 });
+    await rpc('POST', 'settings', { connection: 'conn-a' });
+    await rpc('POST', 'chats/chat-a/start', {});
+    await waitUntil(async () => (await rpc('GET', 'chats/chat-a')).sceneJob.state === 'done');
+    const store = await rpc('GET', 'chats/chat-a/scenes');
+    const long = { time: '  ' + 't'.repeat(300) + '  ', place: 'p'.repeat(130), weather: 'w'.repeat(70) };
+    await rpc('PATCH', `chats/chat-a/scenes/${store.scenes[0].id}`, long);
+    const after = (await rpc('GET', 'chats/chat-a/scenes')).scenes[0];
+    assert.equal(after.time, 't'.repeat(300));
+    assert.equal(after.place, long.place);
+    assert.equal(after.weather, long.weather);
+    // the fold still caps what the model writes (see 'new caps still bound oversized input')
+});

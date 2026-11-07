@@ -26,6 +26,11 @@ export async function createQaServer(root = process.cwd()) {
             await env.f.invokeCommand(q.get('id'), { chatId: q.get('chat') || undefined });
             return json({ ok: true });
         }
+        if (pathname === '/api/v1/settings' && method === 'GET') { // Lumiverse bulk settings list ([{ key, value }]), the source of the message limit
+            const env = await envFor(session);
+            const value = env.f.state.summarization;
+            return json(value ? [{ key: 'summarization', value }] : []);
+        }
         const file = path.resolve(root + decodeURIComponent(pathname));
         if (!file.startsWith(root + path.sep)) throw new Error('outside');
         return { status: 200, type: types[path.extname(file)] || 'text/plain', body: await readFile(file) };

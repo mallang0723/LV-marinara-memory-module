@@ -3,6 +3,7 @@
 // harness page talks to it over the stand-in channel (/__rpc, /__poll). No model, no network: the "model" is tests/fake-model.js.
 import { fake } from '../tests/fake.js';
 import { start } from '../src/backend.js';
+import { replyFor } from '../tests/fake-model.js';
 
 const NAMES = ['하루', '서아'];
 function storyRows(n) {
@@ -22,6 +23,14 @@ export async function createQaEnv({ messages = 44 } = {}) {
     f.chats.get('chat-a').character_id = 'char-haru';
     f.chats.get('chat-a').metadata = { loom_summary: '하루와 서아는 가을 축제를 준비하며 가까워졌다.' };
     f.state.userRequired = true;
+    // every scene also states a fact (the stock fake model only does for the first), so the 알게 된 사실 tab has several cards
+    const counts = {};
+    f.model = async ({ messages }) => {
+        const raw = replyFor(messages, counts);
+        let reply; try { reply = JSON.parse(raw); } catch { return raw; }
+        for (const scene of reply.scenes || []) if (!scene.facts?.length) scene.facts = [{ about: '서아', text: `서아는 ${scene.end}번 즈음 빵집에 들렀다.`, evidence: [{ n: `${scene.end}.1`, q: '' }] }];
+        return JSON.stringify(reply);
+    };
     start({ ...f.api, log: { info() {} } }, { tunables: { SCENE_MIN_PENDING: 1 }, store: { debounceMs: 0 }, afterReplyMs: 20 });
     const U = 'qa-user';
     const call = (m, p, b) => f.rpc(m, p, b, U);
@@ -36,6 +45,9 @@ export async function createQaEnv({ messages = 44 } = {}) {
         if (Date.now() - t0 > 30000) throw new Error('QA memory seed did not finish');
         await new Promise(r => setTimeout(r, 25));
     }
+    // who knows what: the 아는 사람 / 모르는 사람 chips of the facts tab (hand edits, so they are kept as written)
+    const facts = (await call('GET', 'memory-module/chats/chat-a/scenes')).data.facts || [];
+    for (const [i, fact] of facts.entries()) await call('PATCH', `memory-module/chats/chat-a/facts/${fact.id}`, i % 2 === 0 ? { knownBy: ['하루', '서아'] } : { knownBy: ['하루'], unaware: ['서아'] });
     outbox.length = 0;
     return {
         f,

@@ -103,7 +103,7 @@ try {
         page.on('pageerror', e => errors.push('pageerror: ' + e.message));
         page.on('console', m => { if (m.type() === 'error' && !/favicon/.test(m.text())) errors.push('console: ' + m.text() + ' ' + (m.location()?.url || '')); });
         const origin = new URL(ORIGINS[oname]).origin;
-        page.on('request', r => { const u = r.url(); if (u.startsWith('data:') || u.startsWith('blob:')) return; if (!u.startsWith(origin + '/')) outside.push(u); else { const p = new URL(u).pathname; if (!/^\/(qa|dist)\//.test(p) || /\/api\//.test(p)) outside.push(u); } });
+        page.on('request', r => { const u = r.url(); if (u.startsWith('data:') || u.startsWith('blob:')) return; if (!u.startsWith(origin + '/')) outside.push(u); else { const p = new URL(u).pathname; if (p === '/api/v1/settings' && r.method() === 'GET') return; if (!/^\/(qa|dist)\//.test(p) || /\/api\//.test(p)) outside.push(u); } }); // the one allowed API call: the fixed Lumiverse settings read (message limit), answered by the QA server
         await page.goto(ORIGINS[oname]);
         await page.waitForFunction(() => window.qa?.ready, null, { timeout: 20000 });
         await page.waitForTimeout(700);

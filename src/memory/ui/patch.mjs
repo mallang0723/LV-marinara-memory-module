@@ -4,7 +4,7 @@
 // the transport (fetch -> LV.fetch), the active chat, where the panel is attached, the launcher (removed), the Marinara-only
 // speaker-tag switch (removed), Marinara wording, and "choose a connection / recall option = saved at once" (AGENTS 2).
 import { createHash } from 'node:crypto';
-import { replaceAnchor } from '../../patch-util.mjs';
+import { replaceAnchor, replaceRange } from '../../patch-util.mjs';
 
 export const RUNTIME_SHA256 = '47bfacd40f890bae4dd4f0df0abf736abe63a8cedce5a08ed68ac0a5f0f6b2b0';
 
@@ -49,6 +49,60 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
         return;
       }
       if (['setWriteLang', 'setMemLang', 'setTrConn', 'setTrQuotes'].includes(e.target.id))`, { name: 'save fallback memory window' });
+    // 기억 검색: the stored memory is English while the library shows Korean (the translation cache), so searching "테오" found nothing although the Korean view shows 테오.
+    // (Upstream 8d5f090 searches only the stored text, same gap.) Now a record also matches on the Korean text the screen shows for it, and a typed name/term also matches its other
+    // spellings from the name table (canonical name, 글에 쓸 표기, aliases) and the 호칭 사전 원어(번역) pairs. One result per record; the excerpt comes from the text that matched.
+    s = replaceAnchor(s, "const needsNames = () => ['names', 'life'].includes(tab);", "const needsNames = () => ['names', 'life', 'search'].includes(tab);", { name: 'search needs the name table' });
+    s = replaceRange(s, '  function searchableText(value) {', '  function viewSearch() {', `  function searchableText(value, translated = false) {
+    if (value == null) return '';
+    const leaf = (x) => (translated ? shown(x) : x);
+    if (Array.isArray(value)) return value.map((x) => searchableText(x, translated)).filter(Boolean).join(' ');
+    if (typeof value !== 'object') return leaf(String(value));
+    const parts = [];
+    for (const [k, v] of Object.entries(value)) {
+      if (v == null) continue;
+      if (SEARCH_TEXT.has(k)) parts.push(Array.isArray(v) ? v.filter((x) => typeof x === 'string').map(leaf).join(' ') : typeof v === 'string' ? leaf(v) : '');
+      else if (SEARCH_NESTED.has(k)) parts.push(searchableText(v, translated));
+    }
+    return parts.filter(Boolean).join(' ').replace(/\\s+/g, ' ');
+  }
+
+  /** What to look for: the typed text plus the same person/term under its other spellings (name table, 호칭 사전 pairs, cached translations of a bare name). */
+  function searchVariants(raw) {
+    const low = (x) => String(x ?? '').trim().toLocaleLowerCase();
+    const q = low(raw);
+    const out = q ? [q] : [];
+    if (!q) return out;
+    const add = (x) => { const v = low(x); if (v && !out.includes(v)) out.push(v); };
+    const groups = [];
+    if (names && namesRoom === room) {
+      for (const [canon, p] of Object.entries(names.people || {})) groups.push([canon, p?.display, ...(p?.aliases || [])]);
+      const entries = names.address?.entries || [];
+      for (const e of entries) { const t = entries.find((x) => x.id === e.pairWith); if (t) groups.push([e.term, t.term]); }
+    }
+    for (const g of groups) {
+      const list = g.filter((x) => typeof x === 'string' && x.trim());
+      if (!list.some((x) => low(x) === q || low(x).split(/\\s+/).includes(q))) continue;
+      for (const x of list) { add(x); const first = low(x).split(/\\s+/)[0]; if (first.length >= 2) add(first); }
+    }
+    for (const [k, v] of Object.entries(trMap)) if (k.length <= 40 && (low(k) === q || low(v) === q)) { add(k); add(v); }
+    return out;
+  }
+
+`, 'search text and variants');
+    s = replaceRange(s, '    if (query) for (const [label, kind, records] of groups) for (const record of records) {', '    return `<h1>기억 검색</h1>', `    const variants = searchVariants(searchQuery);
+    const find = (text) => { const lower = text.toLocaleLowerCase(); let best = null; for (const v of variants) { const i = lower.indexOf(v); if (i >= 0 && (!best || i < best.at)) best = { at: i, length: v.length }; } return best; };
+    if (query) for (const [label, kind, records] of groups) for (const record of records) {
+      let text = searchableText(record, true);
+      let hit = find(text);
+      if (!hit) { text = searchableText(record); hit = find(text); }
+      if (!hit) continue;
+      const start = Math.max(0, hit.at - 45);
+      const end = hit.at + hit.length + 110;
+      const excerpt = \`\${start ? '…' : ''}\${text.slice(start, end)}\${text.length > end ? '…' : ''}\`;
+      results.push(\`<a href="#" class="record-link record-row" data-goto-\${kind}="\${esc(record.id)}"><span class="pill neutral">\${label}</span><span class="row-main"><b>\${esc(record.title || record.about || record.id)}</b><small>\${esc(excerpt)}</small></span><span class="chip-arrow">›</span></a>\`);
+    }
+`, 'search loop');
     // Marinara wording
     s = replaceAnchor(s, '서버에 연결하지 못했습니다. 마리나라가 다시 켜지는 중이라면 잠시 뒤에 다시 시도해 주세요.', '루미버스 서버에 연결하지 못했습니다. 잠시 뒤에 다시 시도해 주세요.', { name: 'wording connect' });
     s = replaceAnchor(s, '서버에 기억 모듈이 없거나 꺼져 있습니다. 서버에 기억 모듈을 설치했는지 확인해 주세요.', '확장의 기억 서재 쪽이 응답하지 않습니다. 확장이 켜져 있는지, 권한이 허용돼 있는지 확인해 주세요.', { name: 'wording 404' });

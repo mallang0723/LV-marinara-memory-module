@@ -34,3 +34,41 @@ test('switches get a >= 44px hit area and the room switch label wraps and stays 
     assert.match(css, /\.sidebar \.room-switch\{position:sticky;bottom:0/);
     assert.match(css, /\.chip-arrow\{opacity:1!important\}/);
 });
+
+test('live QA A: the pinned original still paints dark chips on dark-theme cards with the card ink (so the card-chip override is still needed)', () => {
+    const ui = readFileSync(new URL('../src/memory/ui/ui.orig.css', import.meta.url), 'utf8');
+    assert.match(ui, /\.kchip\{[^}]*background:var\(--im-soft\)[^}]*\}/);
+    assert.doesNotMatch(ui.match(/\.kchip\{[^}]*\}/)[0], /color:/);                    // no colour of its own: inherits .paper's #151515
+    assert.match(theme, /--im-soft:#2a2826/);                                          // the dark fill
+    assert.ok(ratio('#151515', '#2a2826') < 1.5);                                      // 1.24:1 as measured (under the grain)
+    assert.doesNotMatch(theme.match(/:host\(\[data-theme=dark\]\) :is\(\.paper[^}]*\}/)[0], /--im-soft/);   // the card scope never re-defined it
+});
+
+test('live QA A: every fill that can sit on a dark-theme card takes the light fills, so the card ink/muted text keep >= 4.5:1', () => {
+    const rule = css.match(/:host\(\[data-theme=dark\]\) #panel :is\(\.paper,\.metric,\.file-index,\.chapter-chip\) :is\(([^)]*)\)\{([^}]*)\}/);
+    assert.ok(rule, 'card-fill rule');
+    for (const sel of ['.kchip', '.overview-tabs', '.organize-progress', '.quote-review-panel', '.repair-summary', '.conflict-pair>div', 'a.record-row', '.timeline-card', '.memory-details>summary:hover']) assert.ok(rule[1].split(',').includes(sel), sel);
+    assert.match(rule[2], /--im-soft:#e4dfd3/);
+    assert.match(rule[2], /color:#151515/);
+    assert.ok(ratio('#151515', '#e4dfd3') >= 4.5 && ratio('#151515', '#f7f4ee') >= 4.5);
+    assert.ok(ratio('#5f5a51', '#e4dfd3') >= 4.5 && ratio('#5f5a51', '#e0dbcf') >= 4.5);   // --im-muted on soft / selected
+    // pill, a.chip and .chip-id are deliberately dark chips with their own light text: they must stay out of the rule
+    for (const keep of ['.pill', 'a.chip', '.chip-id']) assert.ok(!rule[1].split(',').includes(keep), keep);
+});
+
+test('live QA A: warning orange is dark on cream (>= 4.5:1 on paper and soft fills) and light only on the dark table', () => {
+    assert.match(css, /#panel :is\(\.warn,\.routine-row \.warn,\.kchip\.is-unknown\)\{color:#8f4524!important\}/);
+    assert.match(css, /:host\(\[data-theme=dark\]\) #panel :is\(\.warn,\.routine-row \.warn,\.kchip\.is-unknown\)\{color:#ffb08a!important\}/);
+    assert.match(css, /:is\(\.paper,\.metric,\.file-index,\.chapter-chip\) :is\(\.warn,\.routine-row \.warn,\.kchip\.is-unknown\)\{color:#8f4524!important\}/);
+    for (const bg of ['#e4dfd3', '#ece8df', '#f7f4ee']) assert.ok(ratio('#8f4524', bg) >= 4.5, bg);
+    assert.ok(ratio('#b0623f', '#e4dfd3') < 4.5);                                      // the original orange on the soft chip (3.39:1)
+    assert.ok(ratio('#ffb08a', '#121212') >= 4.5);
+});
+
+test('the browser QA covers seeded facts chips and the card sweep in both themes', () => {
+    const qa = readFileSync(new URL('../scripts/ui-fix-qa.mjs', import.meta.url), 'utf8');
+    const seed = readFileSync(new URL('../qa/backend-env.mjs', import.meta.url), 'utf8');
+    assert.match(seed, /knownBy: \['하루', '서아'\]/);
+    assert.match(seed, /unaware: \['서아'\]/);
+    for (const needle of ['kchip is-known', 'kchip is-unknown', 'card-sweep', 'overview-tabs', 'quote-review-panel', 'seed has no chips/facts to measure']) assert.ok(qa.includes(needle), needle);
+});

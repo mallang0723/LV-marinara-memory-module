@@ -33,6 +33,9 @@ export function createSummarizationReader(api, { timeoutMs = 1000 } = {}) {
 }
 
 // Fixed same-origin read only. No tokens, arbitrary URLs, or other settings cross the bridge.
+// Lumiverse has no Spindle API for user settings, and GET /api/v1/settings/:key answers 404 (a console error)
+// while the user never saved that key (defaults apply). The bulk list always answers 200, so read that and pick the key.
+export const SETTINGS_URL = '/api/v1/settings';
 export function attachSummarizationFrontend(ctx, { fetch: fetchSetting = globalThis.fetch, timeoutMs = 750 } = {}) {
     const controllers = new Set();
     let alive = true;
@@ -43,15 +46,19 @@ export function attachSummarizationFrontend(ctx, { fetch: fetchSetting = globalT
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         let value = null;
         try {
-            const response = await fetchSetting('/api/v1/settings/summarization', {
+            const response = await fetchSetting(SETTINGS_URL, {
                 method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
             });
             if (response.ok) {
-                const setting = (await response.json())?.value;
-                if (setting && typeof setting === 'object') value = {
-                    messageLimitEnabled: setting.messageLimitEnabled,
-                    messageLimitCount: setting.messageLimitCount,
-                };
+                const list = await response.json();
+                if (Array.isArray(list)) {
+                    // key never saved = Lumiverse defaults (message limit off), not a failure
+                    const setting = list.find(row => row?.key === 'summarization')?.value ?? {};
+                    if (setting && typeof setting === 'object') value = {
+                        messageLimitEnabled: setting.messageLimitEnabled,
+                        messageLimitCount: setting.messageLimitCount,
+                    };
+                }
             }
         } catch { /* denial, unavailable host, or timeout: backend selects the fallback */ }
         finally { clearTimeout(timer); controllers.delete(controller); }

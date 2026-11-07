@@ -167,6 +167,22 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
    On the table it takes light text; inside a paper/metric/file card it keeps the paper's dark muted text (5.6:1). */
 :host([data-theme=dark]) #panel .empty{color:#c9c3b7!important}
 :host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .empty{color:#5f5a51!important}
+/* 1.2.0-lv.2 live QA: dark theme, "알게 된 사실" > 아는 사람 chip was #151515 on rgb(42,40,38) = 1.24:1. theme.orig.css:158 turns every .paper/.metric/.file-index/.chapter-chip into a cream card
+   with #151515 text, but it leaves --im-soft / --im-paper at their dark values (ui.orig.css/theme.orig.css:15), and every nested element that paints one of them and does not name its own colour
+   (.kchip, .overview-tabs, .organize-progress, .quote-review-panel, .repair-summary, .conflict-pair>div, hovered summaries/rows) inherits the card's dark text on a dark fill.
+   Inside a dark card these take the light-theme fills (--im-soft #e4dfd3, --im-paper #f7f4ee) so the card's own dark text (13.7:1) and muted text (5.1:1) apply.
+   .pill / a.chip / .chip-id are NOT touched: they pair a dark fill with their own light colour (--im-accent) on purpose. */
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) :is(.kchip,.overview-tabs,.organize-progress,.quote-review-panel,.repair-summary,.conflict-pair>div,.memory-details>summary:hover,a.record-row,.timeline-card,#records>article.memory-card,.continuous-events,.auto-organize){--im-soft:#e4dfd3;--im-paper:#f7f4ee;--im-button-hover:#ddd7ca;--im-button-active:#d3ccbc;--im-selected:#e0dbcf;--im-muted:#5f5a51;--im-ink:#151515;color:#151515}
+/* light theme: muted text on the --im-soft fill (#e4dfd3) was 4.16:1 */
+#panel :is(.organize-progress,.quote-review-panel,.repair-summary,.conflict-pair>div,.kchip,.overview-tabs){--im-muted:#5f5a51}
+#panel .quote-review-panel :is(.hint,small){color:#5f5a51!important}
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) :is(.overview-tabs,.quote-review-panel,.repair-summary) button{color:#151515}
+/* a record row inside a dark card is now a light row: its arrow follows the card's ink */
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) a.record-row .chip-arrow{color:#151515!important}
+/* the orange "not known / warning" text: #b0623f is 3.4:1 on the soft chip and 3.7:1 on the paper (light theme too); the light #ffb08a is only for the dark table */
+#panel :is(.warn,.routine-row .warn,.kchip.is-unknown){color:#8f4524!important}
+:host([data-theme=dark]) #panel :is(.warn,.routine-row .warn,.kchip.is-unknown){color:#ffb08a!important}
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) :is(.warn,.routine-row .warn,.kchip.is-unknown){color:#8f4524!important}
 /* switches: the 38x22 / 34x20 drawn input is the visible part; its hit area grows to >= 44px (the whole label row is clickable too) */
 #panel input[type=checkbox]{position:relative}
 #panel input[type=checkbox]:after{content:"";position:absolute;inset:-13px -8px}
@@ -521,6 +537,7 @@ function createOverlayGuard({ doc = globalThis.document, win = globalThis.window
 }
 
 // src/common/host-settings.js
+var SETTINGS_URL = "/api/v1/settings";
 function attachSummarizationFrontend(ctx, { fetch: fetchSetting = globalThis.fetch, timeoutMs = 750 } = {}) {
   const controllers = new Set;
   let alive = true;
@@ -532,19 +549,22 @@ function attachSummarizationFrontend(ctx, { fetch: fetchSetting = globalThis.fet
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let value = null;
     try {
-      const response = await fetchSetting("/api/v1/settings/summarization", {
+      const response = await fetchSetting(SETTINGS_URL, {
         method: "GET",
         credentials: "same-origin",
         cache: "no-store",
         signal: controller.signal
       });
       if (response.ok) {
-        const setting = (await response.json())?.value;
-        if (setting && typeof setting === "object")
-          value = {
-            messageLimitEnabled: setting.messageLimitEnabled,
-            messageLimitCount: setting.messageLimitCount
-          };
+        const list = await response.json();
+        if (Array.isArray(list)) {
+          const setting = list.find((row) => row?.key === "summarization")?.value ?? {};
+          if (setting && typeof setting === "object")
+            value = {
+              messageLimitEnabled: setting.messageLimitEnabled,
+              messageLimitCount: setting.messageLimitCount
+            };
+        }
       }
     } catch {} finally {
       clearTimeout(timer);
@@ -1340,7 +1360,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (!selectedScene && selectedGroup === null)
       selectedScene = store.scenes.at(-1)?.id || "";
   }
-  const needsNames = () => ["names", "life"].includes(tab);
+  const needsNames = () => ["names", "life", "search"].includes(tab);
   const needsWorld = () => tab === "world";
   async function loadWorld(id) {
     try {
@@ -1712,23 +1732,64 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   }
   const SEARCH_TEXT = new Set(["title", "summary", "text", "why", "time", "place", "weather", "what", "kept", "detail", "cause", "need", "about", "who", "toward", "by", "to", "how", "turns", "keep", "present"]);
   const SEARCH_NESTED = new Set(["events", "quotes", "loose", "recollections", "later", "learned", "latest", "closed", "evidence", "clues"]);
-  function searchableText(value) {
+  function searchableText(value, translated = false) {
     if (value == null)
       return "";
+    const leaf = (x) => translated ? shown(x) : x;
     if (Array.isArray(value))
-      return value.map(searchableText).filter(Boolean).join(" ");
+      return value.map((x) => searchableText(x, translated)).filter(Boolean).join(" ");
     if (typeof value !== "object")
-      return String(value);
+      return leaf(String(value));
     const parts = [];
     for (const [k, v] of Object.entries(value)) {
       if (v == null)
         continue;
       if (SEARCH_TEXT.has(k))
-        parts.push(Array.isArray(v) ? v.filter((x) => typeof x === "string").join(" ") : typeof v === "string" ? v : "");
+        parts.push(Array.isArray(v) ? v.filter((x) => typeof x === "string").map(leaf).join(" ") : typeof v === "string" ? leaf(v) : "");
       else if (SEARCH_NESTED.has(k))
-        parts.push(searchableText(v));
+        parts.push(searchableText(v, translated));
     }
     return parts.filter(Boolean).join(" ").replace(/\s+/g, " ");
+  }
+  function searchVariants(raw) {
+    const low = (x) => String(x ?? "").trim().toLocaleLowerCase();
+    const q = low(raw);
+    const out = q ? [q] : [];
+    if (!q)
+      return out;
+    const add = (x) => {
+      const v = low(x);
+      if (v && !out.includes(v))
+        out.push(v);
+    };
+    const groups = [];
+    if (names && namesRoom === room) {
+      for (const [canon, p] of Object.entries(names.people || {}))
+        groups.push([canon, p?.display, ...p?.aliases || []]);
+      const entries = names.address?.entries || [];
+      for (const e of entries) {
+        const t = entries.find((x) => x.id === e.pairWith);
+        if (t)
+          groups.push([e.term, t.term]);
+      }
+    }
+    for (const g of groups) {
+      const list = g.filter((x) => typeof x === "string" && x.trim());
+      if (!list.some((x) => low(x) === q || low(x).split(/\s+/).includes(q)))
+        continue;
+      for (const x of list) {
+        add(x);
+        const first = low(x).split(/\s+/)[0];
+        if (first.length >= 2)
+          add(first);
+      }
+    }
+    for (const [k, v] of Object.entries(trMap))
+      if (k.length <= 40 && (low(k) === q || low(v) === q)) {
+        add(k);
+        add(v);
+      }
+    return out;
   }
   function viewSearch() {
     if (!store)
@@ -1742,15 +1803,31 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       ["미해결·닫힌 기록", "thread", threadList()]
     ];
     const results = [];
+    const variants = searchVariants(searchQuery);
+    const find = (text) => {
+      const lower = text.toLocaleLowerCase();
+      let best = null;
+      for (const v of variants) {
+        const i = lower.indexOf(v);
+        if (i >= 0 && (!best || i < best.at))
+          best = { at: i, length: v.length };
+      }
+      return best;
+    };
     if (query)
       for (const [label, kind, records] of groups)
         for (const record of records) {
-          const text = searchableText(record);
-          const at = text.toLocaleLowerCase().indexOf(query);
-          if (at < 0)
+          let text = searchableText(record, true);
+          let hit = find(text);
+          if (!hit) {
+            text = searchableText(record);
+            hit = find(text);
+          }
+          if (!hit)
             continue;
-          const start = Math.max(0, at - 45);
-          const excerpt = `${start ? "…" : ""}${text.slice(start, at + query.length + 110)}${text.length > at + query.length + 110 ? "…" : ""}`;
+          const start = Math.max(0, hit.at - 45);
+          const end = hit.at + hit.length + 110;
+          const excerpt = `${start ? "…" : ""}${text.slice(start, end)}${text.length > end ? "…" : ""}`;
           results.push(`<a href="#" class="record-link record-row" data-goto-${kind}="${esc(record.id)}"><span class="pill neutral">${label}</span><span class="row-main"><b>${esc(record.title || record.about || record.id)}</b><small>${esc(excerpt)}</small></span><span class="chip-arrow">›</span></a>`);
         }
     return `<h1>기억 검색</h1><p class="intro">이 방의 장면·챕터·큰 흐름·사실·미해결 기록과 닫힌 기록에서 입력한 글자를 찾습니다. 결과를 누르면 해당 기록으로 이동합니다.</p>

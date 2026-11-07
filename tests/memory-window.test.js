@@ -77,14 +77,32 @@ test('frontend reads only the authenticated setting; denied/missing response fal
         sendToBackend(msg) { backendHandler(msg, U); },
     }, { fetch: async (url, init) => {
         calls.push({ url, init });
-        return { ok: status === 200, json: async () => ({ value: { messageLimitEnabled: true, messageLimitCount: 20, unrelated: 'not forwarded' } }) };
+        return { ok: status === 200, json: async () => [{ key: 'other', value: { messageLimitEnabled: true, messageLimitCount: 99 } }, { key: 'summarization', value: { messageLimitEnabled: true, messageLimitCount: 20, unrelated: 'not forwarded' } }] };
     } });
     t.after(() => { off(); host.dispose(); });
     assert.equal(await host.contextMessageLimit(U), 20);
     for (status of [403, 404, 500]) assert.equal(await host.contextMessageLimit(U), null);
     assert.equal(logs.length, 1);
-    assert.ok(calls.every(c => c.url === '/api/v1/settings/summarization' && c.init.credentials === 'same-origin' && c.init.cache === 'no-store'));
+    assert.ok(calls.every(c => c.url === '/api/v1/settings' && c.init.credentials === 'same-origin' && c.init.cache === 'no-store'));
     await assert.rejects(() => host.contextMessageLimit(''), /userId required/);
+});
+
+test('frontend treats a never-saved summarization key as Lumiverse defaults (no warning, no per-key 404 request)', async t => {
+    let backendHandler, frontendHandler;
+    const logs = [], urls = [];
+    const api = {
+        onFrontendMessage(fn) { backendHandler = fn; return () => {}; },
+        sendToFrontend(msg) { void frontendHandler(msg); },
+    };
+    const host = createHostAdapter(api, { log: x => logs.push(x) });
+    const off = attachSummarizationFrontend({
+        onBackendMessage(fn) { frontendHandler = fn; return () => {}; },
+        sendToBackend(msg) { backendHandler(msg, U); },
+    }, { fetch: async url => { urls.push(url); return { ok: true, json: async () => [{ key: 'theme', value: {} }] }; } });
+    t.after(() => { off(); host.dispose(); });
+    assert.equal(await host.contextMessageLimit(U), null);
+    assert.deepEqual(logs, []);
+    assert.deepEqual(urls, ['/api/v1/settings']);
 });
 
 test('bridge isolates users, ignores unsolicited/stale replies, coalesces concurrent reads and times out', async t => {

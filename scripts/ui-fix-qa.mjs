@@ -2,6 +2,8 @@
 //  1. contrast >= 4.5:1 of every text node in BOTH screen themes (dark/light), including the empty state "채팅방을 선택해 주세요."
 //     (the grain background-image is a translucent noise overlay, so the colour layers under it are what count; scripts/browser-qa.mjs
 //     skips any element that has a background-image, which is how the dark .empty at 1.03:1 got through)
+//     1b. the facts tab is seeded (qa/backend-env.mjs) with 아는 사람 / 모르는 사람 chips, and a synthetic sweep draws every nested fill that can sit on a cream card in the dark theme
+//         (chips, pills, tabs, notes, panels, buttons, warnings) inside .paper / .metric / .file-index / .chapter-chip and measures them under the grain like everything else
 //  2. at 1280x800 and 390x844: the bottom room switch label is not clipped, and every checkbox/switch (이름 정리·설정 tabs too)
 //     has a >= 44px effective touch target (its label counts); no sideways overflow.
 // PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium node scripts/ui-fix-qa.mjs   (exit 1 on failure)
@@ -47,6 +49,23 @@ function inPage({ phase }) {
     return out;
 }
 
+// every nested element that paints one of the theme fills (--im-soft, --im-paper, --im-subtle, --im-selected, hover/active) inside a card, in the card kinds the dark theme re-colours (theme.orig.css:158)
+const SWEEP = `<div class="paper"><h2>카드 안</h2>
+  <p class="know-chips"><span class="know-label">아는 사람</span><span class="kchip is-known">하루</span><span class="kchip is-known">서아</span><span class="know-label">모르는 사람</span><span class="kchip is-unknown">미나</span></p>
+  <p><span class="pill">직접 고침</span> <span class="pill neutral">중립</span> <span class="pill green">완료</span> <a href="#" class="chip">S1</a> <a href="#" class="record-link chip"><span class="chip-id">S2</span>장면 링크<span class="chip-arrow">›</span></a></p>
+  <div class="overview-tabs"><button aria-selected="true">첫째</button><button aria-selected="false">둘째</button></div>
+  <div class="note">참고 문구입니다.</div><p class="warn">경고 문구입니다.</p><div class="routine-row"><span class="warn">행 경고</span></div>
+  <div class="organize-progress">정리 진행 중 <small>12/40</small></div>
+  <div class="quote-review-panel"><h3>대사 확인</h3><p class="hint">설명 문구</p><button>확인</button></div>
+  <p class="repair-summary">복구 요약 3건</p>
+  <div class="conflict-pair"><div><small>기록 A</small><p>한 쪽 기록</p></div><div><small>기록 B</small><p>다른 쪽 기록</p></div></div>
+  <div class="person-chips"><button class="selected">하루</button><button>서아</button></div>
+  <details class="memory-details" open><summary>자세히</summary><p>본문</p></details>
+  <a href="#" class="record-row"><span class="pill neutral">장면</span><span class="row-main"><b>제목</b><small>발췌 문구</small></span><span class="chip-arrow">›</span></a>
+  <div class="quote-card"><small>하루 · #3.1</small><blockquote>대사입니다.</blockquote></div>
+  <div class="buttons"><button class="primary">저장</button><button class="ghost">취소</button><button>보통</button></div></div>
+<div class="metric"><span class="pill">3</span><small>작은 글</small><span class="kchip is-known">하루</span><span class="kchip is-unknown">서아</span></div>`;
+
 for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, height: 844, touch: true }]) {
     const session = `ui-fix-${vp.width}`;
     const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch, locale: 'ko-KR', reducedMotion: 'reduce', extraHTTPHeaders: { 'x-qa-session': session } });
@@ -78,6 +97,14 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
         await ev('root.querySelector("#content").innerHTML = \'<div class="empty">채팅방을 선택해 주세요. 루미버스에서 채팅방을 열면 그 방이 먼저 표시됩니다.</div><div class="paper"><div class="empty">아직 기록이 없습니다.</div></div>\'');
         await check(`${ui} empty-state`);
     }
+    for (const ui of ['dark', 'light']) {
+        await themed(ui);
+        await ev('root.querySelector("#content").innerHTML = arg', SWEEP);
+        await check(`${ui} card-sweep`);
+        // the chips of the seeded facts tab are measured by the tab loop below; here the three kinds must also be exactly what the sweep drew
+        const kinds = await ev('return [...root.querySelectorAll("#content .kchip")].map(e => e.className.replace("kchip ", "")).join(",")');
+        if (kinds !== 'is-known,is-known,is-unknown,is-known,is-unknown') failures.push(`${vp.width}px ${ui} card-sweep: kchips ${kinds}`);
+    }
     await ev('root.querySelector("#close").click()'); await page.waitForTimeout(200);
     await open();
     for (const ui of ['dark', 'light']) {
@@ -86,6 +113,11 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
             if (!(await ev('const b = root.querySelector(arg); if (!b) return false; b.click(); return true;', `button[data-tab="${t}"]`))) { failures.push(`${vp.width}px missing tab ${t}`); continue; }
             await page.waitForTimeout(500);
             await check(`${ui} ${t}`);
+            if (t === 'facts') {
+                const chips = await ev('return { known: root.querySelectorAll("#content .kchip.is-known").length, unknown: root.querySelectorAll("#content .kchip.is-unknown").length, facts: root.querySelectorAll("#content .fact-row").length }');
+                if (chips.known < 2 || chips.unknown < 1 || chips.facts < 2) failures.push(`${vp.width}px ${ui} facts: seed has no chips/facts to measure ${JSON.stringify(chips)}`);
+                report.push(`${vp.width}px ${ui} facts: ${chips.facts} facts, ${chips.known} 아는 사람 chips, ${chips.unknown} 모르는 사람 chips`);
+            }
         }
     }
     await context.close();
