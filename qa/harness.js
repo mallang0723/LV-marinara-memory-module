@@ -4,7 +4,8 @@
 import { setup } from '../dist/frontend.js';
 
 const USER = 'qa-user';
-let toFrontend = null;
+const backendListeners = new Set();   // Lumiverse delivers every backend message to every listener (the shell, the summary tab and the memory screen each register one)
+const toFrontend = m => { for (const fn of [...backendListeners]) fn(m); };
 const handlers = new Map();
 let activeChat = 'chat-a';
 const state = { 'chat.active': { chatId: 'chat-a', characterId: 'char-haru' } };
@@ -20,7 +21,7 @@ async function post(url, body) {
 let polling = true;
 (async function poll() {
     while (polling) {
-        try { const { events } = await (await fetch('./__poll')).json(); for (const m of events || []) toFrontend?.(m); } catch { /* page closing */ }
+        try { const { events } = await (await fetch('./__poll')).json(); for (const m of events || []) toFrontend(m); } catch { /* page closing */ }
         await new Promise(r => setTimeout(r, 250));
     }
 })();
@@ -59,9 +60,9 @@ const ctx = {
     events: { on(event, fn) { if (!handlers.has(event)) handlers.set(event, new Set()); handlers.get(event).add(fn); return () => handlers.get(event).delete(fn); }, emit(event, p) { for (const fn of handlers.get(event) || []) fn(p); } },
     getActiveChat: () => ({ chatId: activeChat, characterId: 'char-haru' }),
     state: { get: k => state[k], subscribe() { return () => {}; } },
-    onBackendMessage(fn) { toFrontend = fn; return () => { toFrontend = null; }; },
+    onBackendMessage(fn) { backendListeners.add(fn); return () => { backendListeners.delete(fn); }; },
     sendToBackend(m) {
-        post('./__rpc', { frame: JSON.parse(JSON.stringify(m)), user: USER }).then(({ replies }) => { for (const r of replies || []) toFrontend?.(r); }).catch(() => {});
+        post('./__rpc', { frame: JSON.parse(JSON.stringify(m)), user: USER }).then(({ replies }) => { for (const r of replies || []) toFrontend(r); }).catch(() => {});
     },
 };
 document.getElementById('extras-btn').addEventListener('click', () => extrasMenu.classList.toggle('on'));

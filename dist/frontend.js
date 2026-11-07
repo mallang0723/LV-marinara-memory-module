@@ -159,8 +159,23 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
 #panel :is(button,select,summary,[role=button],input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea){min-height:44px!important}
 #panel :is(button,[role=button]){min-width:44px!important}
 #panel :is(label.room-switch,label.setting-switch,label.check,label:has(input[type=checkbox]),label:has(input[type=radio])){min-height:44px!important;display:flex;align-items:center}
-#panel .nav-label{color:var(--im-ink)!important;opacity:.8}
+/* the rail is dark in both screen themes (theme.orig.css:28), so its labels must be light: --im-ink is dark in the light theme (was 1.0:1) */
+#panel .sidebar .nav-label{color:#ece8df!important;opacity:.85}
 #panel .theme-toggle,#panel #close{width:44px!important;height:44px!important}
+/* 1.2.0-lv.1 live QA: dark-theme empty state ("채팅방을 선택해 주세요.") was --im-muted #5f5a51 (meant for a cream paper) on the #121212 table = 1.03:1,
+   because theme.orig.css:158 re-colours .empty like a paper but theme.orig.css:127 keeps its background transparent. (Upstream 8d5f090 ships the same two rules.)
+   On the table it takes light text; inside a paper/metric/file card it keeps the paper's dark muted text (5.6:1). */
+:host([data-theme=dark]) #panel .empty{color:#c9c3b7!important}
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .empty{color:#5f5a51!important}
+/* switches: the 38x22 / 34x20 drawn input is the visible part; its hit area grows to >= 44px (the whole label row is clickable too) */
+#panel input[type=checkbox]{position:relative}
+#panel input[type=checkbox]:after{content:"";position:absolute;inset:-13px -8px}
+#panel :is(.setting-switch,.room-switch,.check-row,label.check){min-width:44px;box-sizing:border-box}
+/* the room switch label wraps instead of being cut (it was a 112px column next to the 34px switch, and sat below the fold) */
+#panel .room-switch{align-items:center!important;gap:12px!important;padding:10px 0!important;line-height:1.35}
+#panel .room-switch span{flex:1 1 auto;min-width:0;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere}
+/* decorative "›" after a record link was opacity .55 = 3.8-3.9:1 */
+#panel .chip-arrow{opacity:1!important}
 #roomSelect{max-width:100%!important}
 #panel .record-link.chip{min-height:44px!important;display:inline-flex!important;align-items:center}
 #panel .record-link .chip-id{color:#37354a!important;opacity:1!important}
@@ -184,6 +199,12 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
 @media(min-width:721px){
   #panel .sidebar{min-height:0!important;max-height:100%!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:#ece8df55 transparent}
   #panel .sidebar:after{right:0!important}
+  /* the rail (9 tabs) is taller than an 800px window: the room switch stays pinned to the bottom of the visible rail, never below the fold */
+  #panel .sidebar .side-bottom{display:contents!important}
+  #panel .sidebar .side-bottom>:not(.room-switch){margin-top:10px!important}
+  #panel .sidebar nav{margin-bottom:16px}
+  #panel .sidebar .room-switch{position:sticky;bottom:0;z-index:2;margin-top:auto!important;background:#151515;border-top:1px solid #ece8df33}
+  :host([data-theme=dark]) #panel .sidebar .room-switch{background:#1d1c1a}
 }
 `;
 
@@ -1069,8 +1090,8 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   const threadStats = () => {
     if (info?.threadStats)
       return info.threadStats;
-    const open2 = (info?.threads || []).filter((t) => t.status === "open");
-    return { open: open2.length, emotion: open2.filter((t) => t.kind === "emotion").length, promise: open2.filter((t) => t.kind === "promise").length };
+    const open = (info?.threads || []).filter((t) => t.status === "open");
+    return { open: open.length, emotion: open.filter((t) => t.kind === "emotion").length, promise: open.filter((t) => t.kind === "promise").length };
   };
   async function loadThreads(id) {
     if (Array.isArray(info?.threads) || threadsRoom === id && threadsKey === info?.threadsStamp)
@@ -1672,13 +1693,13 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const chapter = chapters.find((c) => c.id === selectedGroup) || null;
     const inGroup = chapter ? store.scenes.filter((x) => chapter.scenes.includes(x.id)) : store.scenes.filter((x) => !chapterOf(x.id));
     const bar = chapters.length ? `<div class="chapter-bar">${chapters.map((c) => `<button class="chapter-chip ${c.id === selectedGroup ? "is-selected" : ""}" data-group="${esc(c.id)}"><span class="chip-id">${esc(c.id)}</span>${esc(shown(c.title))}</button>`).join("")}<button class="chapter-chip ${selectedGroup === "" ? "is-selected" : ""}" data-group=""><span class="chip-id">NOW</span>최근 장면</button></div>` : "";
-    const shelf = inGroup.map((s2) => {
-      const i = store.scenes.indexOf(s2);
-      const outside = firstInside == null || s2.start < firstInside;
-      return `<button class="file-index ${s2.id === selectedScene ? "is-selected" : ""} ${outside ? "" : "is-current"}" data-scene="${esc(s2.id)}">
-          <span class="file-code">${esc(s2.id)}<span class="file-range">메시지 ${s2.start}~${s2.end}</span></span><span class="file-spine">SCENE ${String(i + 1).padStart(3, "0")}</span>
-          <h3 title="${esc(s2.title)}">${esc(shown(s2.title))}</h3><span class="barcode"></span>
-          <span class="file-foot"><span>${esc(s2.time || "")}</span><span>${s2.edited ? "고침" : ""}</span></span></button>`;
+    const shelf = inGroup.map((s) => {
+      const i = store.scenes.indexOf(s);
+      const outside = firstInside == null || s.start < firstInside;
+      return `<button class="file-index ${s.id === selectedScene ? "is-selected" : ""} ${outside ? "" : "is-current"}" data-scene="${esc(s.id)}">
+          <span class="file-code">${esc(s.id)}<span class="file-range">메시지 ${s.start}~${s.end}</span></span><span class="file-spine">SCENE ${String(i + 1).padStart(3, "0")}</span>
+          <h3 title="${esc(s.title)}">${esc(shown(s.title))}</h3><span class="barcode"></span>
+          <span class="file-foot"><span>${esc(s.time || "")}</span><span>${s.edited ? "고침" : ""}</span></span></button>`;
     }).join("");
     const s = inGroup.find((x) => x.id === selectedScene);
     const arcs = store.arcs || [];
@@ -1937,10 +1958,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (!info)
       return emptyRoom();
     const threads = threadList();
-    const open2 = threads.filter((t) => t.status === "open");
+    const open = threads.filter((t) => t.status === "open");
     const closed = threads.filter((t) => t.status !== "open");
-    const groups = KIND_ORDER.map((k) => [k, open2.filter((t) => t.kind === k)]).filter(([, l]) => l.length);
-    return `<div class="eyebrow">LEDGER · ${open2.length} OPEN</div><h1>아직 끝나지 않은 일</h1>
+    const groups = KIND_ORDER.map((k) => [k, open.filter((t) => t.kind === k)]).filter(([, l]) => l.length);
+    return `<div class="eyebrow">LEDGER · ${open.length} OPEN</div><h1>아직 끝나지 않은 일</h1>
       <p class="intro">약속·감정·상태·비밀·미해결 일입니다. 항목을 누르면 제목과 설명을 고치실 수 있고, 잘못 닫힌 항목은 다시 열고 끝난 일은 닫으실 수 있습니다. 직접 고친 내용은 리롤해도 유지됩니다.</p>
       ${groups.length ? groups.map(([k, l]) => `<div class="paper"><h2>${KIND[k]} · ${l.length}</h2>${l.map(threadRow).join("")}</div>`).join("") : '<div class="empty">열린 항목이 없습니다.</div>'}
       ${closed.length ? `<details class="paper"><summary>닫힌 항목 ${closed.length}개</summary>${closed.map(threadRow).join("")}</details>` : ""}`;
@@ -2211,9 +2232,9 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const date = pick.sceneDates?.[s.id];
     if (!date)
       return '<button class="ghost" disabled title="이 장면에는 작중 날짜가 없어 시작일로 쓸 수 없습니다">이 장면부터</button>';
-    const open2 = scenePicker?.scene === s.id;
-    const button = `<button class="ghost" data-act="scenePickOpen" data-id="${esc(s.id)}" title="이 장면의 날짜(${esc(date)})를 시작일로 하는 트래커">${open2 ? "이 장면부터 닫기" : "이 장면부터"}</button>`;
-    if (!open2)
+    const open = scenePicker?.scene === s.id;
+    const button = `<button class="ghost" data-act="scenePickOpen" data-id="${esc(s.id)}" title="이 장면의 날짜(${esc(date)})를 시작일로 하는 트래커">${open ? "이 장면부터 닫기" : "이 장면부터"}</button>`;
+    if (!open)
       return button;
     const p = scenePicker;
     const input = (key, label, hint) => `<label class="world-field"><span>${label}</span><input data-sp="${key}" list="scenePeople" value="${esc(p[key])}" placeholder="${hint}" aria-label="${label}"></label>`;
@@ -2337,8 +2358,8 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const chips = (list) => (list || []).map((r) => `<span class="pill ${r.kind === "pinned" ? "green" : "neutral"}" title="${esc(r.why || "")}">${esc(r.label)}</span>`).join("");
     const row = (it) => `<div class="reason-row"><span class="row-main"><b>${esc(it.title)}</b>${it.id ? `<small>${esc(it.id)}</small>` : ""}<span class="reason-chips">${chips(it.reasons)}</span></span>${it.id ? markButtons(it.id, prefs) : ""}</div>`;
     const sections = (report.sections || []).map((s) => `<h3>${esc(TITLES[s.section] || s.section)} · ${s.items.length}</h3><div class="reason-list">${s.items.map(row).join("")}</div>`).join("");
-    const shown2 = (id) => (report.sections || []).some((s) => s.items.some((it) => it.id === id));
-    const marks = (report.marks || []).filter((m) => m.state === "excluded" || !shown2(m.id));
+    const shown = (id) => (report.sections || []).some((s) => s.items.some((it) => it.id === id));
+    const marks = (report.marks || []).filter((m) => m.state === "excluded" || !shown(m.id));
     const left = marks.length ? `<h3>중요·뺀 항목 중 지금 들어가지 않는 것 · ${marks.length}</h3><div class="reason-list">${marks.map((m) => `<div class="reason-row"><span class="row-main"><b>${esc(m.title)}</b><small>${esc(m.id)}</small><span class="reason-chips"><span class="pill neutral">${m.state === "pinned" ? "중요" : "뺌"}</span></span></span>${markButtons(m.id, prefs)}</div>`).join("")}</div>` : "";
     if (!sections && !left)
       return "";
@@ -2647,10 +2668,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const part = (n, word) => n ? `${word} ${n}` : "";
     return `<p class="hint">${rows.map((x) => `${esc(x.scene || "?")}: ${[part(x.changed, "바뀜"), part(x.listed, "목록"), part(x.unchanged, "그대로"), part(x.settled, "규칙 확정"), part(x.skipped, "변화 없어 건너뜀"), part(x.moved, "위치 고침")].filter(Boolean).join(" · ")}`).join("<br>")}</p>`;
   }
-  function attributionLogHtml(info2, sj) {
-    const stored = Array.isArray(info2.attributionLog) ? info2.attributionLog : lazyData("attribution")?.runs || null;
+  function attributionLogHtml(info, sj) {
+    const stored = Array.isArray(info.attributionLog) ? info.attributionLog : lazyData("attribution")?.runs || null;
     const runs = stored || [];
-    const count = stored ? stored.length : info2.attributionRuns || 0;
+    const count = stored ? stored.length : info.attributionRuns || 0;
     const byPlace = (a, b) => a.number - b.number || a.sentence - b.sentence;
     const live = sj.state === "running" && (sj.attributionDiagnostics || []).length ? [...sj.attributionDiagnostics].sort(byPlace) : null;
     const tally = (c) => c ? ` · 확인 ${c.reviewed ?? 0} · 두 번 물음 ${c.second ?? 0} · 건너뜀 ${(c.skipped ?? 0) + (c.settled ?? 0)} · 모델 호출 ${c.calls ?? 0}` : "";
@@ -2659,7 +2680,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     const changed = (entries) => entries.filter((d) => d.decision === "applied").length;
     const run = (r, i) => `<details${i === 0 && !live ? " open" : ""}><summary>${esc((r.at || "").replace("T", " ").slice(0, 16))} · ${esc(r.reason || "")}${r.mode ? ` · ${esc(attributionModeLabel(r.mode))}` : ""} · ${r.entries.length}줄 · 바뀜 ${changed(r.entries)}${esc(tally(r.counts))}${r.dropped ? ` · ${r.dropped}줄은 기록 한도로 생략` : ""}</summary>${(r.notes || []).map((n) => `<p class="hint">${esc(n)}</p>`).join("")}${attributionSummaryHtml(r)}${r.entries.map(attributionEntryHtml).join("")}</details>`;
     const wait = stored ? "" : lazyError("attribution") ? `<div class="note">${esc(lazyError("attribution"))}</div>` : '<p class="hint">불러오는 중…</p>';
-    return `<details data-list="attrlog"${attributionFilter || openLists.has("attrlog") ? " open" : ""}><summary>대사 확인 기록 (${count}회${live ? " · 진행 중" : ""}) · 확인 방식: ${esc(attributionModeLabel(info2.attributionCheck?.mode))}</summary><p class="hint">화자·상대 판단과 저장 결과입니다. 서버에 방마다 최근 5회까지 남고, 정리가 끝나거나 서버를 다시 켜도 유지됩니다. 바뀌었거나 다시 물었거나 받아들이지 않은 대사는 모두 남고, 문제없이 그대로인 대사는 장면별 개수로만 보입니다. 대사 원문과 근거 문구는 기록하지 않습니다.</p>${wait}<label>대사 번호로 찾기<input id="attributionFilter" value="${esc(attributionFilter)}" placeholder="예: #1.24" autocomplete="off"></label>${live ? `<details open><summary>진행 중 (${live.length}${esc(tally(sj.attributionProgress))})</summary>${live.map(attributionEntryHtml).join("")}</details>` : ""}${runs.map(run).join("")}</details>`;
+    return `<details data-list="attrlog"${attributionFilter || openLists.has("attrlog") ? " open" : ""}><summary>대사 확인 기록 (${count}회${live ? " · 진행 중" : ""}) · 확인 방식: ${esc(attributionModeLabel(info.attributionCheck?.mode))}</summary><p class="hint">화자·상대 판단과 저장 결과입니다. 서버에 방마다 최근 5회까지 남고, 정리가 끝나거나 서버를 다시 켜도 유지됩니다. 바뀌었거나 다시 물었거나 받아들이지 않은 대사는 모두 남고, 문제없이 그대로인 대사는 장면별 개수로만 보입니다. 대사 원문과 근거 문구는 기록하지 않습니다.</p>${wait}<label>대사 번호로 찾기<input id="attributionFilter" value="${esc(attributionFilter)}" placeholder="예: #1.24" autocomplete="off"></label>${live ? `<details open><summary>진행 중 (${live.length}${esc(tally(sj.attributionProgress))})</summary>${live.map(attributionEntryHtml).join("")}</details>` : ""}${runs.map(run).join("")}</details>`;
   }
   const VIEWS = { home: viewHome, scenes: viewScenes, search: viewSearch, facts: viewFacts, ledger: viewLedger, life: viewLife, world: viewWorld, names: viewNames, inject: viewInject, settings: viewSettings };
   function render() {
@@ -2737,11 +2758,11 @@ pre{font-size:12.5px!important;line-height:1.85!important}
           return;
         return act(() => api("DELETE", `/chats/${chat}/selected-memory/${encodeURIComponent(el.dataset.selectedId)}`), "선택한 기억을 삭제했습니다.");
       case "orphanDelete": {
-        const id2 = el.dataset.orphanId;
-        if (!id2 || !confirm("이 삭제된 방의 기억을 영구 삭제합니다. 되돌릴 수 없습니다. 계속할까요?"))
+        const id = el.dataset.orphanId;
+        if (!id || !confirm("이 삭제된 방의 기억을 영구 삭제합니다. 되돌릴 수 없습니다. 계속할까요?"))
           return;
         return act(async () => {
-          await api("DELETE", `/orphans/${encodeURIComponent(id2)}`);
+          await api("DELETE", `/orphans/${encodeURIComponent(id)}`);
           orphans = (await api("GET", "/orphans")).orphans;
         }, "삭제된 방의 기억을 지웠습니다.");
       }
@@ -3200,9 +3221,9 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         const box = root.querySelector(`[data-thread="${CSS.escape(id)}"]`);
         const body = {};
         for (const f of ["title", "detail", "need", "unaware", "guess", "dueDate", "dueTime"]) {
-          const el2 = box?.querySelector(`[data-f="${f}"]`);
-          if (el2)
-            body[f] = el2.value;
+          const el = box?.querySelector(`[data-f="${f}"]`);
+          if (el)
+            body[f] = el.value;
         }
         return act(() => api("POST", `/chats/${chat}/threads/${encodeURIComponent(id)}/edit`, body), `${id} 항목을 저장했습니다.`);
       }

@@ -7,8 +7,23 @@
 #panel :is(button,select,summary,[role=button],input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea){min-height:44px!important}
 #panel :is(button,[role=button]){min-width:44px!important}
 #panel :is(label.room-switch,label.setting-switch,label.check,label:has(input[type=checkbox]),label:has(input[type=radio])){min-height:44px!important;display:flex;align-items:center}
-#panel .nav-label{color:var(--im-ink)!important;opacity:.8}
+/* the rail is dark in both screen themes (theme.orig.css:28), so its labels must be light: --im-ink is dark in the light theme (was 1.0:1) */
+#panel .sidebar .nav-label{color:#ece8df!important;opacity:.85}
 #panel .theme-toggle,#panel #close{width:44px!important;height:44px!important}
+/* 1.2.0-lv.1 live QA: dark-theme empty state ("채팅방을 선택해 주세요.") was --im-muted #5f5a51 (meant for a cream paper) on the #121212 table = 1.03:1,
+   because theme.orig.css:158 re-colours .empty like a paper but theme.orig.css:127 keeps its background transparent. (Upstream 8d5f090 ships the same two rules.)
+   On the table it takes light text; inside a paper/metric/file card it keeps the paper's dark muted text (5.6:1). */
+:host([data-theme=dark]) #panel .empty{color:#c9c3b7!important}
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .empty{color:#5f5a51!important}
+/* switches: the 38x22 / 34x20 drawn input is the visible part; its hit area grows to >= 44px (the whole label row is clickable too) */
+#panel input[type=checkbox]{position:relative}
+#panel input[type=checkbox]:after{content:"";position:absolute;inset:-13px -8px}
+#panel :is(.setting-switch,.room-switch,.check-row,label.check){min-width:44px;box-sizing:border-box}
+/* the room switch label wraps instead of being cut (it was a 112px column next to the 34px switch, and sat below the fold) */
+#panel .room-switch{align-items:center!important;gap:12px!important;padding:10px 0!important;line-height:1.35}
+#panel .room-switch span{flex:1 1 auto;min-width:0;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere}
+/* decorative "›" after a record link was opacity .55 = 3.8-3.9:1 */
+#panel .chip-arrow{opacity:1!important}
 #roomSelect{max-width:100%!important}
 #panel .record-link.chip{min-height:44px!important;display:inline-flex!important;align-items:center}
 #panel .record-link .chip-id{color:#37354a!important;opacity:1!important}
@@ -32,4 +47,10 @@
 @media(min-width:721px){
   #panel .sidebar{min-height:0!important;max-height:100%!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:#ece8df55 transparent}
   #panel .sidebar:after{right:0!important}
+  /* the rail (9 tabs) is taller than an 800px window: the room switch stays pinned to the bottom of the visible rail, never below the fold */
+  #panel .sidebar .side-bottom{display:contents!important}
+  #panel .sidebar .side-bottom>:not(.room-switch){margin-top:10px!important}
+  #panel .sidebar nav{margin-bottom:16px}
+  #panel .sidebar .room-switch{position:sticky;bottom:0;z-index:2;margin-top:auto!important;background:#151515;border-top:1px solid #ece8df33}
+  :host([data-theme=dark]) #panel .sidebar .room-switch{background:#1d1c1a}
 }

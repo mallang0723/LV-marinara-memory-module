@@ -9,6 +9,7 @@
     "build": "node scripts/build.mjs",
     "verify:original": "node scripts/verify-original.mjs",
     "qa:browser": "node scripts/browser-qa.mjs",
+    "qa:ui-fix": "node scripts/ui-fix-qa.mjs",
     "qa:insecure": "QA_ONLY=insecure node scripts/browser-qa.mjs"
   }
 }

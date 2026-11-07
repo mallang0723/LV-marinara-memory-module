@@ -18,7 +18,7 @@ var __toESM = (mod, isNodeMode, target) => {
       return cached;
   }
   target = mod != null ? __create(__getProtoOf(mod)) : {};
-  const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
+  const to = isNodeMode || !mod || !mod.__esModule || !__hasOwnProp.call(mod, "default") ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
   if (mod && typeof mod === "object" || typeof mod === "function") {
     for (let key of __getOwnPropNames(mod))
       if (!__hasOwnProp.call(to, key))
@@ -176,15 +176,15 @@ var require_aliases = __commonJS(function(exports, module) {
     table.people ||= {};
     const sameCanon = canonOf(from, table);
     if (sameCanon && sameCanon === canonOf(target, table) && fold(target) !== fold(sameCanon) && fold(from) === fold(sameCanon)) {
-      const entry2 = table.people[sameCanon];
+      const entry = table.people[sameCanon];
       delete table.people[sameCanon];
       const name = tidy(target);
-      entry2.aliases = [sameCanon, ...(entry2.aliases || []).filter((a) => fold(a) !== fold(name) && fold(a) !== fold(sameCanon))];
+      entry.aliases = [sameCanon, ...(entry.aliases || []).filter((a) => fold(a) !== fold(name) && fold(a) !== fold(sameCanon))];
       if (display !== undefined)
-        entry2.display = tidy(display) && fold(display) !== fold(name) ? tidy(display) : null;
+        entry.display = tidy(display) && fold(display) !== fold(name) ? tidy(display) : null;
       if (rewrite)
-        entry2.rewrite = true;
-      table.people[name] = entry2;
+        entry.rewrite = true;
+      table.people[name] = entry;
       touch(table);
       return name;
     }
@@ -1556,8 +1556,8 @@ why: done = \uC57D\uC18D\uC774\uB098 \uBBF8\uD574\uACB0 \uC77C\uC758 \uAE30\uB85
     const d = new Date(Date.UTC(year, Number(m[2]) - 1, Number(m[3])));
     return Number.isNaN(d.getTime()) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3]) ? null : d.toISOString().slice(0, 10);
   }
-  function addDays(iso2, days) {
-    const d = new Date(`${iso2}T00:00:00Z`);
+  function addDays(iso, days) {
+    const d = new Date(`${iso}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
   }
@@ -2135,8 +2135,8 @@ ${lines.join(`
     const at = storyTime([message].filter(Boolean));
     if (!at || Number(at.slice(11, 13)) >= 6)
       return value;
-    const said2 = [item?.detail, item?.title, item?.now, ...(evidence || []).map((e) => e.text)].join(" ");
-    if (!/\uB0B4\uC77C|tomorrow/i.test(said2))
+    const said = [item?.detail, item?.title, item?.now, ...(evidence || []).map((e) => e.text)].join(" ");
+    if (!/\uB0B4\uC77C|tomorrow/i.test(said))
       return value;
     const today = at.slice(0, 10);
     const next = addDays(today, 1);
@@ -2146,23 +2146,23 @@ ${lines.join(`
       return { from: today, to: addDays(value.to, -1) };
     return value;
   }
-  function dayLabel(iso2) {
-    const d = new Date(`${iso2}T00:00:00Z`);
-    return `${iso2.slice(2)} (${WEEKDAYS[d.getUTCDay()]})`;
+  function dayLabel(iso) {
+    const d = new Date(`${iso}T00:00:00Z`);
+    return `${iso.slice(2)} (${WEEKDAYS[d.getUTCDay()]})`;
   }
   function formatPeriod(period, today = null) {
     if (!period)
       return "";
-    const span2 = `${dayLabel(period.from)}~${dayLabel(period.to)}`;
+    const span = `${dayLabel(period.from)}~${dayLabel(period.to)}`;
     if (!today)
-      return span2;
+      return span;
     const total = Math.round((Date.parse(period.to) - Date.parse(period.from)) / 86400000) + 1;
     const day = Math.round((Date.parse(today) - Date.parse(period.from)) / 86400000) + 1;
     if (day < 1)
-      return `${span2}, \uC544\uC9C1 \uC2DC\uC791 \uC804`;
+      return `${span}, \uC544\uC9C1 \uC2DC\uC791 \uC804`;
     if (day > total)
-      return `${span2}, \uAE30\uAC04 \uC9C0\uB0A8`;
-    return `${span2}, \uC9C0\uAE08 ${day}/${total}\uC77C\uC9F8`;
+      return `${span}, \uAE30\uAC04 \uC9C0\uB0A8`;
+    return `${span}, \uC9C0\uAE08 ${day}/${total}\uC77C\uC9F8`;
   }
   function markRoutineGap(ledger, batch) {
     const from = batch[0]?.number;
@@ -2367,12 +2367,12 @@ ${sections.join(`
   function compactLine(ledger, t, kind, today = ledger.storyDate) {
     const who = [t.who, t.toward].filter(Boolean).join("\u2192");
     const tail = t.kind === "emotion" && t.need ? ` (${t.cause ? `\uC6D0\uC778: ${shortQuote(t.cause, 90)} / ` : ""}\uD480\uB9AC\uB824\uBA74: ${t.need})` : t.latest?.text ? ` (\uCD5C\uADFC: ${shortQuote(t.latest.text, 80)})` : "";
-    const said2 = t.kind === "promise" && t.detail ? ` \u2014 ${shortQuote(t.detail, 100)}` : "";
+    const said = t.kind === "promise" && t.detail ? ` \u2014 ${shortQuote(t.detail, 100)}` : "";
     const when = t.kind === "emotion" ? "" : t.due ? ` [${t.kind === "pending" ? "\uAE30\uD55C" : "\uC57D\uC18D\uD55C \uB54C"}: ${formatDue(t.due, today)}]` : t.period ? ` [${formatPeriod(t.period, today)}]` : t.kind === "promise" && t.since ? ` [${t.since}]` : "";
-    const said22 = t.kind === "state" && t.detail ? ` \u2014 ${shortQuote(t.detail, 100)}` : "";
+    const said2 = t.kind === "state" && t.detail ? ` \u2014 ${shortQuote(t.detail, 100)}` : "";
     const marks = groupCast(ledger).length ? [t.unaware?.length ? `\uBAA8\uB984: ${t.unaware.join("\xB7")}` : null, t.guess?.length ? `\uC9D0\uC791\uB9CC: ${t.guess.join("\xB7")}` : null].filter(Boolean) : [];
     const unaware = marks.length ? ` [${marks.join(" / ")}]` : "";
-    const line = `- ${COMPACT_LABEL[kind]} ${who ? `${who}: ` : ""}${t.title}${said2}${said22}${when}${tail}${unaware}`;
+    const line = `- ${COMPACT_LABEL[kind]} ${who ? `${who}: ` : ""}${t.title}${said}${said2}${when}${tail}${unaware}`;
     return line;
   }
   function renderCompact(ledger, { maxChars = 2400, query = "", today = ledger?.storyDate || null, exclude = null, pin = null, trace = null } = {}) {
@@ -2724,9 +2724,9 @@ var require_state = __commonJS(function(exports, module) {
     const at = scenes.findIndex((s) => s === scene || s.id && s.id === scene.id);
     if (at < 0)
       return [];
-    const where = (list2, name) => {
-      for (let i = list2.length - 1;i >= 0; i--)
-        for (const e of Array.isArray(list2[i].state) ? list2[i].state : [])
+    const where = (list, name) => {
+      for (let i = list.length - 1;i >= 0; i--)
+        for (const e of Array.isArray(list[i].state) ? list[i].state : [])
           if (A.canonical(e?.who) === name && e.location)
             return e.location;
       return null;
@@ -5153,9 +5153,9 @@ var require_scenes_generated = __commonJS(function(exports, module) {
       return s != null && !isSpoken(parseLine(s).text) && !isTranslation(s);
     };
     const called = sentences[at] != null ? addressedIn(parseLine(sentences[at]).text, names).names : [];
-    const add = (found2, who) => {
+    const add = (found, who) => {
       if (who && !called.some((n) => samePerson(n, who, names)))
-        found2.add(who);
+        found.add(who);
     };
     let next = at + 1;
     while (sentences[next] != null && isTranslation(sentences[next]))
@@ -5733,10 +5733,10 @@ var require_scenes_generated = __commonJS(function(exports, module) {
     if (!Array.isArray(first) && !Array.isArray(second))
       return [];
     const pick = (list) => new Map((Array.isArray(list) ? list : []).map((x) => [String(x?.id), x]));
-    const A2 = pick(first), B = pick(second);
+    const A = pick(first), B = pick(second);
     const out = [];
     for (const e of candidates) {
-      const a = A2.get(e.id), b = B.get(e.id);
+      const a = A.get(e.id), b = B.get(e.id);
       if (!a && !b)
         continue;
       const ja = judgeAnswer(e, a), jb = judgeAnswer(e, b);
@@ -6917,7 +6917,7 @@ var require_scenes_generated = __commonJS(function(exports, module) {
     let made = 0;
     for (const item of Array.isArray(result?.merged) ? result.merged : []) {
       const ids = [...new Set((Array.isArray(item?.from) ? item.from : []).map((x) => String(x).trim().toUpperCase().replace(/^(\d+)$/, "F$1")))];
-      const sources = ids.map((id2) => pool.get(id2)).filter(Boolean);
+      const sources = ids.map((id) => pool.get(id)).filter(Boolean);
       const text = stripAbout(cleanText(item?.text, 320), about);
       if (!text || sources.length < 2 || sources.length !== ids.length || sources.some((f) => used.has(f.id)))
         continue;
@@ -11046,10 +11046,10 @@ ${import_ledger2.default.renderCompact(ledger)}`].filter(Boolean).join(`
       const lines = [];
       const add = (text) => lines.push(...import_translate.default.translateText(text, target, () => null).missing);
       add(renderMemorySource(chatId));
-      const store2 = scenesForReply(chatId);
-      if (store2) {
-        const cast = import_scenes_generated3.default.castOf(store2);
-        store2.scenes.forEach((scene, i) => add(import_scenes_generated3.default.renderExpanded(scene, i, store2.personas || [], cast)));
+      const store = scenesForReply(chatId);
+      if (store) {
+        const cast = import_scenes_generated3.default.castOf(store);
+        store.scenes.forEach((scene, i) => add(import_scenes_generated3.default.renderExpanded(scene, i, store.personas || [], cast)));
       }
       return [...new Set(lines)];
     }
