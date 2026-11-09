@@ -203,7 +203,7 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
    with #151515 text, but it leaves --im-soft / --im-paper at their dark values (ui.orig.css/theme.orig.css:15), and every nested element that paints one of them and does not name its own colour
    (.kchip, .overview-tabs, .organize-progress, .quote-review-panel, .repair-summary, .conflict-pair>div, hovered summaries/rows) inherits the card's dark text on a dark fill.
    Inside a dark card these take the light-theme fills (--im-soft #e4dfd3, --im-paper #f7f4ee) so the card's own dark text (13.7:1) and muted text (5.1:1) apply.
-   .pill / a.chip / .chip-id are NOT touched: they pair a dark fill with their own light colour (--im-accent) on purpose. */
+   .pill / a.chip stay outside this fill rule; .chip-id gets an explicit foreground/background pair below. */
 :host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) :is(.kchip,.overview-tabs,.organize-progress,.quote-review-panel,.repair-summary,.conflict-pair>div,.memory-details>summary:hover,a.record-row,.timeline-card,#records>article.memory-card,.continuous-events,.auto-organize){--im-soft:#e4dfd3;--im-paper:#f7f4ee;--im-button-hover:#ddd7ca;--im-button-active:#d3ccbc;--im-selected:#e0dbcf;--im-muted:#5f5a51;--im-ink:#151515;color:#151515}
 /* light theme: muted text on the --im-soft fill (#e4dfd3) was 4.16:1 */
 #panel :is(.organize-progress,.quote-review-panel,.repair-summary,.conflict-pair>div,.kchip,.overview-tabs){--im-muted:#5f5a51}
@@ -227,7 +227,8 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
 #roomSelect{max-width:100%!important}
 #panel .record-link.chip{min-height:44px!important;display:inline-flex!important;align-items:center}
 #panel .record-link .chip-id{color:#37354a!important;opacity:1!important}
-:host([data-theme=dark]) #panel .record-link .chip-id{color:#ece8df!important}
+/* fix3: chip IDs paint their own fill; pair it with the ink independently of inherited theme variables. */
+:host([data-theme=dark]) #panel .chip-id{color:#ece8df!important;background:#1b1a18!important}
 /* narrow screens: the 8 tabs wrap onto two rows instead of a sideways-scrolling strip (no nested scroll box) */
 @media(max-width:720px){
   #panel{padding-top:env(safe-area-inset-top,0px)!important;height:100dvh!important}
@@ -266,8 +267,8 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
 #panel #themeToggle{color:#151515!important;background:#ece8df!important;border:1px solid #151515!important;opacity:1!important}
 /* Full scene times and enlarged message-range labels must wrap within the card. */
 #panel .file-index :is(.file-range,.file-foot>span){white-space:normal!important;overflow-wrap:anywhere;min-width:0;max-width:100%}
-/* fix2: record links are transparent tickets on cream cards, including in dark mode. */
-:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .record-link .chip-id{color:#37354a!important}
+/* fix3: the link is transparent, but its ID is not. Cream-card IDs need their own light fill too. */
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .chip-id{color:#37354a!important;background:#f7f4ee!important}
 /* Beat the original dark :hover/:active rules as well as its normal primary-button rule. */
 :host([data-theme=dark]) #panel .paper button.primary{color:#ece8df!important;background:#151515!important;border-color:#151515!important}
 :host([data-theme=dark]) #panel .paper button.primary:is(:hover,:active){color:#ece8df!important;background:#292724!important;border-color:#151515!important}

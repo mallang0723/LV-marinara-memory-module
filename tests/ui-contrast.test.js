@@ -52,8 +52,37 @@ test('live QA A: every fill that can sit on a dark-theme card takes the light fi
     assert.match(rule[2], /color:#151515/);
     assert.ok(ratio('#151515', '#e4dfd3') >= 4.5 && ratio('#151515', '#f7f4ee') >= 4.5);
     assert.ok(ratio('#5f5a51', '#e4dfd3') >= 4.5 && ratio('#5f5a51', '#e0dbcf') >= 4.5);   // --im-muted on soft / selected
-    // pill, a.chip and .chip-id are deliberately dark chips with their own light text: they must stay out of the rule
+    // These chips have separate foreground/background rules; do not change their inherited fills here.
     for (const keep of ['.pill', 'a.chip', '.chip-id']) assert.ok(!rule[1].split(',').includes(keep), keep);
+});
+
+test('dark chip IDs pair their own opaque fill and ink on the table and all cream-card contexts', () => {
+    const ui = readFileSync(new URL('../src/memory/ui/ui.orig.css', import.meta.url), 'utf8');
+    assert.match(ui, /\.chip-id\{[^}]*background:var\(--im-paper\)/);
+    assert.match(theme, /--t-paper:#1b1a18/);
+    assert.ok(ratio('#37354a', '#1b1a18') < 4.5, 'fix2 ink on the original dark chip fill fails');
+    const selectors = [
+        ':host([data-theme=dark]) #panel .chip-id',
+        ':host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .chip-id',
+    ];
+    for (const selector of selectors) {
+        const rule = css.split(selector + '{')[1]?.split('}')[0];
+        assert.ok(rule, selector);
+        const ink = rule.match(/(?:^|;)color:(#[\da-f]{6})!important(?:;|$)/)?.[1];
+        const fill = rule.match(/(?:^|;)background:(#[\da-f]{6})!important(?:;|$)/)?.[1];
+        assert.ok(ink && fill, 'both colours must be explicit and override original selected/hover styles');
+        assert.ok(ratio(ink, fill) >= 4.5, `${selector}: ${ratio(ink, fill)}`);
+    }
+    assert.match(css, /#panel \.record-link \.chip-id\{color:#37354a!important;opacity:1!important\}/, 'light rule remains unchanged');
+});
+
+test('browser contrast measurement starts at the text element, including the chip own fill', () => {
+    const qa = readFileSync(new URL('../scripts/ui-fix-qa.mjs', import.meta.url), 'utf8');
+    assert.match(qa, /for \(let n = e; n; n = parentOf\(n\)\)/);
+    assert.match(qa, /getComputedStyle\(n\)\.backgroundColor/);
+    assert.match(qa, /if \(c && c\.a >= 1\) break/);
+    assert.match(qa, /const ratio = e => \{ const b = backOf\(e\)/);
+    assert.match(qa, /class="record-link chip"><span class="chip-id">S2<\/span>/);
 });
 
 test('live QA A: warning orange is dark on cream (>= 4.5:1 on paper and soft fills) and light only on the dark table', () => {

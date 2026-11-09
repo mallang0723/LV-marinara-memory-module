@@ -176,3 +176,16 @@ QA_ONLY=chromium PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node
 ```
 
 ui-fix는 1280×800 / 390×844, browser QA는 Chromium 4개 크기 × secure/insecure 8 variants 및 호스트/서재 양 테마를 검사합니다. 결과 JSON은 `/tmp/lv-fix2-browser/qa-report.json`, 스크린샷은 각 `QA_SHOT_DIR`에 남습니다. 전체 로그는 각각 `/tmp/lv-fix2-ui.log`, `/tmp/lv-fix2-browser.log`입니다. 실패 기준을 완화하거나 문제 화면을 제외하지 않았습니다.
+
+## fix3 — 2026-11-09
+
+`feature/1.3.0` / `4a7e055`에서 dark `span.chip-id` 대비 실패를 수정했습니다. fix2는 투명한 링크 바깥 카드의 색으로 대비를 계산했지만, ID 자체에는 원본 `ui.orig.css:164`의 `background:var(--im-paper)`가 남아 있었습니다. `src/overrides.memory.css`에서 dark ID의 글자·배경을 함께 지정합니다: 기본 `#ece8df` / `#1b1a18` (**14.22:1**), `.paper/.metric/.file-index/.chapter-chip` 내부 `#37354a` / `#f7f4ee` (**10.80:1**). 상속 변수와 hover/selected 상태에 의존하지 않는 불투명 색상쌍이며 light 규칙은 변경하지 않았습니다. `dist/frontend.js`도 빌드로 갱신했습니다.
+
+`tests/ui-contrast.test.js`에 두 문맥의 명시적 글자·배경 및 ≥4.5 대비 회귀 검사를 추가했습니다. `scripts/ui-fix-qa.mjs`는 이미 텍스트 요소 자체부터 배경을 합성하고 불투명 fill에서 멈추므로, 칩 자체 배경을 측정하는 기존 동작을 유지하고 정적 검사로 보호했습니다.
+
+- `npm test`: **75개 테스트 파일 통과**, 실패·취소·skip 0 (`/tmp/lv-fix3-test.log`).
+- `npm run verify:original`: **`{"ok":true,"problems":0}`**.
+- `BUN_BIN=/home/syhekate/.bun/bin/bun npm run build`: 성공 (backend 33 / frontend 10 modules).
+- `git diff --check`: 통과. SHA 고정 원본 수정·금지 경로 접근·금지 포트 사용·커밋 없이 변경을 남겼습니다.
+
+위 대비는 색상쌍 계산이며 이번 작업에서 Chromium을 실행하지 않았습니다. 찹쌀 재검증: `PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium QA_SHOT_DIR=/tmp/lv-fix3-ui npm run qa:ui-fix` — 양 테마의 facts/conflicts/ledger/ledger-hover/card-sweep을 기존 기준 그대로 확인합니다.
