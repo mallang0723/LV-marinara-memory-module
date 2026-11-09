@@ -1,5 +1,18 @@
 // Shared browser coverage: require real seeded records, open their controls, then measure them.
 const panel = page => page.locator('#memory-module-library');
+// A genuinely changed async response may replace a row between visibility and scrolling.
+// Retry only that detachment, resolving the locator again; do not hide timeout/action errors.
+export async function scrollFresh(locator, timeout = 8000) {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+        const remaining = Math.max(1, deadline - Date.now());
+        await locator.waitFor({ state: 'visible', timeout: remaining });
+        try { await locator.scrollIntoViewIfNeeded({ timeout: remaining }); return; }
+        catch (error) {
+            if (!/Element is not attached to the DOM/.test(error.message) || Date.now() >= deadline) throw error;
+        }
+    }
+}
 const rpc = (page, method, path, body) => page.evaluate(async ({ method, path, body }) => {
     const response = await fetch('./__rpc', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ frame: { requestId: `feature-${Date.now()}-${Math.random()}`, type: 'api', method, path: 'memory-module/' + path, body }, user: 'qa-user' }) });
     const result = (await response.json()).replies[0];
@@ -16,17 +29,26 @@ export async function checkFeatureScreens(page, measure) {
     const root = panel(page);
     const tab = async name => { await root.locator(`button[data-tab="${name}"]`).first().click(); await assertPopulatedTab(page, name); };
     const click = async selector => { await root.locator(selector).first().click(); };
+    await tab('ledger');
+    await root.locator('.event-row > summary').first().hover();
+    await measure('ledger-hover');
     await tab('home');
     const selected = root.locator('details:has([data-act="deleteSelectedMemory"])').first();
     if (await selected.getAttribute('open') === null) await selected.locator('summary').click();
     await selected.locator('blockquote').waitFor({ state: 'visible' });
+    const duplicate = await selected.evaluate(el => {
+        const norm = s => s.replace(/\s+/g, ' ').trim();
+        const quotes = [...el.querySelectorAll('blockquote')].map(e => norm(e.textContent));
+        return [...el.querySelectorAll(':scope > p')].some(e => quotes.includes(norm(e.textContent)) || norm(e.textContent) === quotes.join(' '));
+    });
+    if (duplicate) throw Error('selected memory repeats its source as the summary');
     await measure('selected-memories');
     await tab('world');
-    await root.locator('[data-tracker]').first().scrollIntoViewIfNeeded();
+    await scrollFresh(root.locator('[data-tracker]').first());
     await measure('trackers');
     await tab('facts');
     await root.locator('.conflict-row').first().waitFor({ state: 'visible' });
-    await root.locator('.conflict-row').first().scrollIntoViewIfNeeded();
+    await scrollFresh(root.locator('.conflict-row').first());
     await measure('conflicts');
     await tab('inject');
     const marks = root.locator('.reason-row .mark-button');
@@ -40,15 +62,20 @@ export async function checkFeatureScreens(page, measure) {
     }
     await tab('settings');
     await root.locator('.orphan-row').first().waitFor({ state: 'visible' });
-    await root.locator('.orphan-row').first().scrollIntoViewIfNeeded();
+    await scrollFresh(root.locator('.orphan-row').first());
     await measure('orphans');
     const { backup } = await rpc(page, 'GET', 'chats/chat-a/backup');
     // Missing lang must be named by preview if the current room has it. Use the real JSON upload path.
-    await root.locator('#restoreFile').setInputFiles({ name: 'qa-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
+    // Exercise the Korean button (including the native chooser event), not only setInputFiles.
+    const choose = root.getByRole('button', { name: '백업 파일 고르기', exact: true });
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), choose.click()]);
+    await chooser.setFiles({ name: 'qa-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
     await root.locator('[data-act="restoreApply"]').waitFor({ state: 'visible' });
-    await root.locator('#restoreFile').scrollIntoViewIfNeeded();
-    const bounds = await root.locator('#restoreFile').boundingBox();
-    if (!bounds || bounds.height < 43.5 || bounds.width < 43.5) throw Error('backup file input touch target <44px');
+    await scrollFresh(choose);
+    const bounds = await choose.boundingBox();
+    if (!bounds || bounds.height < 43.5 || bounds.width < 43.5) throw Error('backup file button touch target <44px');
+    if (await root.locator('#restoreFile').isVisible()) throw Error('native file input should be hidden');
+    if (await choose.evaluate(e => parseFloat(getComputedStyle(e).fontSize)) < 15) throw Error('backup file button text <15px');
     await measure('backup-restore-preview');
     await click('[data-act="restoreApply"]');
     await measure('backup-restore-confirm');

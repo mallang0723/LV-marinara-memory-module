@@ -145,6 +145,43 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
   function viewWorld() {`, { name: 'Korean omission notice' });
     s = replaceAnchor(s, '<b>불러올 백업</b>:', '<p class="restore-removes">지울 파일: ${esc(d.removes?.join(", ") || "없음")}</p><b>불러올 백업</b>:', { name: 'show all removed files' });
     s = replaceAnchor(s, "바꾸기 전에 지금 상태를 안전 사본으로 한 번 남기며", "바꾸기 전에 지금 상태와 직전 안전 사본을 보관하며", { name: 'two restore snapshots' });
+    // Re-entering Facts fetches fresh decisions, but an identical response must not replace
+    // the rows the reader is scrolling/focusing. Idle polling does not load conflicts.
+    s = replaceRange(s, '  async function loadConflicts(id) {', '  async function loadNames(id) {', `  async function loadConflicts(id) {
+    let next = null;
+    try {
+      next = await api('GET', \`/chats/\${encodeURIComponent(id)}/conflicts\`);
+    } catch {
+      // Keep the original fallback: a failed conflicts route hides the banner.
+    }
+    if (room !== id || disposed) return false;
+    const changed = conflictsRoom !== id || JSON.stringify(conflicts) !== JSON.stringify(next);
+    conflicts = next;
+    conflictsRoom = id;
+    return changed;
+  }
+  async function ensureConflicts() {
+    if (!needsConflicts() || !room) return;
+    const id = room;
+    const changed = await loadConflicts(id);
+    if (!disposed && room === id && needsConflicts() && changed) render();
+  }
+`, 'keep unchanged conflict rows');
+    // The native file control exposes browser-locale English. Keep its upload handler and
+    // use a keyboard-accessible Korean button to invoke the hidden input synchronously.
+    s = replaceAnchor(s, '<label>백업 파일 고르기<input type="file" id="restoreFile" accept=".json,application/json" ${busyJob ? \'disabled\' : \'\'}></label>', '<div class="buttons"><button type="button" data-act="restoreChoose" aria-controls="restoreFile" ${busyJob ? \'disabled\' : \'\'}>백업 파일 고르기</button><input type="file" id="restoreFile" accept=".json,application/json" ${busyJob ? \'disabled\' : \'\'} hidden aria-label="백업 파일"></div>', { name: 'Korean backup file button' });
+    s = replaceAnchor(s, "      case 'backupDownload':", "      case 'restoreChoose':\n        root.querySelector('#restoreFile')?.click();\n        return;\n      case 'backupDownload':", { name: 'open backup file chooser' });
+    // A short selection can be its own model summary. Keep every source quote, but avoid
+    // printing that same text as an extra paragraph. Distinct summaries remain visible.
+    s = replaceAnchor(s, '<p>${esc(x.summary)}</p>${x.parts.map', '${selectedSummaryHtml(x)}${x.parts.map', { name: 'selected summary without duplicate source' });
+    s = replaceAnchor(s, '  function selectedMemoriesHtml() {', `  function selectedSummaryHtml(x) {
+    const normalize = text => String(text || '').replace(/\\s+/g, ' ').trim();
+    const summary = normalize(x.summary);
+    const parts = x.parts || [];
+    if (!summary || parts.some(p => normalize(p.text) === summary) || normalize(parts.map(p => p.text).join(' ')) === summary) return '';
+    return '<p>' + esc(x.summary) + '</p>';
+  }
+  function selectedMemoriesHtml() {`, { name: 'compare selected summary with sources' });
     // return a handle instead of installing at evaluation time
     s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
     return s;

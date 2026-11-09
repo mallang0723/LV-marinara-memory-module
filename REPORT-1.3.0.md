@@ -141,3 +141,38 @@ PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwrig
 ```
 
 잔여 범위는 브라우저 실측과 실호스트 QA입니다. 안전 사본은 현재/직전 두 단계이며, 다중 파일 교체 도중 프로세스가 종료됐을 때 자동 복구하지 않는 기존 제한은 같습니다. 금지 경로·context 출력·포트·호스트·실모델·비밀정보·전역 설치·서버 조작·pkill·커밋·push를 사용하지 않았습니다.
+
+## fix2 — 2026-11-09
+
+`BRIEF-lv-1.3.0-fix2.md`와 그 문서가 지정한 fix1 hard rules, 기존 보고서 및 찹쌀의 `/tmp/lv-fix1-ui1.log`, `/tmp/lv-fix1-ui-p.log`, `/tmp/lv-fix1-browser.log`를 확인했습니다. `feature/1.3.0` / `8e62cc0`의 깨끗한 작업 트리에서 시작했으며 변경은 **스테이징·커밋하지 않았습니다**. SHA 고정 원본은 그대로이며 런타임 변경은 `patch.mjs`, 스타일 변경은 overlay CSS에만 적용했습니다. 새 사용량 제한이나 `backup.settings` whitelist/type validation은 추가하지 않았습니다.
+
+기존 로그 판독: browser QA는 **8 variants / 442 views / 158 failures**이며, detachment 26건 + `#status` 글자 크기 110건 + 대비 22건입니다. 따라서 158건 모두 탭 전환 오류인 것은 아닙니다. ui-fix 최초 실행은 conflicts 스크롤에서 중단됐고, 후속 실행은 양 폭의 dark facts/conflicts/restore-confirm 및 390 light ledger 대비 실패를 기록했습니다. `/tmp/lv-fix1-ui/390-light-ledger.png`도 확인했으며 `T2` 행이 hover 배경 위에 있습니다. brief에 전달된 **72683d8 baseline ui-fix 통과 / 1280 scenes overflow 재현 안 됨**을 이번 판정의 기준으로 삼았습니다. 이는 찹쌀의 실행 결과이며 이번 에이전트가 재측정한 결과가 아닙니다.
+
+| 항목 | 원인과 수정 | 확인 |
+|---|---|---|
+| 1. conflicts detachment | 원본 `runtime.orig.js:292`의 `ensureConflicts()`는 Facts 재진입 때마다 조회 뒤 무조건 `render()`를 호출합니다. 클릭 직후 캐시로 그린 행을 **동일 응답으로도 다시 `content.innerHTML` 교체**(`:1593`)하므로 스크롤 안정성 검사 중 행이 떨어질 수 있습니다. idle polling(`:421`)은 방 status만 조회하며 이 충돌 조회/재렌더 루프의 원인이 아닙니다. `src/memory/ui/patch.mjs:150`에서 응답 적용 직전 방·데이터를 비교하고 달라진 경우에만 Facts를 다시 그립니다. 동일 응답이 겹쳐 도착해도 한 번만 그리며 다른 방·탭·dispose 뒤 응답은 해당 화면을 다시 그리지 않습니다. 실제 데이터 변경에 따른 정상 교체에는 `qa/feature-checks.mjs:5`가 locator를 다시 조회합니다. detachment만 재시도하고 timeout 등 다른 오류는 그대로 실패합니다. | `tests/fix2.test.js:40`, `:59`, `:69`, `:84`: 실제 패치된 요청·poll 함수를 VM에서 실행하여 동일/변경/실패/중복/지연 응답과 idle polling의 render 호출 수 검증. `:122`: QA의 재조회 및 오류 전파. 브라우저 DOM 실측은 미실행. |
+| 2. dark 대비 | `.record-link`는 원본 테마에서 투명 배경인데 이전 overlay가 dark 모드의 `.chip-id`를 밝은 색으로 고정해 cream 카드에서 1.11이 됐습니다. `src/overrides.memory.css:86`에서 카드 안의 링크 ID를 `#37354a`로 지정합니다. 원본에는 dark primary 버튼의 normal/hover/active 색상이 서로 다른 specificity로 겹칩니다. `:88`에서 카드 primary 버튼의 글자·배경을 모든 상태에 명시합니다. | 지정 색상 자체의 계산상 대비: ID/cream 9.70:1, ID/soft 8.92:1, 버튼 normal 14.93:1, hover/active 12.18:1. **CSS 색상쌍 계산이며 브라우저 실측 결과가 아닙니다.** 기존 facts/conflicts/backup-confirm 측정을 유지했습니다. |
+| 3. 390 light ledger | `src/overrides.memory.css:91`에서 summary의 muted 색을 `#5f5a51`, hover fill을 `#e4dfd3`, 제목을 `#151515`로 지정했습니다. dark hover에서도 밝은 카드 위 글자가 어두운 fill에 놓이지 않도록 같은 summary 범위에서 fill을 지정합니다. | 색상쌍 계산상 번호/soft 5.15:1, 제목/soft 13.73:1. `qa/feature-checks.mjs:32`에 실제 ledger 행 hover 측정을 추가하여 양 QA·양 테마에서 검사합니다. |
+| 4. status 13px | 기존 overlay의 보조 글자 목록에 `#status`가 들어 있었습니다. `src/overrides.memory.css:94`가 status와 그 자식의 글자를 15px로 지정합니다. | 기존 browser QA의 primary text ≥15px 기준을 유지합니다. recall pin/exclude, orphans, backup preview/confirm/undo에서 계속 측정합니다. |
+| 5. 파일 선택 / header | `src/memory/ui/patch.mjs:172`에서 native file input을 숨기고 **백업 파일 고르기**라는 실제 button으로 동기 클릭합니다. 키보드 활성화, 작업 중 disabled, 기존 upload/change/preview 동작을 유지합니다. `src/overrides.memory.css:95`에서 숨김과 44px/15px를 지정합니다. **MEMORY MODULE · v…**는 pinned original `runtime.orig.js:549`에 있고, `git diff 72683d8 -- src/memory/ui/runtime.orig.js`도 차이가 없습니다. 1.2.0에도 동일한 header 템플릿이 있었습니다. LV가 추가한 영어가 아니므로 brief의 조건대로 유지했습니다. | `tests/fix2.test.js:111`: 한국어 버튼·숨김 input·disabled·클릭 전달. `qa/feature-checks.mjs:70`은 버튼에서 실제 filechooser 이벤트를 받아 업로드하고 버튼 크기·글자 크기·native input 숨김을 확인합니다. `scripts/ui-fix-qa.mjs:53`도 보이는 버튼을 측정합니다. |
+| 6. 선택 기억 중복 | 원본 `runtime.orig.js:532`는 요약 paragraph와 원문 blockquote를 항상 둘 다 출력합니다. QA seed의 원문(`qa/backend-env.mjs:25`, `:64`)과 fake model 요약(`:32`)이 같은 문장이므로 원본에서도 재현되는 중복 표시이며 중복 저장은 아닙니다. `src/memory/ui/patch.mjs:176`에서 공백 정규화 후 요약이 한 원문 또는 전체 원문과 같은 경우 중복 paragraph만 생략합니다. 다른 요약과 모든 원문 인용은 보존합니다. | `tests/fix2.test.js:94`: 동일/공백 차이/여러 원문 결합/서로 다른 요약 및 HTML escaping 확인. `qa/feature-checks.mjs:39`에 펼친 카드의 중복 paragraph 검사 추가. |
+
+검증 결과:
+
+- `npm test`: **75개 테스트 파일 / 통과 75 / 실패·취소·skip 0**. 기본 Node 러너의 파일 단위 집계입니다. 로그: `/tmp/lv-fix2-test.log`. 새 `tests/fix2.test.js`를 `node --test --experimental-test-isolation=none tests/fix2.test.js`로 실행한 **7개 개별 사례도 모두 통과**했습니다.
+- `npm run verify:original`: **`{"ok":true,"problems":0}`**. 원본 22개 pin 유지.
+- `BUN_BIN=/home/syhekate/.bun/bin/bun npm run build`: **성공**, backend 33 modules / frontend 10 modules. `dist/frontend.js` 갱신, backend 번들 바이트 변화 없음.
+- `git diff --check`: 통과. 수정 QA 파일의 `node --check`도 통과.
+- **이번 턴에서 Chromium/browser QA는 실행하지 않았습니다.** 수정 후의 실제 대비·레이아웃·filechooser·스크롤 안정성 통과는 아래 실행으로 확인해야 합니다. 위 VM 시험과 색상 계산을 브라우저 통과로 간주하지 않습니다.
+
+찹쌀 실행 명령(현재 checkout 그대로, in-process fake backend; 실행 중 서버/금지 포트에 연결하지 않음):
+
+```bash
+cd /home/syhekate/dev/lv-memory-library
+BUN_BIN=/home/syhekate/.bun/bin/bun npm run build
+mkdir -p /tmp/lv-fix2-ui /tmp/lv-fix2-browser
+PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium QA_SHOT_DIR=/tmp/lv-fix2-ui npm run qa:ui-fix > /tmp/lv-fix2-ui.log 2>&1
+QA_ONLY=chromium PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium QA_SHOT_DIR=/tmp/lv-fix2-browser npm run qa:browser > /tmp/lv-fix2-browser.log 2>&1
+```
+
+ui-fix는 1280×800 / 390×844, browser QA는 Chromium 4개 크기 × secure/insecure 8 variants 및 호스트/서재 양 테마를 검사합니다. 결과 JSON은 `/tmp/lv-fix2-browser/qa-report.json`, 스크린샷은 각 `QA_SHOT_DIR`에 남습니다. 전체 로그는 각각 `/tmp/lv-fix2-ui.log`, `/tmp/lv-fix2-browser.log`입니다. 실패 기준을 완화하거나 문제 화면을 제외하지 않았습니다.

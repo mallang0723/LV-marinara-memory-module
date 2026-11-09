@@ -266,6 +266,18 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
 #panel #themeToggle{color:#151515!important;background:#ece8df!important;border:1px solid #151515!important;opacity:1!important}
 /* Full scene times and enlarged message-range labels must wrap within the card. */
 #panel .file-index :is(.file-range,.file-foot>span){white-space:normal!important;overflow-wrap:anywhere;min-width:0;max-width:100%}
+/* fix2: record links are transparent tickets on cream cards, including in dark mode. */
+:host([data-theme=dark]) #panel :is(.paper,.metric,.file-index,.chapter-chip) .record-link .chip-id{color:#37354a!important}
+/* Beat the original dark :hover/:active rules as well as its normal primary-button rule. */
+:host([data-theme=dark]) #panel .paper button.primary{color:#ece8df!important;background:#151515!important;border-color:#151515!important}
+:host([data-theme=dark]) #panel .paper button.primary:is(:hover,:active){color:#ece8df!important;background:#292724!important;border-color:#151515!important}
+/* Ledger hover on touch screens uses the soft fill; both the number and title need darker ink. */
+#panel .event-row>summary{--im-muted:#5f5a51;--im-soft:#e4dfd3}
+#panel .event-row>summary .event-main b{color:#151515!important}
+/* Notices are primary text. The original overlay's metadata rule above includes #status. */
+#panel #status,#panel #status *:not(svg):not(svg *){font-size:15px!important}
+#panel #restoreFile[hidden]{display:none!important}
+#panel button[data-act=restoreChoose]{min-height:44px!important;min-width:44px!important;font-size:15px!important}
 `;
 
 // src/style.js
@@ -1429,24 +1441,24 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   }
   const needsConflicts = () => tab === "facts";
   async function loadConflicts(id) {
+    let next = null;
     try {
-      const c = await api("GET", `/chats/${encodeURIComponent(id)}/conflicts`);
-      if (room !== id || disposed)
-        return;
-      conflicts = c;
-      conflictsRoom = id;
-    } catch {
-      if (room === id) {
-        conflicts = null;
-        conflictsRoom = id;
-      }
-    }
+      next = await api("GET", `/chats/${encodeURIComponent(id)}/conflicts`);
+    } catch {}
+    if (room !== id || disposed)
+      return false;
+    const changed = conflictsRoom !== id || JSON.stringify(conflicts) !== JSON.stringify(next);
+    conflicts = next;
+    conflictsRoom = id;
+    return changed;
   }
   async function ensureConflicts() {
     if (!needsConflicts() || !room)
       return;
-    await loadConflicts(room);
-    render();
+    const id = room;
+    const changed = await loadConflicts(id);
+    if (!disposed && room === id && needsConflicts() && changed)
+      render();
   }
   async function loadNames(id) {
     try {
@@ -1673,6 +1685,14 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       notes.push(`마리나라 ${h.marinara} 버전입니다. 기억 모듈은 ${tested.join(", ")}에서 확인했습니다.${h.failed?.length ? "" : " 지금은 모든 기능이 정상으로 붙었습니다."}`);
     return notes.length ? `<div class="note">${notes.map(esc).join("<br>")}</div>` : "";
   }
+  function selectedSummaryHtml(x) {
+    const normalize = (text) => String(text || "").replace(/\s+/g, " ").trim();
+    const summary = normalize(x.summary);
+    const parts = x.parts || [];
+    if (!summary || parts.some((p) => normalize(p.text) === summary) || normalize(parts.map((p) => p.text).join(" ")) === summary)
+      return "";
+    return "<p>" + esc(x.summary) + "</p>";
+  }
   function selectedMemoriesHtml() {
     const loaded = Array.isArray(info?.selectedMemories) ? info.selectedMemories : lazyData("selected")?.items || null;
     const count = loaded ? loaded.length : info?.selectedCount || 0;
@@ -1680,7 +1700,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       return "";
     const list = loaded || [];
     const wait = loaded ? "" : lazyError("selected") ? `<div class="note">${esc(lazyError("selected"))}</div>` : '<p class="hint">불러오는 중…</p>';
-    return `<div class="paper"><h2>직접 선택한 기억 · ${count}개</h2><p class="hint">채팅에서 선택해 정리한 기억입니다. 관련된 내용이 나오면 원문과 함께 참고합니다.</p>${wait}${list.map((x) => `<details><summary>${esc(x.title)}${x.stale ? " · 원문 변경됨" : ""}</summary><p>${esc(x.summary)}</p>${x.parts.map((p) => `<blockquote>${esc(p.text)}</blockquote>`).join("")}<button data-act="deleteSelectedMemory" data-selected-id="${esc(x.id)}">삭제</button></details>`).join("")}</div>`;
+    return `<div class="paper"><h2>직접 선택한 기억 · ${count}개</h2><p class="hint">채팅에서 선택해 정리한 기억입니다. 관련된 내용이 나오면 원문과 함께 참고합니다.</p>${wait}${list.map((x) => `<details><summary>${esc(x.title)}${x.stale ? " · 원문 변경됨" : ""}</summary>${selectedSummaryHtml(x)}${x.parts.map((p) => `<blockquote>${esc(p.text)}</blockquote>`).join("")}<button data-act="deleteSelectedMemory" data-selected-id="${esc(x.id)}">삭제</button></details>`).join("")}</div>`;
   }
   function viewHome() {
     if (!info)
@@ -2567,7 +2587,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       <label class="check-row"><input type="checkbox" id="setBackupVectors" ${withVectors ? "checked" : ""}><span><b>검색 색인 포함 (크기 큼)</b><small>뜻으로 찾기용 색인입니다. 빼도 불러온 뒤 다시 만들 수 있습니다.</small></span></label>
       <div class="buttons"><button data-act="backupDownload">백업 내려받기</button></div>
       <p class="hint">백업에서 불러오기: 파일을 고르면 먼저 내용을 미리 보여 드리고, 확인하셔야 바뀝니다. 정리 작업 중에는 불러올 수 없습니다.</p>
-      <label>백업 파일 고르기<input type="file" id="restoreFile" accept=".json,application/json" ${busyJob ? "disabled" : ""}></label>
+      <div class="buttons"><button type="button" data-act="restoreChoose" aria-controls="restoreFile" ${busyJob ? "disabled" : ""}>백업 파일 고르기</button><input type="file" id="restoreFile" accept=".json,application/json" ${busyJob ? "disabled" : ""} hidden aria-label="백업 파일"></div>
       ${previewHtml}
       ${undo ? `<div class="buttons"><button class="ghost" data-act="restoreUndo" ${busyJob ? "disabled" : ""}>${arm === "restoreUndo" ? "한 번 더 누르면 불러오기를 되돌립니다" : `불러오기 되돌리기 (${esc(date(undo.at))} 이전 상태)`}</button></div>` : ""}
     </div>`;
@@ -2917,6 +2937,9 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         }
         armed = "";
         return act(() => api("POST", `/chats/${chat}/start`, { fresh: true }), "처음부터 다시 정리를 시작했습니다.");
+      case "restoreChoose":
+        root.querySelector("#restoreFile")?.click();
+        return;
       case "backupDownload":
         return act(async () => {
           const r = await api("GET", `/chats/${chat}/backup${backupVectors ? "?vectors=1" : ""}`);

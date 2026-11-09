@@ -50,7 +50,7 @@ function inPage({ phase }) {
     out.panelOverflow = out.overflowElements.length;
     const themeToggle = root.querySelector('#themeToggle');
     out.themeContrast = themeToggle && shown(themeToggle) ? ratio(themeToggle) : null;
-    const file = root.querySelector('#restoreFile');
+    const file = root.querySelector('[data-act="restoreChoose"]');
     out.fileHeight = file && shown(file) ? file.getBoundingClientRect().height : null;
     return out;
 }
@@ -93,7 +93,7 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
         if (m.small.length) failures.push(`${where}: touch<44 x${m.small.length} (${m.small.slice(0, 4).map(x => `${x.n} ${x.w}x${x.h}`).join(' | ')})`);
         if (m.roomSwitch && (m.roomSwitch.clipped || m.roomSwitch.ellipsis || !m.roomSwitch.inSidebar)) failures.push(`${where}: room switch label clipped ${JSON.stringify(m.roomSwitch)}`);
         if (m.themeContrast !== null && m.themeContrast < 4.5) failures.push(`${where}: theme icon contrast ${m.themeContrast}`);
-        if (m.fileHeight !== null && m.fileHeight < 43.5) failures.push(`${where}: file input height ${m.fileHeight}`);
+        if (m.fileHeight !== null && m.fileHeight < 43.5) failures.push(`${where}: file button height ${m.fileHeight}`);
         if (m.hscroll || m.panelOverflow) failures.push(`${where}: horizontal overflow x${m.panelOverflow}: ${JSON.stringify(m.overflowElements)}`);
     };
     const themed = async ui => { if ((await ev('return root.host.getAttribute("data-theme")')) !== ui) { await ev('root.querySelector("#themeToggle").click()'); await page.waitForTimeout(200); } };
