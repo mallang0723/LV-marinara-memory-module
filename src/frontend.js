@@ -1,4 +1,5 @@
 // 기억 서재 (Lumiverse) — frontend entry: wires the link to the backend, the original memory screen and the shell.
+import { selectedMessageParts } from './common/message-selection.js';
 import { createLink, createMarinara, createFetch } from './shim/marinara.js';
 import { createShell } from './shell.js';
 import { createOverlayGuard } from './overlay-guard.js';
@@ -28,10 +29,11 @@ export function setup(ctx, opts = {}) {
     const mountHost = el => { hosts.add(el); (doc.body || doc.documentElement).append(el); };
     const { marinara, runCleanups } = createMarinara(link);
 
-    // ---- memory library: mounted when first opened ----
+    // ---- memory library and host-message selection ----
     let memory = null;
     const memoryLV = {
         css: MEMORY_OVERRIDES,
+        selectionParts: range => selectedMessageParts(range, doc),
         fetch: createFetch(link),
         activeChatId: getChatId,
         mountHost,
@@ -52,6 +54,9 @@ export function setup(ctx, opts = {}) {
 
     let shell = null;
     shell = createShell(ctx, { link, getChatId, openMemory, doc });
+
+    // Install selection while the library is closed, including before its first opening.
+    mountMemoryNow();
 
     return () => {
         alive = false;

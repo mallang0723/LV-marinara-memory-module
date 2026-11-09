@@ -7,12 +7,14 @@ import R from './core/recall.generated.cjs';
 import V from './core/vectors.cjs';
 import TR from './core/translate.cjs';
 import F from './core/features.cjs';
+import { FEATURE_ROUTES, registerFeatureRoutes } from './room-features.js';
+import { BACKUP_ROUTES, registerBackupRoutes } from './room-backup.js';
 import { registerRoomRoutes, ROOM_ROUTES } from './room-routes.js';
 import { VERSION, safeChatId, nameList, summary, bounded, RECALL_MODES, RECALL_STYLES, CHAPTER_LENGTHS, RECALL_AMOUNTS } from './service.js';
 
 export const PREFIX = 'memory-module/';
 export const ROUTES = [
-    ...ROOM_ROUTES,
+    ...ROOM_ROUTES, ...FEATURE_ROUTES, ...BACKUP_ROUTES,
     ['POST', 'settings/language'], ['GET', 'chats/:id/translations'], ['POST', 'chats/:id/translations/retry'],
     ['POST', 'chats/:id/threads/:tid/:action'], ['POST', 'chats/:id/routine'], ['GET', 'chats/:id/scene-error'], ['GET', 'status'],
     ['POST', 'chats/:id/search'], ['POST', 'chats/:id/recall-test'], ['POST', 'settings/embedding'], ['POST', 'settings/recall-style'],
@@ -32,14 +34,18 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         await um.ready();
         if (ctx.params?.id) {
             const id = safeChatId(ctx.params.id);
-            await um.ensureChat(id);
-            return um.roomData.using(id, () => fn({ ...ctx, um }));
+            if (pattern.startsWith('chats/')) await host.rawChat(ctx.userId, id);
+            // Serialize complete room requests too: a read that began before a restore must not
+            // resume halfway through the replacement after awaiting a host lookup.
+            return um.enqueue(`requests:${id}`, () => fn({ ...ctx, um }));
         }
         return fn({ ...ctx, um });
     });
     const chatOf = ctx => safeChatId(ctx.params.id);
 
     registerRoomRoutes(add, chatOf);
+    registerFeatureRoutes(add, chatOf);
+    registerBackupRoutes(add, chatOf);
 
     // Hand fixes to the ledger: reopen or close one item.
     add('POST', 'chats/:id/threads/:tid/:action', async ctx => {
@@ -133,7 +139,8 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         const firstInside = archive ? null : S.firstInsideWindow(await um.chatMessages(chatId), await um.chatWindow());
         const results = queries.map((query, i) => {
             const subject = normalize(query.subject);
-            const searchable = archive ? st.scenes : R.candidates(st, firstInside);
+            const hidden = um.features.filters(chatId, st).hidden;
+            const searchable = (archive ? st.scenes : R.candidates(st, firstInside)).filter(s => !hidden.has(s.id));
             const candidates = subject ? searchable.filter(scene => normalize(JSON.stringify(scene)).includes(subject)) : searchable;
             const hits = V.nearest(index, [vectors[i]], candidates, 8).filter(hit => hit.score > 0).map(hit => ({ id: hit.id, piece: hit.piece, score: hit.score, strong: hit.strong }));
             return { query, hits };
@@ -153,7 +160,7 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
         const mode = RECALL_MODES.includes(um.settings().recall) && um.settings().recall !== 'off' ? um.settings().recall : 'model';
         const view = um.settled(await um.chatMessages(chatId));
         const firstInside = S.firstInsideWindow(view, Math.max(1, (await um.chatWindow()) - 1));
-        const list = R.candidates(st, firstInside);
+        const list = um.recallCandidates(chatId, st, firstInside);
         const entry = await um.computeRecall(chatId, st, view, text, { mode, firstInside, list, budgetMs: T.TEST_RECALL_BUDGET_MS ?? 20_000 });
         const title = id => st.scenes.find(x => x.id === id)?.title || null;
         const ids = new Set(list.map(x => x.id));
@@ -318,7 +325,11 @@ export function registerMemoryRoutes(router, service, { onChange = () => {} } = 
             attributionCheck: F.resolveAttribution(um.settings(), chatId),
             attributionRuns: um.roomData.get(chatId, 'attribution-log').runs.length,
             attributionStamp: um.roomData.get(chatId, 'attribution-log').updatedAt || '',
-            selectedCount: 0,
+            selectedCount: um.roomData.get(chatId, 'selected').items.length,
+            selectedStamp: um.roomData.get(chatId, 'selected').updatedAt || '',
+            recallPrefs: um.features.preferences(chatId),
+            restoreUndo: await um.backup.safety(chatId).then(m => m ? { at: m.at, from: m.from || null } : null),
+            ...(um.features.on(chatId, 'trackers') ? { trackerPick: um.features.trackers(chatId) } : {}),
             routine: ledger ? L.renderRoutine(ledger, um.storyNow.get(chatId) || ledger.storyTime || null) : '',
             routineItems: (ledger?.routine || []).map(r => ({ ...r, displayWhat: L.routineDisplayKind(r), key: L.routineKey(r) })),
             storyNow: um.storyNow.get(chatId) || ledger?.storyTime || null,

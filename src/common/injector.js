@@ -55,7 +55,7 @@ export function createInjector({ service, log = () => {}, now = () => Date.now()
                 await um.ensureChat(chatId);
                 memoryOn = um.chatEnabled(chatId) && um.settings().moduleMemory !== false;
                 if (memoryOn) {
-                    if (ctx.isDryRun) memoryText = service.renderedCache.get(chatId) ?? await um.rendered(chatId);            // preview: no model call, nothing written
+                    if (ctx.isDryRun) memoryText = um.cachedRendered(chatId) ?? await um.rendered(chatId);            // preview: no model call, nothing written
                     else {
                         const sync = um.syncBeforeReply(chatId, { regenerateMessageId: REPLAY_TYPES.has(type) ? ctx.excludeMessageId : undefined, budgetMs: Math.max(500, budget - (now() - started) - 300), signal: ctx.signal });
                         memoryText = await raceBudget(sync, budget - (now() - started), ctx.signal);
@@ -63,9 +63,9 @@ export function createInjector({ service, log = () => {}, now = () => Date.now()
                 }
             } catch (error) {
                 log(`memory block skipped: ${error?.message || error}`);
-                memoryText = memoryOn ? service.renderedCache.get(chatId) || '' : '';   // the last known text beats none
+                memoryText = memoryOn ? um.cachedRendered(chatId) || '' : '';   // the last known text beats none
             }
-            if (memoryOn) {
+            if (memoryOn || out.some(m => MEMORY_BLOCK.test(text(m)))) {
                 const existing = out.findIndex(m => MEMORY_BLOCK.test(text(m)));
                 if (existing >= 0) {
                     // {{memory_ledger}} in the preset was already resolved with last turn's cache: swap in the fresh text

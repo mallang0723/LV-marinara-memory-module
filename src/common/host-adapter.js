@@ -84,6 +84,7 @@ export function createHostAdapter(api, { log = () => {} } = {}) {
     /** All messages in order (hidden ones included: they are still the story, see SPEC 6.4). */
     async function allMessages(userId, chatId) {
         need(userId);
+        await rawChat(userId, chatId); // getMessages has no user argument: authorize before reading.
         const rows = await call(() => api.chat.getMessages(chatId));
         return (rows || []).map(shapeMessage).sort((a, b) => a.number - b.number);
     }

@@ -29,15 +29,15 @@ test('the macro answers from the cache only (empty for an unknown chat, text aft
     story(f, 'chat-a', 15);
     await f.rpc('POST', 'ext/settings', { window: 4 });
     const macro = f.macros.get(MACRO_NAME).handler;
-    assert.equal(macro({ chatId: 'chat-a' }), '');
+    assert.equal(macro({ userId: 'u1', chatId: 'chat-a' }), '');
     await rpc('POST', 'memory-module/settings', { connection: 'conn-a' });
     await rpc('POST', 'memory-module/chats/chat-a/start', {});
     await waitUntil(async () => (await rpc('GET', 'memory-module/chats/chat-a')).data.sceneJob.state === 'done');
-    await waitUntil(() => macro({ chatId: 'chat-a' }) !== '');
-    assert.ok(macro({ chatId: 'chat-a' }).startsWith('[Memory:'));
-    assert.ok(macro({ env: { chat: { id: 'chat-a' } } }).startsWith('[Memory:'), 'ctx.env.chat.id form');
-    assert.ok(!macro({ chatId: 'chat-a' }).includes('{{'));
-    assert.equal(macro({ chatId: 'other' }), '');
+    await waitUntil(() => macro({ userId: 'u1', chatId: 'chat-a' }) !== '');
+    assert.ok(macro({ userId: 'u1', chatId: 'chat-a' }).startsWith('[Memory:'));
+    assert.ok(macro({ userId: 'u1', env: { chat: { id: 'chat-a' } } }).startsWith('[Memory:'), 'ctx.env.chat.id form');
+    assert.ok(!macro({ userId: 'u1', chatId: 'chat-a' }).includes('{{'));
+    assert.equal(macro({ userId: 'u1', chatId: 'other' }), '');
 });
 
 test('GENERATION_ENDED without error updates the ledger of an enabled chat; with error, impersonate and disabled chats it does not', async () => {
@@ -130,4 +130,22 @@ test('dist/backend.js passes the host\'s static scan for forbidden worker capabi
         /(?:from\s*["'`]bun["'`]|import\s*["'`]bun["'`])/,
     ];
     for (const re of checks) assert.ok(!re.test(src), `dist/backend.js matches ${re}`);
+});
+
+test('a macro context without user identity returns no room data; the interceptor fills or removes its placeholder per user', async () => {
+    const { f, rpc, stop } = boot();
+    story(f, 'chat-a', 15);
+    await rpc('POST', 'ext/settings', { window: 4, autoInject: false });
+    await rpc('POST', 'memory-module/settings', { connection: 'conn-a' });
+    await rpc('POST', 'memory-module/chats/chat-a/start', {});
+    await waitUntil(async () => (await rpc('GET', 'memory-module/chats/chat-a')).data.sceneJob.state === 'done');
+    const placeholder = f.macros.get(MACRO_NAME).handler({ chatId: 'chat-a' });
+    assert.doesNotMatch(placeholder, /달빛호수|서아|하루/);
+    const prompt = [{ role: 'system', content: '앞\n' + placeholder + '\n뒤' }];
+    const own = await f.intercept(prompt, { userId: 'u1', isDryRun: true });
+    assert.match(own.messages[0].content, /달빛호수/); assert.equal(own.messages.length, 1);
+    const other = await f.intercept(prompt, { userId: 'u2', isDryRun: true });
+    assert.equal(other.messages[0].content, '앞\n\n뒤');
+    assert.equal(f.macros.get(MACRO_NAME).handler({ userId: 'u2', chatId: 'chat-a' }), '');
+    await stop();
 });

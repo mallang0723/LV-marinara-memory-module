@@ -1,10 +1,15 @@
-// Provenance check. The fourteen memory core modules and the three screen files must be byte-identical to the pinned upstream
+// Provenance check. The nineteen memory core modules and the three screen files must be byte-identical to the pinned upstream
 // copies (SHA-256 below). UPSTREAM_MEMORY=/path/to/a/checkout/of/tlsiddl/marinara-memory-module additionally compares with that checkout
 // (this fork's `main` branch is such a checkout).
 // Usage: node scripts/verify-original.mjs
 import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 export const PINS = {
+    'src/memory/core/trackers.cjs': 'f9853048135769423ba88827d098e8768f8c11ab2d4b04d6abf21c400d3abbea',
+    'src/memory/core/selected.cjs': '2b1892128785279e49a310c372a6635b2202f76ad591d8ffaee17ca5f3005747',
+    'src/memory/core/reasons.cjs': '25c2c7aa170414f9916ef175f9dbd9d3ee67cd8d867e8ed4148c4b29f968b585',
+    'src/memory/core/conflicts.cjs': '3201188ff2c2204d17edeff092b4a8dba7a6e4d06adf804c39ae48651c7d8e5d',
+    'src/memory/core/backup.cjs': '30ac8ced7aa4660fb1895a6170a0a406cfec44845d6c43ebf1a403a2d80d9aee',
     'src/memory/core/ledger.cjs': '52eddd1c15365ba3fc925f8bd67f049393bc92acd53bfcab32969a822b508940',
     'src/memory/core/scenes.cjs': '6b8799d5052e69009f39c00bfe4a9dfd27b74058624c66803c059bdbf043cf7c',
     'src/memory/core/recall.cjs': 'c544134e3dae15931a153df1b1c5194771bb1735461bc4e7508fdf9ae2c6b9a6',

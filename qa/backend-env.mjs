@@ -20,12 +20,14 @@ export async function createQaEnv({ messages = 44 } = {}) {
     const outbox = [];
     const f = fake({ onSend: (m, user) => outbox.push({ m, user }) });
     f.addMessages('chat-a', storyRows(messages));
+    f.addMessages('chat-a', [{ id: 'qa-selected-message', role: 'user', content: '하루가 서아에게 편지를 건넸다.' }]);
     f.chats.get('chat-a').character_id = 'char-haru';
     f.chats.get('chat-a').metadata = { loom_summary: '하루와 서아는 가을 축제를 준비하며 가까워졌다.' };
     f.state.userRequired = true;
     // every scene also states a fact (the stock fake model only does for the first), so the 알게 된 사실 tab has several cards
     const counts = {};
     f.model = async ({ messages }) => {
+        if (messages[0]?.content?.startsWith('선택한 원문만')) return JSON.stringify({ title: '편지 전달', summary: '하루가 서아에게 편지를 건넸다.' });
         const raw = replyFor(messages, counts);
         let reply; try { reply = JSON.parse(raw); } catch { return raw; }
         for (const scene of reply.scenes || []) if (!scene.facts?.length) scene.facts = [{ about: '서아', text: `서아는 ${scene.end}번 즈음 빵집에 들렀다.`, evidence: [{ n: `${scene.end}.1`, q: '' }] }];
@@ -48,6 +50,14 @@ export async function createQaEnv({ messages = 44 } = {}) {
     // who knows what: the 아는 사람 / 모르는 사람 chips of the facts tab (hand edits, so they are kept as written)
     const facts = (await call('GET', 'memory-module/chats/chat-a/scenes')).data.facts || [];
     for (const [i, fact] of facts.entries()) await call('PATCH', `memory-module/chats/chat-a/facts/${fact.id}`, i % 2 === 0 ? { knownBy: ['하루', '서아'] } : { knownBy: ['하루'], unaware: ['서아'] });
+    for (const key of ['characterState', 'places', 'keepsakes', 'trackers']) await call('POST', 'memory-module/chats/chat-a/feature-mode', { key, mode: 'on' });
+    await call('POST', 'memory-module/chats/chat-a/state', { action: 'set', name: '하루', field: 'outfit', value: '앞치마' });
+    await call('POST', 'memory-module/chats/chat-a/places', { action: 'add', name: '달빛 빵집' });
+    await call('POST', 'memory-module/chats/chat-a/keepsakes', { action: 'add', name: '서아의 편지', owner: '하루' });
+    await call('POST', 'memory-module/chats/chat-a/trackers', { action: 'add', item: { type: 'count', label: '만난 지', clock: 'real', scope: 'room', count: { start: '2026-11-01' } } });
+    if (facts.length) await call('POST', 'memory-module/chats/chat-a/recall-prefs', { id: facts[0].id, action: 'pin' });
+    await call('POST', 'memory-module/chats/chat-a/selected-memory', { parts: [{ sourceId: 'qa-selected-message', text: '하루가 서아에게 편지를 건넸다.' }] });
+    f.files.set(`${U}:memory/chats/deleted-qa.json`, JSON.stringify({ version: 1, threads: [] }));
     outbox.length = 0;
     return {
         f,

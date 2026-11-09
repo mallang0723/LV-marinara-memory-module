@@ -1,3 +1,35 @@
+// src/common/message-selection.js
+function selectedMessageParts(range, doc = document) {
+  const element = (n) => n?.nodeType === 1 ? n : n?.parentElement;
+  const content = (n) => element(n)?.closest?.('[data-component="MessageContent"]');
+  const first = content(range.startContainer), last = content(range.endContainer);
+  if (!first || !last)
+    return [];
+  const parts = [], seen = new Set;
+  for (const node of doc.querySelectorAll('[data-component="MessageContent"]')) {
+    if (!range.intersectsNode(node))
+      continue;
+    const sourceId = node.closest("[data-message-id]")?.dataset.messageId;
+    if (!sourceId || seen.has(sourceId))
+      continue;
+    const selected = range.cloneRange();
+    selected.selectNodeContents(node);
+    if (node === first)
+      selected.setStart(range.startContainer, range.startOffset);
+    if (node === last)
+      selected.setEnd(range.endContainer, range.endOffset);
+    const fragment = selected.cloneContents();
+    if (fragment.querySelector('button, textarea, input, [contenteditable="true"], [data-spindle-mount]'))
+      return [];
+    const text = selected.toString().trim();
+    if (text) {
+      parts.push({ sourceId, text });
+      seen.add(sourceId);
+    }
+  }
+  return parts;
+}
+
 // src/shim/marinara.js
 function uid() {
   try {
@@ -587,7 +619,7 @@ function attachSummarizationFrontend(ctx, { fetch: fetchSetting = globalThis.fet
 
 // src/memory/ui/runtime.generated.js
 function mountMemory(marinara, LV) {
-  const VERSION = "1.2.0-lv.1";
+  const VERSION = "1.3.0-lv.1";
   const UI_CSS = `:host{all:initial;color:#34374b;font:14px/1.65 "Pretendard","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--im-accent:#7777c8;--im-ink:#34374b;--im-muted:#8e91a6;--im-line:#e9e9f2;--im-paper:#fff;--im-canvas:#f5f5fb;--im-soft:#eeeefa}
 *{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer;color:inherit;border:1px solid var(--im-line);background:var(--im-paper);padding:9px 14px;border-radius:11px;transition:background .15s,transform .15s,box-shadow .15s}button:hover{background:var(--im-soft)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #aaa7e5;outline-offset:3px}.icon{width:19px;height:19px;flex:none;display:inline-block;vertical-align:middle}#launch{position:fixed;right:20px;bottom:126px;z-index:2147483600;display:flex;align-items:center;gap:8px;color:#fff;background:#7777c8;border:0;border-radius:24px;padding:11px 19px;box-shadow:0 7px 20px #7777c84d}#backdrop{position:fixed;inset:0;background:#20233654;z-index:2147483601}#panel{position:fixed;z-index:2147483602;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1320px,96vw);height:min(900px,91vh);display:grid;grid-template-columns:192px minmax(0,1fr) 224px;background:var(--im-paper);border-radius:26px;box-shadow:0 25px 100px #25254435;overflow:hidden}#panel[hidden],[hidden]{display:none!important}
 .sidebar{display:flex;flex-direction:column;padding:30px 18px 20px;border-right:1px solid var(--im-line);min-width:0}.brand{display:flex;align-items:center;gap:10px;padding:0 12px 30px;color:var(--im-accent);font-size:18px;font-weight:750;letter-spacing:-.8px}.brand .icon{width:27px;height:27px}.brand small{display:block;white-space:nowrap;font:7px/1.8 ui-monospace,monospace;letter-spacing:1.3px;color:#a8a6bd}.nav-label{font-size:9px;letter-spacing:1.8px;color:#b2b1c2;padding:13px 14px 9px}nav{display:flex;flex-direction:column;gap:6px}nav button{display:flex;gap:11px;align-items:center;border:0;background:transparent;text-align:left;font-size:12px;padding:11px 13px;border-radius:10px;color:#9291aa}nav button.selected{background:#eeeeFA;color:#6d69b4;font-weight:700}nav button .icon{width:17px;height:17px}.side-bottom{margin-top:auto;padding-top:26px;display:grid;gap:10px}.side-bottom button{font-size:11px;border:0;display:flex;align-items:center;gap:8px;background:#f7f7fb}.side-bottom small{font-size:9px;color:#b0aec0;padding-left:10px}
@@ -1082,6 +1114,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     ["facts", "알게 된 사실", "person"],
     ["ledger", "아직 끝나지 않은 일", "note"],
     ["life", "최근 생활", "clock"],
+    ["world", "인물·장소", "folder"],
     ["names", "이름 정리", "person"],
     ["inject", "주입 확인", "search"],
     ["settings", "설정", "settings"]
@@ -1231,7 +1264,6 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   let recallReportError = "";
   let recallReportLoading = false;
   async function ensureRecallReport() {
-    return;
     if (tab !== "inject" || !room || recallReportLoading || recallReportRoom === room && (recallReportData || recallReportError))
       return;
     const id = room;
@@ -1383,7 +1415,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     await loadWorld(room);
     render();
   }
-  const needsConflicts = () => false;
+  const needsConflicts = () => tab === "facts";
   async function loadConflicts(id) {
     try {
       const c = await api("GET", `/chats/${encodeURIComponent(id)}/conflicts`);
@@ -1651,6 +1683,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       <h1>${esc(roomName())}</h1>
       <p class="intro">지나간 대화를 장면·사실·장부로 정리해, 답변할 때마다 필요한 기억을 넣어 주는 기억 서재입니다. 이 방에서 기억을 켜 두면 답변마다 자동으로 정리되며, 여기서 고친 내용은 다음 답변부터 반영됩니다.</p>
       ${healthNote()}
+      ${selectedMemoriesHtml()}
       ${info.summary?.needsRebuild ? `<div class="note">예전 메시지가 수정·삭제되어 장부(아직 끝나지 않은 일·최근 생활)를 처음부터 다시 정리해야 합니다. ${info.summary.rebuildFrom ? `다시 정리하기 전까지는 ${esc(info.summary.rebuildFrom)}번 메시지 전에 정리된 내용만 기억 칸에 넣습니다.` : "다시 정리하기 전까지는 장부 내용을 기억 칸에 넣지 않습니다."} 아래 '처음부터 다시 정리'를 눌러 주세요(장면 기억은 영향이 없습니다).</div>` : ""}
       <div class="metric-row">
         <div class="metric"><strong>${info.scenes?.count ?? 0}</strong><small>장면 · 메시지 ${info.scenes?.coveredThrough ?? "-"}번까지</small></div>
@@ -1672,7 +1705,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
           ${info.scenes?.chapters ? `<button data-act="rebuildChapters" ${running() ? "disabled" : ""}>${armed === "chapters" ? "한 번 더 누르면 챕터를 다시 묶습니다" : "챕터만 다시 묶기"}</button>` : ""}
           ${running() ? '<button data-act="stop">멈추기</button>' : ""}
         </div>
-        ${armed === "fresh" ? '<div class="note" role="status">처음부터 다시 정리하면 직접 고친 장면·사실도 사라집니다. 이 작업은 되돌릴 수 없습니다.</div>' : ""}
+        ${armed === "fresh" ? '<div class="note" role="status">처음부터 다시 정리하면 직접 고친 장면·사실도 사라집니다. <button data-act="backupDownload">먼저 백업 내려받기</button> 를 누르면 지금 상태가 파일로 저장되고, 이 확인 상태는 그대로 유지됩니다. 꼭 받으셔야 하는 것은 아닙니다.</div>' : ""}
         <small>‘이어서 정리’는 밀린 정리를 바로 처리합니다. ‘챕터만 다시 묶기’는 장면·사실·장부를 유지하고 챕터와 큰 흐름만 새로 만듭니다. 직접 고친 챕터·큰 흐름은 바뀌며, 정리 모델 사용량이 발생합니다. 처음부터 다시 정리하면 직접 고친 장면도 사라집니다.</small>
       </div>
       ${deadlinePaper()}
@@ -2414,11 +2447,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       return emptyRoom();
     return `<div class="eyebrow">INJECTION · 약 ${tokens(info.rendered)} 토큰</div><h1>주입 확인</h1>
       <p class="intro">지금 프리셋의 {{기억}} 자리에 들어가는 내용 그대로입니다. 회상한 장면은 답변마다 바뀝니다.</p>
-      ${recallCard()}${recallTestCard()}
+      ${recallCard()}${recallTestCard()}${recallReasonsPaper(recallReportRoom === room ? recallReportData : null, info.recallPrefs, recallReportRoom !== room || !recallReportData && !recallReportError ? "loading" : recallReportError)}
       ${info.rendered ? `<pre>${esc(info.rendered)}</pre>` : `<div class="empty">${info.enabled ? "아직 들어가는 기억이 없습니다." : "이 방에서 기억 사용이 꺼져 있어 {{기억}} 자리에 아무것도 들어가지 않습니다. 저장된 기억은 그대로 남아 있습니다."}</div>`}`;
   }
   function markButtons(id, prefs) {
-    return "";
     const pinned = (prefs?.pinned || []).includes(id);
     const left = (prefs?.excluded || []).includes(id);
     const button = (mark, on, onText, offText, hint) => `<button class="ghost mark-button ${on ? "is-on" : ""}" data-act="recallMark" data-id="${esc(id)}" data-mark="${mark}" aria-pressed="${on ? "true" : "false"}" title="${esc(hint)}">${on ? onText : offText}</button>`;
@@ -2555,6 +2587,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         <label>이 방의 대사 확인 방식<select id="setAttributionRoom" data-attribution-room="1"><option value="follow" ${(info.attributionCheck?.room || "follow") === "follow" ? "selected" : ""}>기본값 따름 (지금 모든 방 기본값: ${esc(attributionModeLabel(info.attributionCheck?.global))})</option>${attributionModeOptions(info.attributionCheck?.room)}</select></label><p class="hint">${ATTRIBUTION_MODE_HINT} 바꾸면 바로 저장되고, 다음 정리부터 적용됩니다.</p>
       </div>
       ${featuresPaper(info.features)}
+      ${backupPaper({ armed, preview: restorePreview && restorePreview.room === room ? restorePreview : null, withVectors: backupVectors, running: running(), undo: info.restoreUndo })}
       <div class="paper"><h2>모든 방 공통</h2>
         <p class="hint" id="windowSource">${esc(serverSettings?.windowInfo?.label || "창 크기 확인 중")}</p>
         <label>기억 서재 창 크기 (루미버스 메시지 제한이 꺼져 있을 때만 적용)<input id="setWindow" type="number" min="1" step="1" value="${esc(serverSettings?.window || 30)}"></label>
@@ -2839,7 +2872,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         if (!id || !confirm("이 삭제된 방의 기억을 영구 삭제합니다. 되돌릴 수 없습니다. 계속할까요?"))
           return;
         return act(async () => {
-          await api("DELETE", `/orphans/${encodeURIComponent(id)}`);
+          await api("DELETE", `/orphans/${encodeURIComponent(id)}`, { confirm: true });
           orphans = (await api("GET", "/orphans")).orphans;
         }, "삭제된 방의 기억을 지웠습니다.");
       }
@@ -2847,7 +2880,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         if (!orphans?.length || !confirm(`삭제된 방 ${orphans.length}개의 기억을 모두 영구 삭제합니다. 되돌릴 수 없습니다. 계속할까요?`))
           return;
         return act(async () => {
-          const r = await api("POST", "/orphans/delete-all");
+          const r = await api("POST", "/orphans/delete-all", { confirm: true });
           orphans = (await api("GET", "/orphans")).orphans;
           notice = `삭제된 방 ${r.deleted.length}개의 기억을 지웠습니다.`;
         });
@@ -3394,7 +3427,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
   }
   async function openSettings() {
     try {
-      const [status, list, gone] = await Promise.all([api("GET", "/status"), api("GET", "/api/connections").catch(() => []), Promise.resolve(null)]);
+      const [status, list, gone] = await Promise.all([api("GET", "/status"), api("GET", "/api/connections").catch(() => []), api("GET", "/orphans").catch(() => null)]);
       orphans = gone?.orphans || null;
       serverSettings = status.settings;
       serverEmbedding = status.embedding || null;
@@ -3694,26 +3727,8 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         selectedButton.hidden = true;
         return;
       }
-      const range = sel.getRangeAt(0), element = (n) => n?.nodeType === 1 ? n : n?.parentElement;
-      const first = element(range.startContainer)?.closest?.("[data-message-id]"), last = element(range.endContainer)?.closest?.("[data-message-id]");
-      if (!first || !last) {
-        selectedButton.hidden = true;
-        return;
-      }
-      const parts = [];
-      for (const node of document.querySelectorAll("[data-message-id]")) {
-        if (!node.dataset.messageId || !range.intersectsNode(node))
-          continue;
-        const r = range.cloneRange();
-        r.selectNodeContents(node);
-        if (node === first)
-          r.setStart(range.startContainer, range.startOffset);
-        if (node === last)
-          r.setEnd(range.endContainer, range.endOffset);
-        const text = r.toString().trim();
-        if (text)
-          parts.push({ sourceId: node.dataset.messageId, text });
-      }
+      const range = sel.getRangeAt(0);
+      const parts = LV.selectionParts(range);
       const boxes = range.getClientRects(), rect = boxes[boxes.length - 1];
       if (!rect || !parts.length || parts.length > 30 || parts.reduce((n, p) => n + p.text.length, 0) > 50000) {
         selectedButton.hidden = true;
@@ -3734,7 +3749,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     selectedButton.type = "button";
     selectedButton.textContent = "기억으로 정리";
     selectedButton.hidden = true;
-    selectedButton.setAttribute("style", "position:fixed;z-index:2147483647;pointer-events:auto;padding:9px 13px;border:1px solid #d4c9bc;border-radius:12px;background:#fffaf3;color:#423b37;font:600 13px sans-serif;box-shadow:0 4px 16px #0003;touch-action:manipulation");
+    selectedButton.setAttribute("style", "position:fixed;z-index:2147483647;pointer-events:auto;min-height:44px;min-width:44px;padding:9px 13px;border:1px solid #d4c9bc;border-radius:12px;background:#fffaf3;color:#423b37;font:600 15px sans-serif;box-shadow:0 4px 16px #0003;touch-action:manipulation");
     root.append(selectedButton);
     selectedButton.addEventListener("mousedown", (e) => e.preventDefault());
     selectedButton.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
@@ -3790,6 +3805,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     LV.mountHost(element);
     root.host.setAttribute("data-theme", theme);
     launcher?.setAttribute("data-theme", theme);
+    installSelectionButton();
     for (const type of ["keydown", "keypress", "keyup"])
       root.addEventListener(type, (e) => e.stopPropagation());
     root.addEventListener("input", (e) => {
@@ -4189,6 +4205,7 @@ function setup(ctx, opts = {}) {
   let memory = null;
   const memoryLV = {
     css: MEMORY_OVERRIDES,
+    selectionParts: (range) => selectedMessageParts(range, doc),
     fetch: createFetch(link),
     activeChatId: getChatId,
     mountHost,
@@ -4224,6 +4241,7 @@ function setup(ctx, opts = {}) {
   };
   let shell = null;
   shell = createShell(ctx, { link, getChatId, openMemory, doc });
+  mountMemoryNow();
   return () => {
     alive = false;
     for (const off of offs) {

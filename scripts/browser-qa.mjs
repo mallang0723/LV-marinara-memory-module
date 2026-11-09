@@ -174,7 +174,7 @@ try {
                 await step(`memory tabs [${theme}/${ui}]`, async () => {
                     const cur = await evalIn('memory', 'return root.host.getAttribute("data-theme")');
                     if (cur !== ui) await click('memory', '#themeToggle', 'theme toggle');
-                    for (const t of ['home', 'scenes', 'search', 'facts', 'ledger', 'life', 'inject', 'settings']) {
+                    for (const t of ['home', 'scenes', 'search', 'facts', 'ledger', 'life', 'names', 'world', 'inject', 'settings']) {
                         await click('memory', `button[data-tab="${t}"]`, `tab ${t}`);
                         await sleep(300);
                         await check(`memory-${ui}-${t}`, 'memory');

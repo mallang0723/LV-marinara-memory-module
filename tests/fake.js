@@ -150,6 +150,7 @@ export function fake(opts = {}) {
         emit,
         /** Appends messages [{role, name, content, hidden?, personaId?}] to a chat, numbering them like the host (index_in_chat). */
         addMessages(chatId, list) {
+            if (!chats.has(chatId)) chats.set(chatId, { id: chatId, name: chatId, metadata: {} });
             if (!messages.has(chatId)) messages.set(chatId, []);
             const arr = messages.get(chatId);
             for (const m of list) {

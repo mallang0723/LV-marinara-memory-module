@@ -137,11 +137,11 @@ export function registerRoomRoutes(add, chatOf) {
         });
         const feature = async (ctx, key, legacy = false) => {
             const id = isRoom ? chatOf(ctx) : '', b = ctx.body || {};
-            if (!FEATURE_REGISTRY[key]) throw Error('이 기능은 1.3 이후 지원 예정입니다.');
+            if (!Object.hasOwn(FEATURE_REGISTRY, key)) throw Error('알 수 없는 기능입니다.');
             if (isRoom ? !F.MODES.includes(b.mode) : typeof b.on !== 'boolean') throw Error('기능 설정 값을 확인해 주세요.');
             ctx.um.saveSettings(isRoom ? F.withRoomMode(ctx.um.settings(), id, key, b.mode) : F.withGlobal(ctx.um.settings(), key, b.on));
             await ctx.um.flush();
-            if (isRoom) await ctx.um.rendered(id);
+            if (isRoom) { ctx.um.features.refresh(id, ctx.um.loadScenes(id)); ctx.um.clearRecall(id); await ctx.um.flush(); await ctx.um.rendered(id); }
             const value = F.resolve(ctx.um.settings(), id, key);
             return legacy ? { routineSetting: value } : { key, ...value, features: ctx.um.roomData.featureView(id) };
         };
@@ -150,7 +150,7 @@ export function registerRoomRoutes(add, chatOf) {
     }
     add('POST', 'chats/:id/organize-preferences', async ctx => {
         const id = chatOf(ctx), b = ctx.body || {};
-        const organize = { npcCoverage: b.npcCoverage || 'standard', quoteMode: b.quoteMode || 'dialogue', detailLevel: b.detailLevel || 'standard' };
+        const organize = { npcCoverage: b.npcCoverage || 'standard', quoteMode: b.quoteMode || 'dialogue', detailLevel: b.detailLevel || ctx.um.settings().chats?.[id]?.organize?.detailLevel || 'standard' };
         if (!['standard', 'expanded'].includes(organize.npcCoverage) || !['dialogue', 'narration', 'both'].includes(organize.quoteMode) || !['standard', 'detailed', 'very_detailed'].includes(organize.detailLevel)) throw Error('정리 방식을 확인해 주세요.');
         const all = ctx.um.settings();
         ctx.um.saveSettings({ ...all, chats: { ...all.chats, [id]: { ...all.chats?.[id], organize } } });

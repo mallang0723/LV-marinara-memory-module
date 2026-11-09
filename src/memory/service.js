@@ -20,10 +20,13 @@ import V from './core/vectors.cjs';
 import TR from './core/translate.cjs';
 import Addr from './core/address.generated.cjs';
 import F from './core/features.cjs';
+import Selected from './core/selected.cjs';
+import { createRoomFeatures, buildRecallReport } from './room-features.js';
+import { createRoomBackup } from './room-backup.js';
 import { createRoomData } from './room-data.js';
 import { reviewAttributions } from './attribution.js';
 
-export const VERSION = '1.2.0-lv.1';
+export const VERSION = '1.3.0-lv.1';
 export const RECALL_MODES = ['model', 'fast', 'off'];
 const CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export function safeChatId(chatId) {
@@ -254,14 +257,14 @@ export { bounded };
 export function createMemoryService({ host, store, log = () => {}, now = () => Date.now(), tunables = {} }) {
     const T = { ...DEFAULTS, ...tunables };
     const users = new Map();
-    /** chatId -> the text {{memory_ledger}} returns (the macro handler is sync-ish and has no userId: it only reads this cache) */
+    /** User and chat scoped prompt cache. Unscoped macro contexts receive only a placeholder. */
     const renderedCache = new Map();
     const forUser = userId => {
         if (typeof userId !== 'string' || !userId) throw new Error('userId required');
         if (!users.has(userId)) users.set(userId, makeUser(userId));
         return users.get(userId);
     };
-    const dropRendered = chatId => renderedCache.delete(chatId);
+    const dropRendered = (userId, chatId) => renderedCache.delete(`${userId}\u0000${chatId}`);
     return { forUser, renderedCache, dropRendered, T, store, host, VERSION, users };
 
     function makeUser(userId) {
@@ -276,6 +279,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
         };
         const roomData = createRoomData({ store, userId, keyFor: keys.extra, persist, settings });
         let api;
+        const maintenance = new Map();
         let settingsCache = null;
         const ledgerCache = new Map();
         const sceneCache = new Map();
@@ -326,6 +330,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
         async function ensureChat(chatId) {
             await ready();
             safeChatId(chatId);
+            await maintenance.get(chatId);
             await roomData.load(chatId);
             if (ledgerCache.has(chatId) && sceneCache.has(chatId) && translationCache.has(chatId)) return;
             const key = `chat:${chatId}`;
@@ -358,6 +363,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             st.updatedAt = new Date().toISOString();
             persist(keys.scenes(chatId), st);
             sceneCache.set(chatId, st);
+            api?.features.refresh(chatId, st);
         }
         function saveLastReply(chatId, error, reply) {
             try { void store.writeText(userId, keys.sceneError(chatId), `${new Date().toISOString()} ${error}\n길이: ${reply.length}자\n\n앞부분:\n${reply.slice(0, 1500)}\n\n끝부분:\n${reply.slice(-800)}\n`).catch(() => {}); } catch { /* optional */ }
@@ -381,7 +387,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 // Off means nothing of this chat's memory goes into a reply, including what was picked for the last turn.
                 recalls.delete(chatId);
                 replyViews.delete(chatId);
-                renderedCache.delete(chatId);
+                renderedCache.delete(`${userId}\u0000${chatId}`);
             }
         }
 
@@ -655,8 +661,10 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             return total;
         }
 
-        function organizeFor(chatId) { return settings().chats?.[chatId]?.organize || { npcCoverage: 'standard', quoteMode: 'dialogue', detailLevel: 'standard' }; }
-        function sceneOptions(chatId) { return { quoteMode: organizeFor(chatId).quoteMode, verifyAttribution: F.resolveAttribution(settings(), chatId).mode !== 'off', strictCoverage: true, characterState: false, places: false, keepsakes: false }; }
+        function organizeFor(chatId) { return { npcCoverage: 'standard', quoteMode: 'dialogue', detailLevel: 'standard', ...settings().chats?.[chatId]?.organize, ...Object.fromEntries(['characterState', 'places', 'keepsakes'].filter(k => F.resolve(settings(), chatId, k).enabled).map(k => [k, true])) }; }
+        function sceneOptions(chatId) { return { quoteMode: organizeFor(chatId).quoteMode, verifyAttribution: F.resolveAttribution(settings(), chatId).mode !== 'off', strictCoverage: true, ...Object.fromEntries(['characterState', 'places', 'keepsakes'].map(k => [k, F.resolve(settings(), chatId, k).enabled])) }; }
+
+        function sceneTokens(chatId) { const opts = organizeFor(chatId); return (opts.quoteMode === 'both' || opts.detailLevel === 'very_detailed' ? 12288 : 8192) + ['characterState', 'places', 'keepsakes'].filter(k => opts[k]).length * 512; }
 
         /** Fold messages that are leaving the window into scenes, one slice per call, until caught up. */
         async function foldScenes(chatId, st, messages, window, model, job, { minPending = 1 } = {}) {
@@ -668,7 +676,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 if (job) job.stage = `장면 정리 (${next.slice[0].number}번부터)`;
                 let applied = null, lastError = '', lastParsed = null, lastReply = '';
                 for (let attempt = 0; attempt < 2 && !applied; attempt++) {
-                    const reply = await askModel(model, S.buildScenePrompt(st, next.slice, next.required, lastError || null, organizeFor(chatId)), { maxTokens: organizeFor(chatId).quoteMode === 'both' || organizeFor(chatId).detailLevel === 'very_detailed' ? 12288 : 8192 });
+                    const reply = await askModel(model, S.buildScenePrompt(st, next.slice, next.required, lastError || null, organizeFor(chatId)), { maxTokens: sceneTokens(chatId) });
                     calls++;
                     lastReply = String(reply || '');
                     const { result: parsed, truncated } = S.parseScenesReply(reply);
@@ -764,7 +772,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
         function enqueue(key, task) {
             const previous = queues.get(key) || Promise.resolve();
             const next = previous.catch(() => {}).then(async () => {
-                const id = key.replace(/^scenes:/, '');
+                const id = key.replace(/^(?:scenes|selected|requests):/, '');
                 await ensureChat(id);
                 return roomData.using(id, task);
             });
@@ -862,7 +870,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                     log(`chat ${chatId}: ${job.cancel ? `stopped (${job.cancelReason || 'stop'})` : job.error}`);
                 } finally {
                     job.finishedAt = new Date().toISOString();
-                    await rendered(chatId).catch(() => renderedCache.delete(chatId));
+                    await rendered(chatId).catch(() => renderedCache.delete(`${userId}\u0000${chatId}`));
                     await flush().catch(() => {});
                 }
             });
@@ -929,7 +937,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 } finally {
                     job.stage = null;
                     job.finishedAt = new Date().toISOString();
-                    await rendered(chatId).catch(() => renderedCache.delete(chatId));
+                    await rendered(chatId).catch(() => renderedCache.delete(`${userId}\u0000${chatId}`));
                     await flush().catch(() => {});
                 }
             });
@@ -961,7 +969,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 } finally {
                     job.stage = null;
                     job.finishedAt = new Date().toISOString();
-                    await rendered(chatId).catch(() => renderedCache.delete(chatId));
+                    await rendered(chatId).catch(() => renderedCache.delete(`${userId}\u0000${chatId}`));
                     await flush().catch(() => {});
                 }
             });
@@ -990,7 +998,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 } finally {
                     job.stage = null;
                     job.finishedAt = new Date().toISOString();
-                    await rendered(chatId).catch(() => renderedCache.delete(chatId));
+                    await rendered(chatId).catch(() => renderedCache.delete(`${userId}\u0000${chatId}`));
                     await flush().catch(() => {});
                 }
             });
@@ -1027,7 +1035,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                         if (!next) break;
                         let applied = null;
                         for (let attempt = 0; attempt < 2 && !applied; attempt++) {
-                            const parsed = L.parseJsonObject(await askModel(model, S.buildScenePrompt(scenes, next.slice, next.required, null, organizeFor(chatId)), { maxTokens: organizeFor(chatId).quoteMode === 'both' || organizeFor(chatId).detailLevel === 'very_detailed' ? 12288 : 8192 }));
+                            const parsed = L.parseJsonObject(await askModel(model, S.buildScenePrompt(scenes, next.slice, next.required, null, organizeFor(chatId)), { maxTokens: sceneTokens(chatId) }));
                             const result = parsed ? S.applyScenes(scenes, parsed, next.slice, next.required, undefined, sceneOptions(chatId)) : { error: '응답을 읽지 못했습니다' };
                             if (!result.error) applied = result; else trial.sceneError = result.error;
                         }
@@ -1342,23 +1350,24 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
           );
         }
 
-        function renderMemorySource(chatId, maxChars = T.MEMORY_MAX_CHARS) {
-            return roomData.using(chatId, () => renderMemorySourceInRoom(chatId, maxChars));
+        function renderMemorySource(chatId, maxChars = T.MEMORY_MAX_CHARS, trace = null) {
+            return roomData.using(chatId, () => renderMemorySourceInRoom(chatId, maxChars, trace));
         }
-        function renderMemorySourceInRoom(chatId, maxChars) {
+        function renderMemorySourceInRoom(chatId, maxChars, trace) {
             if (!chatEnabled(chatId)) return '';
             const ledger = ledgerForReply(chatId);
             const scenes = scenesForReply(chatId);
             const query = turnQuery.get(chatId) || '';
             const today = storyToday(chatId, ledger);
-            const open = ledger ? L.renderCompact(ledger, { query, today }) : '';
+            const prefs = api.features.filters(chatId, scenes);
+            const open = ledger ? L.renderCompact(ledger, { query, today, exclude: prefs.excluded, pin: prefs.pinned, trace: trace ? (trace.threads = []) : null }) : '';
             const routine = ledger && roomData.routineEnabled(chatId) ? L.renderRoutine(ledger, storyNow.get(chatId) || ledger.storyTime || null) : '';
             const latest = scenes?.scenes?.at(-1);
             const present = latest?.present?.length ? latest.present : (latest?.events || []).flatMap(e => e.with || []);
             const recalledIds = new Set((recalls.get(chatId)?.picks || []).map(p => p.id));
             const addressed = [...new Set([...present, ...(scenes?.scenes || []).filter(s => recalledIds.has(s.id)).flatMap(s => [...(s.present || []), ...(s.events || []).flatMap(e => e.with || [])])])];
             const calls = Addr.injectionBlock(roomData.get(chatId, 'address'), addressed);
-            const fixed = [calls, open ? `[아직 끝나지 않은 일]\n${open}` : '', routine].filter(Boolean);
+            const fixed = [...api.features.injection(chatId, scenes, present, today), calls, open ? `[아직 끝나지 않은 일]\n${open}` : '', routine].filter(Boolean);
             const style = settings().recallStyle;
             const header = memoryHeader(style);
             const footer = memoryFooter(style);
@@ -1372,20 +1381,24 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 const firstInside = windows.get(chatId) ?? scenes.window?.firstInside ?? null;
                 const amount = RECALL_AMOUNTS[settings().recallAmount] || RECALL_AMOUNTS.normal;
                 const recall = recalls.get(chatId);
-                const picks = R.shownPicks(recall?.picks || [], amount.scenes);
+                const pins = R.candidates(scenes, firstInside).filter(s => prefs.pinned.has(s.id) && !prefs.hidden.has(s.id)).map(s => ({ id: s.id, why: '고정', pinned: true }));
+                const picks = R.shownPicks([...pins, ...(recall?.picks || []).filter(p => !prefs.hidden.has(p.id) && !prefs.excluded.has(p.id) && !prefs.pinned.has(p.id) && !(p.follow && prefs.hidden.has(p.from)))], amount.scenes);
+                if (trace) trace.over = { scenes: [], chapters: [], facts: [] };
                 const chapterChars = CHAPTER_LENGTHS[settings().chapterLength] || CHAPTER_LENGTHS.normal;
                 const total = 9000 + 4500 + chapterChars;
                 const overviewMax = Math.min(total, Math.floor(room * (chapterChars > CHAPTER_LENGTHS.normal ? 0.65 : 0.5)));
                 const scale = Math.min(1, overviewMax / total);
-                const overview = S.renderScenes(scenes, firstInside, { present, npc: organizeFor(chatId).npcCoverage === 'expanded', maxChars: Math.floor(9000 * scale), factChars: Math.floor(4500 * scale), chapterChars: Math.floor(chapterChars * scale), query, today });
+                const overview = S.renderScenes(prefs.overviewStore, firstInside, { present, npc: organizeFor(chatId).npcCoverage === 'expanded', maxChars: Math.floor(9000 * scale), factChars: Math.floor(4500 * scale), chapterChars: Math.floor(chapterChars * scale), query, today, hideFacts: prefs.hideFacts, skipScenes: prefs.hidden, skipChapters: prefs.excluded, pin: { chapters: prefs.pinned, facts: prefs.pinned }, trace: trace?.over });
                 if (overview) { story.push(overview); room -= overview.length + 2; }
-                const recalled = room > 500 ? R.renderRecalled(scenes, picks, { npc: organizeFor(chatId).npcCoverage === 'expanded', maxChars: Math.min(amount.sceneChars, room) }) : '';
+                const recalled = room > 500 ? R.renderRecalled(scenes, picks, { npc: organizeFor(chatId).npcCoverage === 'expanded', maxChars: Math.min(amount.sceneChars, room), trace: trace ? (trace.recalled = []) : null }) : '';
                 if (recalled) { story.push(recalled); room -= recalled.length + 2; }
-                const near = amount.near && room > 500 ? R.renderNearEvents(scenes, recall?.semantic || [], picks, { npc: organizeFor(chatId).npcCoverage === 'expanded', max: amount.near, maxChars: Math.min(5000, room) }) : '';
+                const near = amount.near && room > 500 ? R.renderNearEvents(scenes, (recall?.semantic || []).filter(x => !prefs.hidden.has(x.id)), picks, { npc: organizeFor(chatId).npcCoverage === 'expanded', max: amount.near, maxChars: Math.min(5000, room), trace: trace ? (trace.near = []) : null }) : '';
                 if (near) { story.push(near); room -= near.length + 2; }
-                const raw = room > 300 ? fitBlock(R.renderRaw((recall?.raw || []).slice(0, amount.raw)), room) : '';
-                if (raw) story.push(raw);
+                const raw = room > 300 ? fitBlock(R.renderRaw((recall?.raw || []).filter(m => !scenes.scenes.some(sc => prefs.hidden.has(sc.id) && m.number >= sc.start && m.number <= sc.end)).slice(0, amount.raw)), room) : '';
+                if (raw) { story.push(raw); room -= raw.length + 2; if (trace) trace.raw = (recall?.raw || []).filter(m => !scenes.scenes.some(sc => prefs.hidden.has(sc.id) && m.number >= sc.start && m.number <= sc.end)).slice(0, amount.raw); }
             }
+            const chosen = room > 300 ? Selected.render(api.features.selectedViews.get(chatId) || [], query, Math.min(room, 2500), trace ? (trace.selected = []) : null) : '';
+            if (chosen) story.push(`[직접 선택해 정리한 기억]\n${chosen}`);
             const parts = [...story, ...fixed].filter(Boolean);
             return parts.length ? `${header}\n\n${parts.join('\n\n')}\n\n${footer}` : '';
         }
@@ -1393,7 +1406,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
         async function rendered(chatId) {
             await ensureChat(chatId);
             const text = sanitize(renderLedger(chatId), T.MAX_RENDER_CHARS);
-            renderedCache.set(chatId, text);
+            renderedCache.set(`${userId}\u0000${chatId}`, text);
             return text;
         }
 
@@ -1443,6 +1456,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             const window = await chatWindow();
             windows.set(chatId, S.firstInsideWindow(view, Math.max(1, window - (userMessage ? 1 : 0))));
             checkScenesBeforeReply(chatId, view);
+            api.features.selected(chatId, view);
             await recallBeforeReply(chatId, view, userMessage, { budgetMs, signal });
             await translateBeforeReply(chatId, Math.max(0, (budgetMs || settings().recallBudgetMs || T.RECALL_BUDGET_MS) - (now() - started)), signal).catch(() => {});
             return rendered(chatId);
@@ -1450,6 +1464,10 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
 
         /* ---------- recall ---------- */
 
+        function recallCandidates(chatId, st, firstInside) {
+            const prefs = api.features.filters(chatId, st);
+            return R.candidates(st, firstInside).filter(s => !prefs.hidden.has(s.id) && !prefs.pinned.has(s.id));
+        }
         function recallFingerprint(s) {
             return L.hashText(JSON.stringify([s.id, s.editedAt || null, s.title, s.time, s.place, s.weather || null, s.summary, s.events, s.loose || null, s.recollections, s.later || null, s.learned || null, s.heardLater || null]));
         }
@@ -1459,9 +1477,9 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             const st = scenesForReply(chatId);
             if (mode === 'off' || !st) return recalls.delete(chatId);
             const firstInside = windows.get(chatId) ?? null;
-            const list = R.candidates(st, firstInside);
+            const list = recallCandidates(chatId, st, firstInside);
             const tail = [...view.map(m => m.h), ...(userMessage ? [L.hashText(userMessage)] : [])].slice(-5);
-            const key = L.hashText(JSON.stringify([mode, firstInside, list.map(recallFingerprint), tail]));
+            const key = L.hashText(JSON.stringify([mode, firstInside, list.map(recallFingerprint), tail, api.features.preferences(chatId, st)]));
             if (recalls.get(chatId)?.key === key) return;
             const entry = await computeRecall(chatId, st, view, userMessage, { mode, firstInside, list, ...opts });
             entry.key = key;
@@ -1477,6 +1495,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
          * within the budget (plus a small margin) with the fast pick when the model was too slow.
          */
         async function computeRecall(chatId, st, view, userMessage, { mode, firstInside, list, budgetMs, signal }) {
+            st = api.features.filters(chatId, st).overviewStore || st;
             const recent = view.slice(-6);
             const budget = Number(budgetMs) > 0 ? Number(budgetMs) : Number(settings().recallBudgetMs) > 0 ? Number(settings().recallBudgetMs) : T.RECALL_BUDGET_MS;
             const entry = { mode, picks: [], ms: 0, at: new Date().toISOString(), error: null, used: mode, budgetMs: budget };
@@ -1555,7 +1574,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             if (sourceId === targetId) throw Error('원본 방에 분기 기억을 쓸 수 없습니다.');
             await ready();
             return enqueue(targetId, async () => {
-                const files = [keys.ledger(targetId), keys.scenes(targetId), keys.vectors(targetId), keys.extra(targetId, 'names'), keys.extra(targetId, 'address')];
+                const files = [keys.ledger(targetId), keys.scenes(targetId), keys.vectors(targetId), keys.translations(targetId), ...roomData.names.map(n => keys.extra(targetId, n))];
                 // This also protects an existing/broken destination file.
                 for (const key of files) if ((await store.readText(userId, key)) !== null) return { skipped: true };
                 if (settings().chats?.[targetId]) return { skipped: true };
@@ -1587,12 +1606,17 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                         book.entries = structuredClone(sourceBook.entries.filter(e => e.source === 'user')).map(({ scenes, ...entry }) => entry);
                         roomData.save(targetId, 'address', book);
                         roomData.refreshAddress(targetId, result.scenes || S.emptyStore());
+                        api.features.inherit(sourceId, targetId, result.scenes, result.ledger, ids, target.slice(0, result.matched));
                     }
                     if (sourceSettings) saveSettings({ ...settings(), chats: { ...settings().chats, [targetId]: structuredClone(sourceSettings) } });
                     await flush();
                 } catch (error) {
                     for (const key of files) await store.remove(userId, key);
-                    ledgerCache.delete(targetId); sceneCache.delete(targetId); vectorCache.delete(targetId);
+                    const next = { ...settings(), chats: { ...settings().chats } };
+                    delete next.chats[targetId];
+                    await store.replaceRaw(userId, keys.settings, JSON.stringify(next));
+                    settingsCache = next;
+                    invalidateRoom(targetId);
                     throw error;
                 }
                 log(`branch ${sourceId} -> ${targetId}: inherited ${result.matched} message(s), ${result.scenes?.scenes.length || 0} scene(s)${result.ledgerReset ? '; old fork: ledger will be read again' : ''}`);
@@ -1615,18 +1639,37 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             return { marinara: null, tested: null, patches: {}, failed: [], broken, host: 'lumiverse', lastSaveError };
         }
 
-        return api = {
+        function invalidateRoom(id) {
+            for (const map of [ledgerCache, sceneCache, vectorCache, translationCache, chatLangs, replyLedgers, windows, recalls, turnQuery, storyDays, storyNow, replyViews, jobs, sceneJobs, trials, preparing, displayTranslationStatus]) map.delete(id);
+            roomData.invalidate(id); api.features.selectedViews.delete(id); renderedCache.delete(`${userId}\u0000${id}`);
+        }
+        function holdRoom(id) {
+            let release;
+            const promise = new Promise(resolve => { release = () => { maintenance.delete(id); resolve(); }; });
+            maintenance.set(id, promise); renderedCache.delete(`${userId}\u0000${id}`);
+            return release;
+        }
+        function recallReport(id) {
+            const trace = {}; renderMemorySource(id, T.MEMORY_MAX_CHARS, trace);
+            return buildRecallReport({ trace, scenes: scenesForReply(id), ledger: ledgerForReply(id), prefs: api.features.preferences(id), recall: recalls.get(id), selected: api.features.selectedViews.get(id) || [], query: turnQuery.get(id) || '' });
+        }
+        api = {
+            cachedRendered: id => renderedCache.get(`${userId}\u0000${id}`),
+            invalidateRoom, holdRoom, replaceSettingsCache: next => { settingsCache = next; }, recallReport, recallCandidates,
             roomData, organizeFor, sceneOptions, reviewAttributions: (...args) => reviewAttributions(api, ...args),
             userId, ready, ensureChat, ensureVectors, settings, saveSettings, chatEnabled, setChatEnabled, loadLedger, saveLedger, loadScenes, saveScenes,
             loadVectors, embeddingMode, embeddingSource, embeddingModel, embedTexts, indexScenes, chatMessages, settled, chatWindow, chatWindowInfo, chatCast,
             memoryModel, askModel, enqueue, jobStatus, jobs, sceneJobs, trials, processChat, processScenes, rebuildChapters, tidyChat, startTrial,
             renderLedger, rendered, syncBeforeReply, recallBeforeReply, computeRecall, health, storyToday, storyNow, windows, recalls, replyViews,
             connectionList, checkFiles, flush, getEmbedError: () => embedSource.error, clearVectors: () => vectorCache.clear(), clearRecalls: () => recalls.clear(),
-            clearRecall: chatId => { recalls.delete(chatId); }, clearConnectionsCache: () => { connectionsCache = { at: 0, list: null }; },
+            clearRecall: chatId => { recalls.delete(chatId); renderedCache.delete(`${userId}\u0000${chatId}`); }, clearConnectionsCache: () => { connectionsCache = { at: 0, list: null }; },
             keys, persist, saveLastReply, inheritBranch, branchCreated,
             chatLanguage, chatLangs, writeLanguage, memoryLanguage, renderMemorySource, withLanguage,
             loadTranslations, saveTranslations, translationLookup, translateMissing, injectionLines, displayTranslationTexts,
             prepareStatus, maybePrepareTranslation, prepareTranslation, preparing, startDisplayTranslation, translating, displayTranslationStatus,
         };
+        api.features = createRoomFeatures(api);
+        api.backup = createRoomBackup({ um: api, store, host, version: VERSION });
+        return api;
     }
 }

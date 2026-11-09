@@ -4,6 +4,7 @@ import { makeEnv } from './env.js';
 import { registerMemoryRoutes } from '../src/memory/routes.js';
 export async function upstreamHarness(rooms, tunables = {}) {
     const env = makeEnv({ tunables });
+    for (const id of rooms) env.f.chats.set(id, { id, name: id, metadata: {} });
     await env.um.ready();
     await Promise.all(rooms.map(id => env.um.ensureChat(id)));
     const service = {

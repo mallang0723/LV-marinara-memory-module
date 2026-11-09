@@ -10,7 +10,7 @@ import L from '../src/memory/core/ledger.cjs';
 import A from '../src/memory/core/aliases.cjs';
 const require = createRequire(import.meta.url);
 async function setup() {
-    const env = makeEnv(); await env.um.ensureChat('room');
+    const env = makeEnv(); env.f.chats.set('room', { id: 'room', name: 'room', metadata: {} }); await env.um.ensureChat('room');
     const handlers = new Map();
     registerMemoryRoutes({ add(m, p, h) { handlers.set(`${m} ${p}`, h); } }, env.svc);
     const call = (method, path, body, params = { id: 'room' }, userId = env.U) => handlers.get(`${method} memory-module/${path}`)({ userId, params, body, query: {} });
@@ -73,7 +73,7 @@ test('recent-life off preserves existing data, removes it from prompts, and reco
     assert.equal(um.loadLedger('room').routine[0].text, '보존할 식사');
 });
 
-test('room polls omit large threads/check histories, and deferred feature requests are refused', async () => {
+test('room polls omit large threads/check histories, and optional features are now supported', async () => {
     const { um, call } = await setup();
     const ledger = L.emptyLedger(); ledger.threads = [{ id: 'T1', status: 'open', kind: 'promise', clues: [], evidence: [{ text: 'x'.repeat(100000) }] }];
     um.saveLedger('room', ledger);
@@ -83,24 +83,25 @@ test('room polls omit large threads/check histories, and deferred feature reques
     assert.equal('threads' in info, false); assert.equal(info.threadStats.open, 1); assert.equal(info.attributionRuns, 1);
     assert.equal((await call('GET', 'chats/:id/threads')).threads[0].evidence[0].text.length, 100000);
     assert.equal((await call('GET', 'chats/:id/attribution-log')).runs.length, 1);
-    assert.deepEqual(info.features.map(f => f.key), ['recentLife', 'autoApply']);
-    await assert.rejects(call('POST', 'chats/:id/feature-mode', { key: 'places', mode: 'on' }), /1.3/);
+    assert.ok(info.features.some(f => f.key === 'places'));
+    assert.equal((await call('POST', 'chats/:id/feature-mode', { key: 'places', mode: 'on' })).enabled, true);
 });
 
-test('the patched UI renders supported settings without deferred controls or competing window handlers', () => {
+test('the patched UI renders supported settings with new controls and without competing window handlers', () => {
     const patched = require('./upstream-ui.cjs')();
     const source = patched.replace('export function mountMemory', 'function mountMemory').replace('  install();\n  host.onCleanup?.(cleanup);', `
         info = { features: [], scenes: {}, health: {} }; connections = []; room = 'room'; armed = 'fresh';
         return { settings: viewSettings(), home: viewHome(), nav: NAV, marks: markButtons('S1', {}), geometry: applyPanelGeometry.toString() };
     `);
     const out = vm.runInNewContext(source + '\nmountMemory({}, {});', {});
-    assert.ok(out.nav.some(([id]) => id === 'names')); assert.ok(!out.nav.some(([id]) => id === 'world'));
+    assert.ok(out.nav.some(([id]) => id === 'names')); assert.ok(out.nav.some(([id]) => id === 'world'));
     assert.match(out.settings, /대사 확인 방식/);
-    assert.doesNotMatch(out.settings, /data-act="(?:backupDownload|restoreApply|restoreUndo|resetPanel)"/);
-    assert.doesNotMatch(out.home, /data-act="backupDownload"/);
-    assert.equal(out.marks, '');
+    assert.match(out.settings, /data-act="backupDownload"/);
+    assert.doesNotMatch(out.settings, /data-act="resetPanel"/);
+    assert.match(out.home, /data-act="backupDownload"/);
+    assert.match(out.marks, /data-act=/);
     assert.match(out.geometry, /return; \/\/ Lumiverse owns/);
-    assert.doesNotMatch(patched, /^    (?:installSelectionButton|setupPanelMove)\(\);/m);
+    assert.doesNotMatch(patched, /^    (?:setupPanelMove)\(\);/m);
 });
 
 test('a source edit during speaker checking discards the model answer and stops later scene writes', async () => {

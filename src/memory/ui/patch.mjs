@@ -124,22 +124,17 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceAnchor(s, "      if (room === id) trError = error?.message || String(error);", "      if (room === id && !disposed && sequence === roomLoadSequence) trError = error?.message || String(error);", { name: 'translation error sequence' });
     s = replaceAnchor(s, '  let trMap = {};', "  let trMap = {};\n  let trRoom = '';", { name: 'translation room owner' });
     s = replaceAnchor(s, '  function render() {', "  function render() {\n    if (trRoom !== room) { trMap = {}; trPending = 0; trError = ''; trWorking = false; trRoom = room; }", { name: 'clear translations before room render' });
-    // 1.2 scope: deferred features have no visible controls or background requests.
-    s = replaceAnchor(s, "    ['world', '인물·장소', 'folder'],\n", "", { name: "world tab" });
-    s = replaceAnchor(s, "const needsConflicts = () => tab === 'facts';", "const needsConflicts = () => false;", { name: "conflict fetch" });
-    s = replaceAnchor(s, "      ${backupPaper({ armed, preview: restorePreview && restorePreview.room === room ? restorePreview : null, withVectors: backupVectors, running: running(), undo: info.restoreUndo })}\n", "", { name: "backup controls" });
-    s = replaceAnchor(s, "      ${selectedMemoriesHtml()}\n", "", { name: "selected controls" });
-    s = replaceAnchor(s, "    installSelectionButton();", "", { name: "selected selection listener" });
-    s = replaceAnchor(s, "  async function ensureRecallReport() {", "  async function ensureRecallReport() { return; // Deferred to 1.3.", { name: "recall reasons fetch" });
-    s = replaceAnchor(s, "${recallReasonsPaper(recallReportRoom === room ? recallReportData : null, info.recallPrefs, recallReportRoom !== room || (!recallReportData && !recallReportError) ? 'loading' : recallReportError)}", "", { name: "recall reasons controls" });
-    s = replaceAnchor(s, "api('GET', '/orphans').catch(() => null)", "Promise.resolve(null)", { name: "orphan fetch" });
+    // Lumiverse owns panel geometry; all memory features are available.
     s = replaceAnchor(s, "  function applyPanelGeometry() {", "  function applyPanelGeometry() { return; // Lumiverse owns the panel layout.", { name: "panel geometry owner" });
     s = replaceAnchor(s, "    setupPanelMove();", "", { name: "panel pointer owner" });
     s = replaceAnchor(s, "        <div class=\"resize-edge resize-r\" id=\"resizeRight\" aria-hidden=\"true\"></div><div class=\"resize-edge resize-b\" id=\"resizeBottom\" aria-hidden=\"true\"></div><div class=\"resize-grip\" id=\"resizeCorner\" title=\"끌어서 크기 바꾸기\" aria-hidden=\"true\"></div>", "", { name: "panel resize handles" });
-    s = replaceAnchor(s, '  function markButtons(id, prefs) {', "  function markButtons(id, prefs) { return ''; // Deferred to 1.3.", { name: 'recall preference buttons' });
     s = replaceAnchor(s, '<p class="hint">컴퓨터 화면에서는 위쪽 막대를 끌어 창을 옮기고, 오른쪽 아래 모서리·오른쪽·아래쪽 가장자리를 끌어 크기를 바꿀 수 있습니다. 위치와 크기는 이 기기에 기억됩니다.</p>', '<p class="hint">창은 화면 크기에 맞춰 표시됩니다. 휴대폰에서는 위쪽 닫기 버튼이나 뒤로가기로 닫을 수 있습니다.</p>', { name: 'panel layout help' });
     s = replaceAnchor(s, "        <div class=\"buttons\"><button data-act=\"resetPanel\">창 위치 초기화</button></div>\n", "", { name: "panel reset control" });
-    s = replaceAnchor(s, "<button data-act=\"backupDownload\">먼저 백업 내려받기</button> 를 누르면 지금 상태가 파일로 저장되고, 이 확인 상태는 그대로 유지됩니다. 꼭 받으셔야 하는 것은 아닙니다.", "이 작업은 되돌릴 수 없습니다.", { name: "rebuild backup link" });
+    s = replaceAnchor(s, "await api('DELETE', `/orphans/${encodeURIComponent(id)}`);", "await api('DELETE', `/orphans/${encodeURIComponent(id)}`, { confirm: true });", { name: 'confirm orphan deletion' });
+    s = replaceAnchor(s, "await api('POST', '/orphans/delete-all');", "await api('POST', '/orphans/delete-all', { confirm: true });", { name: 'confirm all orphan deletion' });
+    s = replaceRange(s, "      const range = sel.getRangeAt(0), element", "      const boxes = range.getClientRects()", "      const range = sel.getRangeAt(0);\n      const parts = LV.selectionParts(range);\n", 'Lumiverse message selection');
+    s = replaceAnchor(s, "padding:9px 13px;border:1px solid #d4c9bc", "min-height:44px;min-width:44px;padding:9px 13px;border:1px solid #d4c9bc", { name: 'selection touch size' });
+    s = replaceAnchor(s, "font:600 13px sans-serif;box-shadow", "font:600 15px sans-serif;box-shadow", { name: 'selection font size' });
     // return a handle instead of installing at evaluation time
     s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
     return s;

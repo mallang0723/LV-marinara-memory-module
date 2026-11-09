@@ -6,7 +6,7 @@ import { createHostAdapter } from './common/host-adapter.js';
 import { createRouter } from './common/router.js';
 import { createInjector } from './common/injector.js';
 import { registerHostRoutes } from './common/host-routes.js';
-import { createMemoryService } from './memory/service.js';
+import { createMemoryService, MEMORY_MARKER } from './memory/service.js';
 import { registerMemoryRoutes } from './memory/routes.js';
 
 export const MACRO_NAME = 'memory_ledger';   // the macro lexer only knows [a-zA-Z0-9_-] names (src/macros/MacroLexer.ts:136), so no {{기억}}
@@ -60,7 +60,13 @@ export function start(api, options = {}) {
                     name: MACRO_NAME, category: 'extension:anon_memory_lv', description: '기억 서재가 정리한 기억 본문(켜 둔 채팅만). 프리셋에 넣으면 자동 주입과 겹치지 않고 갱신된 본문으로 바뀝니다.', returnType: 'string', volatile: true, args: [],
                     // pull handler: only the in-memory cache, answered at once (the host waits 5 s at most, worker-host.ts:2915-2925);
                     // never updateMacroValue (that cache is global per macro name, worker-host.ts:3019, not per chat)
-                    handler: ctx => service.renderedCache.get(ctx?.chatId || ctx?.env?.chat?.id || '') || '',
+                    handler: ctx => {
+                        const id = ctx?.chatId || ctx?.env?.chat?.id;
+                        if (!id) return '';
+                        // Older hosts omit userId here. The user-scoped interceptor replaces this marker.
+                        if (!ctx?.userId) return `${MEMORY_MARKER}]\n[End of memory.]`;
+                        return service.users.get(ctx.userId)?.cachedRendered(id) || '';
+                    },
                 });
                 macroOn = true;
             } catch (e) { log(`registerMacro: ${e?.message || e}`); }

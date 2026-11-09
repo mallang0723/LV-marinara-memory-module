@@ -5,17 +5,26 @@ import A from './core/aliases.cjs';
 import Addr from './core/address.generated.cjs';
 import S from './core/scenes.generated.cjs';
 import F from './core/features.cjs';
+import St from './core/state.cjs';
+import Pl from './core/places.cjs';
+import Ks from './core/keepsakes.cjs';
+import Cf from './core/conflicts.generated.cjs';
+import Tk from './core/trackers.cjs';
+import Rp from './core/reasons.cjs';
 const books = new AsyncLocalStorage();
 S.setAddressProvider(() => {
-    const book = books.getStore()?.();
+    const book = books.getStore()?.address();
     return book ? Addr.termMap(book) : null;
 });
-export const FEATURE_REGISTRY = Object.fromEntries(['recentLife', 'autoApply'].map(key => [key, F.FEATURES[key]]));
-FEATURE_REGISTRY.autoApply = { ...FEATURE_REGISTRY.autoApply, description: '직접 고친 대사에서 배운 호칭·다른 이름 제안을 자동으로 적용합니다. 적용 기록에서 되돌릴 수 있습니다. 같은 사람일 수 있다는 이름 합치기는 항상 직접 확인합니다.' };
+S.setStateProvider(() => books.getStore()?.placeKey() || null);
+export const FEATURE_REGISTRY = F.FEATURES;
 export function createRoomData({ store, userId, keyFor, persist, settings }) {
     const cache = new Map();
     const loading = new Map();
     const definitions = {
+        state: [1, St.emptyState], places: [1, Pl.emptyPlaces], keepsakes: [1, Ks.emptyKeepsakes],
+        conflicts: [1, Cf.emptyConflicts], trackers: [1, Tk.emptyTrackers],
+        'recall-prefs': [1, Rp.emptyPrefs], selected: [1, () => ({ version: 1, items: [] })],
         names: [A.NAMES_VERSION, A.emptyTable],
         address: [Addr.ADDRESS_VERSION, Addr.emptyBook],
         'attribution-log': [1, () => ({ version: 1, runs: [] })],
@@ -42,7 +51,7 @@ export function createRoomData({ store, userId, keyFor, persist, settings }) {
         if (name === 'names') Object.assign(cache.get(id).names, data);
         else cache.get(id)[name] = data;
     }
-    function using(id, fn) { return books.run(() => get(id, 'address'), () => A.using(get(id, 'names'), fn)); }
+    function using(id, fn) { return books.run({ address: () => get(id, 'address'), placeKey: () => !F.resolve(settings(), id, 'characterState').enabled ? null : name => F.resolve(settings(), id, 'places').enabled ? Pl.resolve(get(id, 'places'), name)?.id || Pl.keyOf(name) : Pl.keyOf(name) }, () => A.using(get(id, 'names'), fn)); }
     function seed(id, names) {
         const table = structuredClone(get(id, 'names'));
         if (A.seed(table, names)) save(id, 'names', table);
@@ -60,5 +69,5 @@ export function createRoomData({ store, userId, keyFor, persist, settings }) {
     }
     const featureView = id => F.view(settings(), id, FEATURE_REGISTRY);
     const routineEnabled = id => F.resolve(settings(), id, 'recentLife').enabled;
-    return { load, get, save, using, seed, refreshAddress, learnEdit, featureView, routineEnabled, names: Object.keys(definitions) };
+    return { invalidate: id => cache.delete(id), load, get, save, using, seed, refreshAddress, learnEdit, featureView, routineEnabled, names: Object.keys(definitions) };
 }

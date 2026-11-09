@@ -109,7 +109,7 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
     await open();
     for (const ui of ['dark', 'light']) {
         await themed(ui);
-        for (const t of ['home', 'scenes', 'search', 'facts', 'ledger', 'life', 'names', 'inject', 'settings']) {
+        for (const t of ['home', 'scenes', 'search', 'facts', 'ledger', 'life', 'names', 'world', 'inject', 'settings']) {
             if (!(await ev('const b = root.querySelector(arg); if (!b) return false; b.click(); return true;', `button[data-tab="${t}"]`))) { failures.push(`${vp.width}px missing tab ${t}`); continue; }
             await page.waitForTimeout(500);
             await check(`${ui} ${t}`);

@@ -26,19 +26,27 @@ Used files (byte-identical MIT originals from the commit above; SHA-256 checked 
   memory-module/lib/names.cjs  sha256 1cc982d12c5ff7be450949da6720a11e3ea84ece8ec3e944a58bdb4f7a5054cf
   memory-module/lib/address.cjs  sha256 47e8dea319451bec189068cfdbf5c70cf7697aecc4dbcfa1c7a4a5af30122914
   memory-module/lib/features.cjs  sha256 878764c5f716f4344a01306e42c84fc2bb09bc6c4749bb723495303cee201d47
+  memory-module/lib/backup.cjs  sha256 30ac8ced7aa4660fb1895a6170a0a406cfec44845d6c43ebf1a403a2d80d9aee
+  memory-module/lib/conflicts.cjs  sha256 3201188ff2c2204d17edeff092b4a8dba7a6e4d06adf804c39ae48651c7d8e5d
+  memory-module/lib/reasons.cjs  sha256 25c2c7aa170414f9916ef175f9dbd9d3ee67cd8d867e8ed4148c4b29f968b585
+  memory-module/lib/selected.cjs  sha256 2b1892128785279e49a310c372a6635b2202f76ad591d8ffaee17ca5f3005747
+  memory-module/lib/trackers.cjs  sha256 f9853048135769423ba88827d098e8768f8c11ab2d4b04d6abf21c400d3abbea
   extension/runtime.js  sha256 47bfacd40f890bae4dd4f0df0abf736abe63a8cedce5a08ed68ac0a5f0f6b2b0
   extension/ui.css  sha256 debd8a8a99fbbe935186aa06165ab021708283fc2e88a5924f6920bd0d7120f6
   extension/theme.css  sha256 bb90898cb08dad340eb0c1381fd0482dc9196f127d70586500a85a7983446310
-Generated scene/recall/names/address modules use checked import/field-limit patches; originals are never edited.
+Generated scene/recall/names/address/conflicts/backup modules use checked import/field-limit patches; originals are never edited.
 Tests under tests/upstream/ preserve the upstream core tests (import paths adjusted); test-compact-date.cjs omits
 Marinara tracker assertions and test-speakers.cjs omits its server-patch assertion. The pure emotional-continuity tests
 are retained; its staged-rebuild case is adapted in tests/memory-sync.test.js.
 tests/upstream-*.test.js adapt the language, translation fit/recovery/split, edit-during-read and library retry UI tests
 to the Lumiverse service, storage, host adapter and patched UI. tests/upstream-harness.js bridges the upstream fixtures
-to the fake Spindle host. CHANGELOG.md and REPORT-1.2.0.md list excluded Marinara-only and deferred feature tests.
+to the fake Spindle host. CHANGELOG.md and REPORT-1.3.0.md describe the implemented contracts and excluded Marinara-only tests.
 New 0.12.6 suites include pure attribution/alias/bilingual/knowledge/world cores and adapter-based name/alias
 editing, attribution modes/concurrent edits and knowledge routes. UI cases exercise the patched Lumiverse screen.
-The optional state/place/keepsake core tests do not imply those UI features are enabled.
+Version 1.3 adds the optional world/trackers, conflicts, recall preferences, selection and backup/restore routes.
+Pure conflicts, trackers, auto-apply, recall-reasons and selected tests retain upstream assertions;
+the selection UI case uses the patched runtime and Lumiverse DOM adapter. release-1.3.test.js exercises
+the per-user route, branch, rollback, concurrency, recovery and deletion contracts.
 tests/memory-branch.test.js ports the original's test-branches.cjs. tests/fake-model.js adapts the answer scripts (ledgerReply,
 sceneReply and the prompt recognition) of the original's tests/fake-llm.mjs.
 memory-module/lib/service.cjs (Marinara engine glue) is NOT copied: src/memory/service.js is a rewrite for Lumiverse
