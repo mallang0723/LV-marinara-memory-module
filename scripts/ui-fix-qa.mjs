@@ -7,6 +7,7 @@
 //  2. at 1280x800 and 390x844: the bottom room switch label is not clipped, and every checkbox/switch (이름 정리·설정 tabs too)
 //     has a >= 44px effective touch target (its label counts); no sideways overflow.
 // PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium node scripts/ui-fix-qa.mjs   (exit 1 on failure)
+import { checkFeatureScreens, assertPopulatedTab } from '../qa/feature-checks.mjs';
 import { createQaServer } from './qa-server.mjs';
 const pw = await import(process.env.PLAYWRIGHT_MODULE || 'playwright').catch(e => { console.error('Playwright not found (set PLAYWRIGHT_MODULE):', e.message); process.exit(2); });
 const ORIGIN = 'http://127.0.0.1';
@@ -45,7 +46,12 @@ function inPage({ phase }) {
         out.roomSwitch.inSidebar = r.left >= sr.left - 1 && r.right <= sr.right + 1;
     }
     out.hscroll = document.documentElement.scrollWidth > innerWidth + 1;
-    out.panelOverflow = [...panel.querySelectorAll('*')].filter(e => !e.closest('svg') && shown(e)).filter(e => { const r = e.getBoundingClientRect(); return r.right > innerWidth + 1 || r.left < -1; }).length;
+    out.overflowElements = [...panel.querySelectorAll('*')].filter(e => !e.closest('svg') && shown(e)).filter(e => { const r = e.getBoundingClientRect(); return r.right > innerWidth + 1 || r.left < -1; }).map(e => { const r = e.getBoundingClientRect(); return { element: chain(e), left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) }; });
+    out.panelOverflow = out.overflowElements.length;
+    const themeToggle = root.querySelector('#themeToggle');
+    out.themeContrast = themeToggle && shown(themeToggle) ? ratio(themeToggle) : null;
+    const file = root.querySelector('#restoreFile');
+    out.fileHeight = file && shown(file) ? file.getBoundingClientRect().height : null;
     return out;
 }
 
@@ -86,7 +92,9 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
         if (m.low.length) failures.push(`${where}: contrast<4.5 x${m.low.length} (${m.low.slice(0, 6).map(x => x.n + '=' + x.r).join(' | ')})`);
         if (m.small.length) failures.push(`${where}: touch<44 x${m.small.length} (${m.small.slice(0, 4).map(x => `${x.n} ${x.w}x${x.h}`).join(' | ')})`);
         if (m.roomSwitch && (m.roomSwitch.clipped || m.roomSwitch.ellipsis || !m.roomSwitch.inSidebar)) failures.push(`${where}: room switch label clipped ${JSON.stringify(m.roomSwitch)}`);
-        if (m.hscroll || m.panelOverflow) failures.push(`${where}: horizontal overflow x${m.panelOverflow}`);
+        if (m.themeContrast !== null && m.themeContrast < 4.5) failures.push(`${where}: theme icon contrast ${m.themeContrast}`);
+        if (m.fileHeight !== null && m.fileHeight < 43.5) failures.push(`${where}: file input height ${m.fileHeight}`);
+        if (m.hscroll || m.panelOverflow) failures.push(`${where}: horizontal overflow x${m.panelOverflow}: ${JSON.stringify(m.overflowElements)}`);
     };
     const themed = async ui => { if ((await ev('return root.host.getAttribute("data-theme")')) !== ui) { await ev('root.querySelector("#themeToggle").click()'); await page.waitForTimeout(200); } };
     await open();
@@ -112,6 +120,7 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
         for (const t of ['home', 'scenes', 'search', 'facts', 'ledger', 'life', 'names', 'world', 'inject', 'settings']) {
             if (!(await ev('const b = root.querySelector(arg); if (!b) return false; b.click(); return true;', `button[data-tab="${t}"]`))) { failures.push(`${vp.width}px missing tab ${t}`); continue; }
             await page.waitForTimeout(500);
+            await assertPopulatedTab(page, t);
             await check(`${ui} ${t}`);
             if (t === 'facts') {
                 const chips = await ev('return { known: root.querySelectorAll("#content .kchip.is-known").length, unknown: root.querySelectorAll("#content .kchip.is-unknown").length, facts: root.querySelectorAll("#content .fact-row").length }');
@@ -119,6 +128,7 @@ for (const vp of [{ width: 1280, height: 800, touch: false }, { width: 390, heig
                 report.push(`${vp.width}px ${ui} facts: ${chips.facts} facts, ${chips.known} 아는 사람 chips, ${chips.unknown} 모르는 사람 chips`);
             }
         }
+        await checkFeatureScreens(page, label => check(`${ui} ${label}`));
     }
     await context.close();
 }

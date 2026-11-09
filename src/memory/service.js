@@ -327,6 +327,13 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             persist(keys.settings, next);
             settingsCache = next;
         }
+        // Merge into the latest shared settings synchronously, before yielding to storage.
+        async function saveRoomSettings(id, entry) {
+            const next = { ...settings(), chats: { ...settings().chats } };
+            if (entry === undefined) delete next.chats[id]; else next.chats[id] = entry;
+            saveSettings(next);
+            await store.flushKey(userId, keys.settings);
+        }
         async function ensureChat(chatId) {
             await ready();
             safeChatId(chatId);
@@ -1324,8 +1331,8 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
          * The memory text for the next reply, in the language set for it. Lines not translated yet stay as they are; the
          * translation fills in before the reply when it can and in the background otherwise.
          */
-        function renderLedger(chatId) {
-          const source = renderMemorySource(chatId);
+        function renderLedger(chatId, { selected = true } = {}) {
+          const source = renderMemorySource(chatId, T.MEMORY_MAX_CHARS, null, selected);
           if (!source) return '';
           const target = memoryLanguage(chatId);
           const lookup = translationLookup(chatId, target);
@@ -1338,7 +1345,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             const fixed = memoryHeader(style).length + memoryFooter(style).length + 40;
             const grows = (text.length - fixed) / Math.max(1, source.length - fixed);
             if (grows > 1) {
-              const smaller = renderMemorySource(chatId, Math.floor(fixed + ((T.MEMORY_MAX_CHARS - fixed) / grows) * 0.97));
+              const smaller = renderMemorySource(chatId, Math.floor(fixed + ((T.MEMORY_MAX_CHARS - fixed) / grows) * 0.97), null, selected);
               if (smaller) text = TR.translateText(smaller, target, lookup).text;
             }
           }
@@ -1350,10 +1357,10 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
           );
         }
 
-        function renderMemorySource(chatId, maxChars = T.MEMORY_MAX_CHARS, trace = null) {
-            return roomData.using(chatId, () => renderMemorySourceInRoom(chatId, maxChars, trace));
+        function renderMemorySource(chatId, maxChars = T.MEMORY_MAX_CHARS, trace = null, selected = true) {
+            return roomData.using(chatId, () => renderMemorySourceInRoom(chatId, maxChars, trace, selected));
         }
-        function renderMemorySourceInRoom(chatId, maxChars, trace) {
+        function renderMemorySourceInRoom(chatId, maxChars, trace, selected) {
             if (!chatEnabled(chatId)) return '';
             const ledger = ledgerForReply(chatId);
             const scenes = scenesForReply(chatId);
@@ -1397,7 +1404,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                 const raw = room > 300 ? fitBlock(R.renderRaw((recall?.raw || []).filter(m => !scenes.scenes.some(sc => prefs.hidden.has(sc.id) && m.number >= sc.start && m.number <= sc.end)).slice(0, amount.raw)), room) : '';
                 if (raw) { story.push(raw); room -= raw.length + 2; if (trace) trace.raw = (recall?.raw || []).filter(m => !scenes.scenes.some(sc => prefs.hidden.has(sc.id) && m.number >= sc.start && m.number <= sc.end)).slice(0, amount.raw); }
             }
-            const chosen = room > 300 ? Selected.render(api.features.selectedViews.get(chatId) || [], query, Math.min(room, 2500), trace ? (trace.selected = []) : null) : '';
+            const chosen = selected && room > 300 ? Selected.render(api.features.selectedViews.get(chatId) || [], query, Math.min(room, 2500), trace ? (trace.selected = []) : null) : '';
             if (chosen) story.push(`[직접 선택해 정리한 기억]\n${chosen}`);
             const parts = [...story, ...fixed].filter(Boolean);
             return parts.length ? `${header}\n\n${parts.join('\n\n')}\n\n${footer}` : '';
@@ -1406,7 +1413,8 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
         async function rendered(chatId) {
             await ensureChat(chatId);
             const text = sanitize(renderLedger(chatId), T.MAX_RENDER_CHARS);
-            renderedCache.set(`${userId}\u0000${chatId}`, text);
+            // A fallback cannot revalidate the selected source messages. Cache only ordinary memory.
+            renderedCache.set(`${userId}\u0000${chatId}`, sanitize(renderLedger(chatId, { selected: false }), T.MAX_RENDER_CHARS));
             return text;
         }
 
@@ -1612,10 +1620,7 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
                     await flush();
                 } catch (error) {
                     for (const key of files) await store.remove(userId, key);
-                    const next = { ...settings(), chats: { ...settings().chats } };
-                    delete next.chats[targetId];
-                    await store.replaceRaw(userId, keys.settings, JSON.stringify(next));
-                    settingsCache = next;
+                    await saveRoomSettings(targetId, undefined);
                     invalidateRoom(targetId);
                     throw error;
                 }
@@ -1657,7 +1662,8 @@ export function createMemoryService({ host, store, log = () => {}, now = () => D
             cachedRendered: id => renderedCache.get(`${userId}\u0000${id}`),
             invalidateRoom, holdRoom, replaceSettingsCache: next => { settingsCache = next; }, recallReport, recallCandidates,
             roomData, organizeFor, sceneOptions, reviewAttributions: (...args) => reviewAttributions(api, ...args),
-            userId, ready, ensureChat, ensureVectors, settings, saveSettings, chatEnabled, setChatEnabled, loadLedger, saveLedger, loadScenes, saveScenes,
+            scenesReadable: id => !store.blocked(userId, keys.scenes(id)),
+            userId, ready, saveRoomSettings, ensureChat, ensureVectors, settings, saveSettings, chatEnabled, setChatEnabled, loadLedger, saveLedger, loadScenes, saveScenes,
             loadVectors, embeddingMode, embeddingSource, embeddingModel, embedTexts, indexScenes, chatMessages, settled, chatWindow, chatWindowInfo, chatCast,
             memoryModel, askModel, enqueue, jobStatus, jobs, sceneJobs, trials, processChat, processScenes, rebuildChapters, tidyChat, startTrial,
             renderLedger, rendered, syncBeforeReply, recallBeforeReply, computeRecall, health, storyToday, storyNow, windows, recalls, replyViews,

@@ -34,12 +34,32 @@ export function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setT
     const pending = new Map();
     const active = new Map();
     const failures = new Map();
+    const tails = new Map();
+    function serial(k, fn) {
+        const job = (tails.get(k) || Promise.resolve()).catch(() => {}).then(fn);
+        tails.set(k, job);
+        job.finally(() => { if (tails.get(k) === job) tails.delete(k); }).catch(() => {});
+        return job;
+    }
+    async function flushKey(userId, key) {
+        const k = id(need(userId), key);
+        while (pending.has(k) || tails.has(k)) {
+            const p = pending.get(k);
+            if (p) { if (p.timer) clearTimer(p.timer); p._run(); }
+            await tails.get(k);
+        }
+        if (failures.has(k)) throw failures.get(k);
+    }
     const stamp = () => now().toISOString().replace(/[:.]/g, '-');
 
     async function readText(userId, key) {
         need(userId);
         const p = pending.get(id(userId, key));
         if (p) return typeof p.value === 'string' ? p.value : JSON.stringify(p.value);
+        return readStoredText(userId, key);
+    }
+    async function readStoredText(userId, key) {
+        need(userId);
         if (!(await api.userStorage.exists(key, userId))) return null;
         return api.userStorage.read(key, userId);
     }
@@ -116,7 +136,7 @@ export function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setT
         const perform = async () => {
             pending.delete(k);
             p.timer = null;
-            try { await writeNow(userId, key, p.value); failures.delete(k); for (const w of p.waiters) w.resolve(true); } catch (e) { failures.set(k, wrapHostError(e)); for (const w of p.waiters) w.reject(wrapHostError(e)); }
+            try { await serial(k, () => writeNow(userId, key, p.value)); failures.delete(k); for (const w of p.waiters) w.resolve(true); } catch (e) { failures.set(k, wrapHostError(e)); for (const w of p.waiters) w.reject(wrapHostError(e)); }
         };
         const run = () => { const job = perform(); active.set(job, userId); job.finally(() => active.delete(job)); return job; };
         if (immediate || debounceMs <= 0) void run(); else p.timer = setTimer(run, debounceMs);
@@ -149,16 +169,18 @@ export function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setT
     // Used only after a complete durable safety copy. Unlike remove(), errors must reach rollback.
     async function replaceRaw(userId, key, text) {
         need(userId);
-        if (pending.has(id(userId, key))) throw Error('저장 중인 파일은 교체할 수 없습니다.');
-        if (text == null) { if (await api.userStorage.exists(key, userId)) await api.userStorage.delete(key, userId); }
-        else await api.userStorage.write(key, text, userId);
-        broken.delete(id(userId, key)); failures.delete(id(userId, key));
+        await flushKey(userId, key);
+        return serial(id(userId, key), async () => {
+            if (text == null) { if (await api.userStorage.exists(key, userId)) await api.userStorage.delete(key, userId); }
+            else await api.userStorage.write(key, text, userId);
+            broken.delete(id(userId, key)); failures.delete(id(userId, key));
+        });
     }
     const list = async (userId, prefix) => api.userStorage.list(prefix, need(userId));
     const writeText = (userId, key, text) => setJson(userId, key, String(text), { immediate: true });
 
     return {
-        replaceRaw, getJson, setJson, readText, writeText, remove, list, flush, supported, markBroken, blocked, guard,
+        replaceRaw, flushKey, getJson, setJson, readText, readStoredText, writeText, remove, list, flush, supported, markBroken, blocked, guard,
         brokenList: userId => [...broken.entries()].filter(([k]) => k.startsWith(`${userId}\u0000`)).map(([, v]) => v),
         hasPending: () => pending.size > 0,
     };

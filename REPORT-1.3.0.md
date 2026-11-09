@@ -89,3 +89,55 @@ REPORT-1.2.0의 20 SKIP 계약을 모두 구현하고 해당 화면을 열었습
 4. 실제 모델 품질·큰 방의 저장 지연·기기별 터치/선택 동작은 가짜 호스트 시험만으로 확인할 수 없습니다. 새 상태/장소/물건 기록은 스위치를 켠 뒤 새로 정리한 장면부터 채워집니다.
 
 금지된 Lumiverse-ko 경로, context 텍스트, /srv/devwork에 접근하지 않았습니다. 다른 이식 저장소 및 ~/Lumiverse를 수정하지 않았고 금지 포트/호스트, 실모델, 비밀정보, 전역 설치, 커밋을 사용하지 않았습니다.
+
+## fix1 — 2026-11-09
+
+지시서 `BRIEF-lv-1.3.0-fix1.md`와 허니 검수 판정을 읽고 `feature/1.3.0` / `f66a7e0` 위에서 수정했습니다. 변경은 **스테이징·커밋하지 않았습니다**. SHA 고정 원본 22개는 수정하지 않았으며, 코어 동작 변경은 기존 scenes-import 방식의 생성 패치로만 적용했습니다. `backup.settings` whitelist/type validation은 구현하지 않았습니다. 새로운 사용량 제한도 추가하지 않았습니다.
+
+| 항목 | 변경 및 위치 | 회귀 검증 |
+|---|---|---|
+| F1 | `src/common/store.js:36`에서 사용자+키별 쓰기를 직렬화하고 `flushKey`로 debounce 대기와 실행 중인 쓰기를 모두 기다립니다. `replaceRaw`도 이를 거칩니다. `src/memory/service.js:331`의 `saveRoomSettings`는 최신 전역 설정에 대상 방 항목만 동기적으로 합친 뒤 저장·flush하여 다른 방의 저장과 cache를 덮어쓰지 않습니다. 복원/undo/고아 삭제(`src/memory/room-backup.js:42`, `:150`)와 분기 실패 정리(`src/memory/service.js:1623`)를 연결했습니다. rollback 쓰기가 오류를 보고해도 실제 저장된 파일 바이트와 방 설정이 이전 상태와 같으면 복구 실패라고 하지 않습니다(`src/memory/room-backup.js:47`, pending cache가 아닌 저장소 원문 재확인). | `tests/fix1.test.js:29`: apply/undo/orphan 각각 debounce 500ms, 다른 방 pending 저장, 실제 쓰기 중 20ms 지연과 추가 저장까지 겹쳐 디스크/cache와 고아 설정 제거 확인. `:58` raw 교체의 대기, `:195` 쓰기는 완료됐지만 acknowledgement가 실패한 경우. 기존 `tests/release-1.3.test.js:277`의 rollback 실패 시험은 실제 바이트가 바뀐 뒤 복구도 실패하도록 보강했습니다. |
+| F2 | `src/memory/room-features.js:20`, `:28`: scenes가 null이거나 파일 키가 blocked이면 파생 자료 refresh/save를 하지 않습니다. 읽지 못한 장면을 emptyStore로 간주해 기존 인물/장소/물건/충돌/트래커/회상 표시를 재기록하지 않습니다. | `tests/fix1.test.js:67`: missing/broken/지원하지 않는 버전/일시적 read 오류 각각에서 world/trackers/conflicts GET 전후 저장소 동일. `:85` scenes 없는 conflicts 백업 복원 후 GET, `:205` 기존 cache는 있지만 키가 blocked인 경우. |
+| F3 | `src/memory/core-patch.mjs:58`에서 생성 conflicts 코어만 패치합니다. MAX_RECORDS의 제거 후보는 both/dismissed뿐이며 keepA/keepB는 150건을 넘어도 보존합니다. 사실이 일시적으로 없어진 경우에도 판단을 유지합니다. 분기에는 공통 사실의 판단만 전달합니다(`src/memory/room-features.js:96`). 원본 MAX_RECORDS/MAX_OPEN 숫자는 그대로입니다. | `tests/fix1.test.js:105`: 170건 판단 → fold/save/restart → 기각 사실 및 병합 후속 사실 제외. `:117`: both/dismissed만 제거. `tests/upstream/test-conflicts-core.cjs:88`, `:141`의 생성 코어 기대값을 새 보존 계약/omittedAuto 응답에 맞췄습니다. |
+| F4 | `src/memory/service.js:1334`, `:1413`: 정상 렌더에는 검증한 선택 기억을 포함하지만 cachedRendered에는 선택 기억을 제외한 별도 렌더를 저장합니다. 시간 초과 fallback은 원문을 다시 확인할 수 없으므로 선택 기억을 내보내지 않습니다. 언어 변환 뒤 길이를 다시 맞추는 경로에도 같은 옵션을 전달합니다. | `tests/fix1.test.js:159`: 선택 기억이 정상 렌더에 들어간 것을 확인한 다음 원문 편집/삭제, sync가 완료되지 않아 실제 budget timeout 발생, fallback에서 선택 전용 내용이 빠지는지 확인. |
+| F5 | `src/memory/core-patch.mjs:37`: 인물/장소/물건의 user 잠금·custom·사용자 별칭이 있는 카드는 cap 밖에서도 보존합니다. 직접 추가한 카드와 트래커에는 개수 거절을 적용하지 않고, reasons의 2000개 slice도 생성물에서만 제거했습니다(`:52`, `:55`). 자동 카드의 기존 60/80/60 및 열린 충돌 30 한도 때문에 빠진 개수는 omittedAuto로 전달합니다(`src/memory/room-features.js:75`, `src/memory/core-patch.mjs:62`). UI에 “자동 항목 …개는 표시 한도로 생략했습니다. 직접 고친 기록과 판단은 보존합니다.”를 표시합니다(`src/memory/ui/patch.mjs:138`). | `tests/fix1.test.js:125`: 각 cap보다 5개 많은 수동 카드 보존, 오래된 잠금 카드 보존과 자동 생략 4건. `:143`: 트래커 35개 수정/분기, 중요 2100개와 빼기 2100개 정규화/병합. `:153`: 충돌 36건 중 열린 30건+생략 6건. `:223`: 실제 생성 UI 함수의 한국어 개수 안내. |
+| F6 | `src/memory/room-backup.js:87`: 두 번째 복원 전에 기존 snapshot.json 원문을 snapshot.prev.json에 쓰고 재조회 검증합니다. undo는 이전 사본을 승격하여 연속 두 단계까지 되돌릴 수 있습니다(`:110`). 고아 삭제 시 두 사본을 정리합니다. preview.removes는 파싱 성공 여부와 무관하게 실제 기존 파일 목록에서 산출하여 lang/vectors/손상 파일도 포함합니다(`:77`). 화면에서도 목록을 표시합니다(`src/memory/ui/patch.mjs:146`). | `tests/fix1.test.js:172`: 연속 복원 두 번과 undo 두 번 후 원문 바이트 동일. `:185`: lang/vectors/selected 손상 파일을 preview와 실제 제거 양쪽에서 확인. `:214`: prev 사본 검증 실패 시 방 파일 변경 없음. `:223`: UI의 lang 포함 삭제 목록. |
+| F7 | QA의 `chat-none`은 실제 fake host에 없었습니다. 1.3의 방 접근 검사가 이를 거절 → drawer assertion 실패 → `chat-a` 복귀가 실행되지 않음 → 빈 화면/없는 setRecall → chat-a 명령을 다른 방 문맥에서 무시하는 연쇄였습니다. `qa/backend-env.mjs:22`에 실제 빈 방을 만들고 `scripts/browser-qa.mjs:156`에서 finally로 원래 방을 복구합니다. seed 실패를 즉시 오류로 처리하고 충돌 쌍도 만듭니다(`qa/backend-env.mjs:40`, `:55`). `qa/feature-checks.mjs:9`는 빈 화면을 통과시키지 않고, `:15`에서 선택 기억 원문 펼치기/트래커/충돌/회상 중요·빼기/고아/백업 파일 업로드·미리보기·확인·적용·undo를 양 테마에서 열어 측정합니다. 양 QA에 연결했습니다(`scripts/browser-qa.mjs:181`, `scripts/ui-fix-qa.mjs:123`). | `tests/fix1.test.js:236`: fake backend에서 빈 방 접근·disabled, 상태/장소/물건/트래커/충돌/선택 기억/회상 표시/고아/백업의 실제 데이터 및 chat-a command event 확인. 브라우저 실행은 아래 명령으로 찹쌀이 수행합니다. |
+
+F7의 CSS는 `src/overrides.memory.css:73`에만 추가했습니다. 데스크톱 `.file-shelf`의 비수축 가로 배열을 wrap으로 바꾸고 `.file-index`와 `.file-foot`/`.file-range`의 긴 시간·메시지 범위를 줄바꿈합니다. 인접 폼의 min-width도 줄어들 수 있게 했습니다. 파일 input과 `::file-selector-button`은 44px 이상, theme toggle은 양 테마에서 명시적인 `#151515` 글자/아이콘과 `#ece8df` 배경 쌍을 사용합니다.
+
+`git diff 72683d8 f66a7e0 -- src/overrides.memory.css src/memory/ui/ui.orig.css src/memory/ui/theme.orig.css`는 차이가 없었습니다. 즉 가로 shelf/nowrap 규칙은 1.2에도 있었습니다. **72683d8에서도 동일한 x2 overflow가 실제 측정됐는지는 아직 확인하지 못했습니다.** 이전 기록 `/tmp/memory-library-lv-qa/qa-report.json`의 8 variants / 336 views / 24 failures는 빈 방으로 이어진 세 오류를 확인해 주지만, 문제의 두 overflowing element 이름을 제공하지 않습니다. 이 환경에서는 Chromium을 다시 실행하지 않았으며, 특정 요소의 실측 원인이나 수정 후 UI 통과를 주장하지 않습니다. 새 ui-fix harness는 실패 시 요소/상위 selector와 left/right/width를 함께 출력하고 theme icon 대비와 파일 input 높이도 검사합니다(`scripts/ui-fix-qa.mjs:49`). 아래 baseline 비교까지 실행하면 1.2의 실측 여부를 확정할 수 있습니다.
+
+검증 결과:
+
+- `npm test`: **74개 파일 / 통과 74 / 실패·취소·skip 0**. Node 26의 기본 격리 집계는 파일 단위입니다. 동일 74파일을 개별 Node 프로세스로도 실행하여 **node:test 사례 511개 + standalone assertion script 8개 = 519개 검증 단위**, 모두 exit 0임을 확인했습니다. 기존 494개 대비 **25개 추가**이며 신규 사례는 `tests/fix1.test.js`에 있습니다. 집계 자료: `/tmp/lv-fix1-counts.json`, 기본 실행 로그: `/tmp/lv-fix1-all.log`.
+- `npm run verify:original`: **`{"ok":true,"problems":0}`**. 원본 코어·UI 및 고정 숫자는 바이트 그대로입니다.
+- `BUN_BIN=/home/syhekate/.bun/bin/bun npm run build`: **성공**, backend 33 modules / frontend 10 modules. 두 dist 번들도 재생성했습니다.
+- `git diff --check`: **통과**.
+- 새 browser/ui-fix harness는 문법 검사와 fake backend seed/응답 검사를 수행했습니다. **브라우저 실측은 미실행**입니다.
+
+찹쌀 실행 명령(현재 수정본, 서버를 띄우거나 실행 중 서버에 연결하지 않고 in-process fake backend 사용):
+
+```bash
+cd /home/syhekate/dev/lv-memory-library
+BUN_BIN=/home/syhekate/.bun/bin/bun npm run build
+mkdir -p /tmp/lv-fix1-ui /tmp/lv-fix1-browser
+PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium QA_SHOT_DIR=/tmp/lv-fix1-ui npm run qa:ui-fix
+QA_ONLY=chromium PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium QA_SHOT_DIR=/tmp/lv-fix1-browser npm run qa:browser
+```
+
+browser QA는 Chromium 4개 화면 크기 × secure/insecure = 8 variants, 호스트 dark/light × 서재 dark/light를 검사합니다. 새 기능이 없는 빈 화면은 실패합니다. 결과 JSON은 `/tmp/lv-fix1-browser/qa-report.json`, 화면은 각 QA_SHOT_DIR에 저장합니다. ui-fix는 1280×800 / 390×844 양 테마의 populated screen과 새 기능을 측정합니다. 백업 적용·undo와 중요/빼기는 fake storage에서만 실행합니다.
+
+72683d8의 기존 ui-fix 실측 비교(현재 checkout을 바꾸지 않는 임시 archive):
+
+```bash
+cd /home/syhekate/dev/lv-memory-library
+lv_baseline_dir=$(mktemp -d /tmp/lv-72683d8.XXXXXX)
+git archive 72683d8 | tar -x -C "$lv_baseline_dir"
+cd "$lv_baseline_dir"
+BUN_BIN=/home/syhekate/.bun/bin/bun npm run build
+mkdir -p /tmp/lv-72683d8-ui
+PLAYWRIGHT_MODULE=/home/syhekate/dev/marinara-sojaefactory/node_modules/playwright/index.mjs CHROMIUM_BIN=/usr/bin/chromium QA_SHOT_DIR=/tmp/lv-72683d8-ui npm run qa:ui-fix
+```
+
+잔여 범위는 브라우저 실측과 실호스트 QA입니다. 안전 사본은 현재/직전 두 단계이며, 다중 파일 교체 도중 프로세스가 종료됐을 때 자동 복구하지 않는 기존 제한은 같습니다. 금지 경로·context 출력·포트·호스트·실모델·비밀정보·전역 설치·서버 조작·pkill·커밋·push를 사용하지 않았습니다.

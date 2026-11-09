@@ -10,6 +10,7 @@ export const BACKUP_ROUTES = [
 export function createRoomBackup({ um, store, host, version }) {
     const user = um.userId;
     const path = (id, key) => `memory/chats/${id}${B.FILES[key]}`;
+    const previousPath = id => `memory/restore-undo/${id}/snapshot.prev.json`;
     const safetyPath = id => `memory/restore-undo/${id}/snapshot.json`;
     async function snapshot(id) {
         await um.flush();
@@ -38,13 +39,17 @@ export function createRoomBackup({ um, store, host, version }) {
             try { await store.replaceRaw(user, path(id, key), snap.texts[key] ?? null); } catch (e) { failed ||= e; }
         }
         try {
-            const next = { ...um.settings(), chats: { ...um.settings().chats } };
-            if (snap.hadSettings) next.chats[id] = snap.settings; else delete next.chats[id];
-            await store.replaceRaw(user, um.keys.settings, JSON.stringify(next));
-            um.replaceSettingsCache(next);
+            await um.saveRoomSettings(id, snap.hadSettings ? snap.settings : undefined);
         } catch (e) { failed ||= e; }
         um.invalidateRoom(id);
         if (failed) throw failed;
+    }
+    async function matchesSnapshot(id, snap) {
+        try {
+            for (const key of B.KEYS) if (await store.readStoredText(user, path(id, key)) !== (snap.texts[key] ?? null)) return false;
+            const settings = JSON.parse(await store.readStoredText(user, um.keys.settings));
+            return JSON.stringify(settings?.chats?.[id]) === JSON.stringify(snap.hadSettings ? snap.settings : undefined);
+        } catch { return false; }
     }
     async function transact(id, next, before) {
         const release = um.holdRoom(id);
@@ -52,7 +57,7 @@ export function createRoomBackup({ um, store, host, version }) {
             try { await replace(id, next); }
             catch (error) {
                 try { await replace(id, before); }
-                catch { throw Error(`불러오기와 이전 상태 복구에 실패했습니다. 안전 사본: ${safetyPath(id)}. ${error.message}`); }
+                catch { if (!await matchesSnapshot(id, before)) throw Error(`불러오기와 이전 상태 복구에 실패했습니다. 안전 사본: ${safetyPath(id)}. ${error.message}`); }
                 throw Error(`불러오지 못했습니다. 이전 상태로 되돌렸습니다. ${error.message}`);
             }
         } finally { release(); }
@@ -70,10 +75,10 @@ export function createRoomBackup({ um, store, host, version }) {
         return { fileName: B.fileName(chatName), backup: B.build({ chatId: id, chatName, moduleVersion: version, files, settingsEntry: um.settings().chats?.[id], jobRunning: roomBusy(um, id) }) };
     }
     async function preview(id, body) {
-        const doc = uploaded(body), current = await read(id, true);
+        const doc = uploaded(body), current = await read(id, true), existing = await snapshot(id);
         return { source: { ...doc.header }, sameRoom: doc.header.chatId === id, crossRoomRequired: doc.header.chatId !== id,
             backup: B.counts(doc.files), current: B.counts(current), vectors: { inBackup: 'vectors' in doc.files, willClear: !('vectors' in doc.files) && 'vectors' in current },
-            removes: B.KEYS.filter(k => !(k in doc.files) && k in current && !['vectors', 'lang'].includes(k)), busy: roomBusy(um, id), undoAvailable: !!await safety(id) };
+            removes: B.KEYS.filter(k => !(k in doc.files) && k in existing.texts), busy: roomBusy(um, id), undoAvailable: !!await safety(id) };
     }
     async function apply(id, body) {
         const doc = uploaded(body);
@@ -82,6 +87,11 @@ export function createRoomBackup({ um, store, host, version }) {
             const before = await snapshot(id);
             before.from = { chatId: doc.header.chatId, chatName: doc.header.chatName, createdAt: doc.header.createdAt };
             const text = JSON.stringify(before);
+            const previous = await store.readText(user, safetyPath(id));
+            if (previous !== null) {
+                await store.replaceRaw(user, previousPath(id), previous);
+                if (await store.readText(user, previousPath(id)) !== previous) throw Error('이전 안전 사본 검증에 실패하여 불러오지 않았습니다.');
+            }
             await store.replaceRaw(user, safetyPath(id), text);
             if (await store.readText(user, safetyPath(id)) !== text) throw Error('안전 사본 검증에 실패하여 불러오지 않았습니다.');
             const entry = doc.settings ? { ...doc.settings } : before.settings;
@@ -97,7 +107,8 @@ export function createRoomBackup({ um, store, host, version }) {
             if (!old) throw Error('되돌릴 불러오기가 없습니다.');
             const before = await snapshot(id);
             await transact(id, old, before);
-            await store.replaceRaw(user, safetyPath(id), null);
+            await store.replaceRaw(user, safetyPath(id), await store.readText(user, previousPath(id)));
+            await store.replaceRaw(user, previousPath(id), null);
             return { undone: true, restoredFiles: Object.keys(old.texts) };
         }, { check: false });
     }
@@ -134,9 +145,9 @@ export function createRoomBackup({ um, store, host, version }) {
             await um.flush();
             for (const key of entry.paths) await store.replaceRaw(user, key, null);
             await store.replaceRaw(user, safetyPath(id), null);
+            await store.replaceRaw(user, previousPath(id), null);
             await store.replaceRaw(user, um.keys.sceneError(id), null);
-            const next = { ...um.settings(), chats: { ...um.settings().chats } }; delete next.chats[id];
-            await store.replaceRaw(user, um.keys.settings, JSON.stringify(next)); um.replaceSettingsCache(next);
+            await um.saveRoomSettings(id, undefined);
             um.invalidateRoom(id);
             return { deleted: true, id };
         }, { check: false });

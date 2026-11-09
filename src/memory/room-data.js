@@ -5,12 +5,12 @@ import A from './core/aliases.cjs';
 import Addr from './core/address.generated.cjs';
 import S from './core/scenes.generated.cjs';
 import F from './core/features.cjs';
-import St from './core/state.cjs';
-import Pl from './core/places.cjs';
-import Ks from './core/keepsakes.cjs';
+import St from './core/state.generated.cjs';
+import Pl from './core/places.generated.cjs';
+import Ks from './core/keepsakes.generated.cjs';
 import Cf from './core/conflicts.generated.cjs';
-import Tk from './core/trackers.cjs';
-import Rp from './core/reasons.cjs';
+import Tk from './core/trackers.generated.cjs';
+import Rp from './core/reasons.generated.cjs';
 const books = new AsyncLocalStorage();
 S.setAddressProvider(() => {
     const book = books.getStore()?.address();

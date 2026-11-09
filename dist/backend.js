@@ -2469,8 +2469,8 @@ ${sections.join(`
   };
 });
 
-// src/memory/core/state.cjs
-var require_state = __commonJS(function(exports, module) {
+// src/memory/core/state.generated.cjs
+var require_state_generated = __commonJS(function(exports, module) {
   var A = require_aliases();
   var STATE_VERSION = 1;
   var SCALARS = ["location", "outfit", "mood", "other"];
@@ -2617,7 +2617,13 @@ var require_state = __commonJS(function(exports, module) {
       cards.push(card);
     }
     cards.sort((x, y) => (y.asOf?.number || 0) - (x.asOf?.number || 0) || x.name.localeCompare(y.name));
-    const next = { version: STATE_VERSION, cards: cards.slice(0, MAX_CARDS), updatedAt: old.updatedAt };
+    const protectedCard = (c) => c.custom || Object.keys(c.user || {}).length || (c.aliases || []).length;
+    const automatic = cards.filter((c) => !protectedCard(c));
+    const keep = new Set(automatic.slice(0, Math.max(0, MAX_CARDS - cards.filter(protectedCard).length)));
+    const limited = cards.filter((c) => protectedCard(c) || keep.has(c));
+    const next = { version: STATE_VERSION, cards: limited, updatedAt: old.updatedAt };
+    if (cards.length > limited.length)
+      next.omittedAuto = cards.length - limited.length;
     if (!same(next.cards, old.cards))
       next.updatedAt = now;
     return next;
@@ -2666,8 +2672,6 @@ var require_state = __commonJS(function(exports, module) {
       throw Error("\uC778\uBB3C \uC774\uB984\uC744 \uC801\uC5B4 \uC8FC\uC138\uC694.");
     if (cardOf(file, key).at >= 0)
       return structuredClone(file);
-    if (file.cards.length >= MAX_CARDS)
-      throw Error(`\uC778\uBB3C \uCE74\uB4DC\uB294 \uBC29\uB9C8\uB2E4 ${MAX_CARDS}\uC7A5\uAE4C\uC9C0 \uB458 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`);
     const next = structuredClone(file);
     next.cards.push({ name: key, injuries: [], carrying: [], location: "", outfit: "", mood: "", user: { location: "" } });
     return next;
@@ -2771,8 +2775,8 @@ var require_state = __commonJS(function(exports, module) {
   };
 });
 
-// src/memory/core/places.cjs
-var require_places = __commonJS(function(exports, module) {
+// src/memory/core/places.generated.cjs
+var require_places_generated = __commonJS(function(exports, module) {
   var crypto = __require("crypto");
   var PLACES_VERSION = 1;
   var FEATURE_CAP = 12;
@@ -2921,7 +2925,13 @@ var require_places = __commonJS(function(exports, module) {
       out.push(card);
     }
     out.sort((a, b) => (order.get(b.lastSeen?.scene) ?? -1) - (order.get(a.lastSeen?.scene) ?? -1) || a.name.localeCompare(b.name));
-    const next = { version: PLACES_VERSION, places: out.slice(0, MAX_PLACES), hidden: [...hidden], updatedAt: old.updatedAt };
+    const protectedCard = (c) => c.custom || Object.keys(c.user || {}).length || (c.aliases || []).length;
+    const automatic = out.filter((c) => !protectedCard(c));
+    const keep = new Set(automatic.slice(0, Math.max(0, MAX_PLACES - out.filter(protectedCard).length)));
+    const limited = out.filter((c) => protectedCard(c) || keep.has(c));
+    const next = { version: PLACES_VERSION, places: limited, hidden: [...hidden], updatedAt: old.updatedAt };
+    if (out.length > limited.length)
+      next.omittedAuto = out.length - limited.length;
     if (!same(next.places, old.places) || !same(next.hidden, old.hidden || []))
       next.updatedAt = now;
     return next;
@@ -2984,8 +2994,6 @@ var require_places = __commonJS(function(exports, module) {
     const other = taken(file, t);
     if (other)
       throw Error(`\u2018${other.name}\u2019 \uC7A5\uC18C\uAC00 \uC774\uBBF8 \uC788\uC2B5\uB2C8\uB2E4.`);
-    if (file.places.length >= MAX_PLACES)
-      throw Error(`\uC7A5\uC18C\uB294 \uBC29\uB9C8\uB2E4 ${MAX_PLACES}\uACF3\uAE4C\uC9C0 \uB458 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`);
     const next = structuredClone(file);
     next.hidden = (next.hidden || []).filter((k) => keyOf(k) !== keyOf(t));
     next.places.push({ id: idOf(keyOf(t)), name: t, aliases: [], description: "", layout: "", features: [], scenes: [], custom: true });
@@ -3124,8 +3132,8 @@ var require_knowledge = __commonJS(function(exports, module) {
   module.exports = { MARK_NAMES, knowledgeOf, deriveKnownBy, syncKnownBy, reconcile, mergeKnownBy, unknownMarker };
 });
 
-// src/memory/core/keepsakes.cjs
-var require_keepsakes = __commonJS(function(exports, module) {
+// src/memory/core/keepsakes.generated.cjs
+var require_keepsakes_generated = __commonJS(function(exports, module) {
   var crypto = __require("crypto");
   var A = require_aliases();
   var KEEPSAKES_VERSION = 1;
@@ -3274,7 +3282,13 @@ var require_keepsakes = __commonJS(function(exports, module) {
     out.sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
     for (const c of out)
       delete c.last;
-    const next = { version: KEEPSAKES_VERSION, items: out.slice(0, MAX_ITEMS), hidden: [...hidden], updatedAt: old.updatedAt };
+    const protectedCard = (c) => c.custom || Object.keys(c.user || {}).length || (c.aliases || []).length;
+    const automatic = out.filter((c) => !protectedCard(c));
+    const keep = new Set(automatic.slice(0, Math.max(0, MAX_ITEMS - out.filter(protectedCard).length)));
+    const limited = out.filter((c) => protectedCard(c) || keep.has(c));
+    const next = { version: KEEPSAKES_VERSION, items: limited, hidden: [...hidden], updatedAt: old.updatedAt };
+    if (out.length > limited.length)
+      next.omittedAuto = out.length - limited.length;
     if (!same(next.items, old.items) || !same(next.hidden, old.hidden || []))
       next.updatedAt = now;
     return next;
@@ -3347,8 +3361,6 @@ var require_keepsakes = __commonJS(function(exports, module) {
     const other = taken(file, t);
     if (other)
       throw Error(`\u2018${other.name}\u2019 \uBB3C\uAC74\uC774 \uC774\uBBF8 \uC788\uC2B5\uB2C8\uB2E4.`);
-    if (file.items.length >= MAX_ITEMS)
-      throw Error(`\uC18C\uC911\uD55C \uBB3C\uAC74\uC740 \uBC29\uB9C8\uB2E4 ${MAX_ITEMS}\uAC1C\uAE4C\uC9C0 \uB458 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`);
     const next = structuredClone(file);
     next.hidden = (next.hidden || []).filter((k) => keyOf(k) !== keyOf(t));
     const who = A.canonical(clip(owner, PERSON_MAX)) || "";
@@ -3469,10 +3481,10 @@ var require_keepsakes = __commonJS(function(exports, module) {
 var require_scenes_generated = __commonJS(function(exports, module) {
   var L = require_ledger();
   var A = require_aliases();
-  var St = require_state();
-  var Pl = require_places();
+  var St = require_state_generated();
+  var Pl = require_places_generated();
   var K = require_knowledge();
-  var Ks = require_keepsakes();
+  var Ks = require_keepsakes_generated();
   var SCENES_VERSION = 1;
   var REMEMBERS = ["full", "partial", "none"];
   var MAX_EVENTS = 8;
@@ -9394,8 +9406,11 @@ var require_conflicts_generated = __commonJS(function(exports, module) {
     const found = detect(store);
     const kept = [];
     for (const c of old.conflicts) {
-      if (!byId.has(c.a) || !byId.has(c.b))
+      if (!byId.has(c.a) || !byId.has(c.b)) {
+        if (["keepA", "keepB"].includes(c.status))
+          kept.push(c);
         continue;
+      }
       const key = pairKey(c.a, c.b);
       const hit = found.get(key);
       if (c.status === "open") {
@@ -9408,6 +9423,7 @@ var require_conflicts_generated = __commonJS(function(exports, module) {
     }
     let next = Math.max(old.next || 1, ...old.conflicts.map((c) => idNumber(c.id) + 1));
     let open = kept.filter((c) => c.status === "open").length;
+    const omittedAuto = Math.max(0, found.size - Math.max(0, MAX_OPEN - open));
     for (const hit of [...found.values()].sort((p, q) => q.score - p.score || idNumber(p.b) - idNumber(q.b))) {
       if (open >= MAX_OPEN)
         break;
@@ -9415,12 +9431,14 @@ var require_conflicts_generated = __commonJS(function(exports, module) {
       open++;
     }
     while (kept.length > MAX_RECORDS) {
-      const at = kept.findIndex((c) => c.status !== "open");
+      const at = kept.findIndex((c) => ["both", "dismissed"].includes(c.status));
       if (at < 0)
         break;
       kept.splice(at, 1);
     }
     const file = { version: CONFLICTS_VERSION, conflicts: kept, next, updatedAt: old.updatedAt };
+    if (omittedAuto)
+      file.omittedAuto = omittedAuto;
     if (!same(file.conflicts, old.conflicts))
       file.updatedAt = now;
     return file;
@@ -9460,7 +9478,7 @@ var require_conflicts_generated = __commonJS(function(exports, module) {
     const list = (isConflicts(file) ? file.conflicts : []).filter((c) => facts.has(c.a) && facts.has(c.b)).map((c) => ({ ...c, aText: facts.get(c.a).text, bText: facts.get(c.b).text, aScene: facts.get(c.a).sceneId || null, bScene: facts.get(c.b).sceneId || null }));
     const open = list.filter((c) => c.status === "open");
     const answered = list.filter((c) => c.status !== "open").slice(-20).reverse();
-    return { open: open.length, conflicts: [...open, ...answered] };
+    return { omittedAuto: file?.omittedAuto || 0, open: open.length, conflicts: [...open, ...answered] };
   }
   module.exports = {
     CONFLICTS_VERSION,
@@ -9480,8 +9498,8 @@ var require_conflicts_generated = __commonJS(function(exports, module) {
   };
 });
 
-// src/memory/core/trackers.cjs
-var require_trackers = __commonJS(function(exports, module) {
+// src/memory/core/trackers.generated.cjs
+var require_trackers_generated = __commonJS(function(exports, module) {
   var crypto = __require("crypto");
   var A = require_aliases();
   var TRACKERS_VERSION = 1;
@@ -9671,7 +9689,6 @@ var require_trackers = __commonJS(function(exports, module) {
   }
   var stamp = (item, now, created = false) => ({ ...item, createdAt: created ? now : item.createdAt, updatedAt: now });
   function addItem(file, raw, now = new Date().toISOString()) {
-    need(file.items.length < MAX_ITEMS, `\uD2B8\uB798\uCEE4\uB294 \uBC29\uB9C8\uB2E4 ${MAX_ITEMS}\uAC1C\uAE4C\uC9C0 \uB458 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`);
     const next = structuredClone(file);
     const item = normalizeItem(raw, null);
     item.id = nextId(next);
@@ -9920,17 +9937,16 @@ var require_trackers = __commonJS(function(exports, module) {
   };
 });
 
-// src/memory/core/reasons.cjs
-var require_reasons = __commonJS(function(exports, module) {
+// src/memory/core/reasons.generated.cjs
+var require_reasons_generated = __commonJS(function(exports, module) {
   var RECALL_PREFS_VERSION = 1;
-  var MAX_IDS = 2000;
   var ID_RE = /^[SCFT][0-9]{1,6}$/;
   var KIND_OF = { S: "scene", C: "chapter", F: "fact", T: "thread" };
   var emptyPrefs = () => ({ version: RECALL_PREFS_VERSION, pinned: [], excluded: [] });
   var kindOf = (id) => KIND_OF[String(id)[0]] || null;
   var validId = (id) => typeof id === "string" && ID_RE.test(id);
   function cleanList(list) {
-    return [...new Set((Array.isArray(list) ? list : []).filter(validId))].slice(0, MAX_IDS);
+    return [...new Set((Array.isArray(list) ? list : []).filter(validId))];
   }
   function normalize(value) {
     const pinned = cleanList(value?.pinned);
@@ -10235,12 +10251,40 @@ function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setTimeout(
   const pending = new Map;
   const active = new Map;
   const failures = new Map;
+  const tails = new Map;
+  function serial(k, fn) {
+    const job = (tails.get(k) || Promise.resolve()).catch(() => {}).then(fn);
+    tails.set(k, job);
+    job.finally(() => {
+      if (tails.get(k) === job)
+        tails.delete(k);
+    }).catch(() => {});
+    return job;
+  }
+  async function flushKey(userId, key) {
+    const k = id(need(userId), key);
+    while (pending.has(k) || tails.has(k)) {
+      const p = pending.get(k);
+      if (p) {
+        if (p.timer)
+          clearTimer(p.timer);
+        p._run();
+      }
+      await tails.get(k);
+    }
+    if (failures.has(k))
+      throw failures.get(k);
+  }
   const stamp = () => now().toISOString().replace(/[:.]/g, "-");
   async function readText(userId, key) {
     need(userId);
     const p = pending.get(id(userId, key));
     if (p)
       return typeof p.value === "string" ? p.value : JSON.stringify(p.value);
+    return readStoredText(userId, key);
+  }
+  async function readStoredText(userId, key) {
+    need(userId);
     if (!await api.userStorage.exists(key, userId))
       return null;
     return api.userStorage.read(key, userId);
@@ -10329,7 +10373,7 @@ function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setTimeout(
       pending.delete(k);
       p.timer = null;
       try {
-        await writeNow(userId, key, p.value);
+        await serial(k, () => writeNow(userId, key, p.value));
         failures.delete(k);
         for (const w of p.waiters)
           w.resolve(true);
@@ -10385,23 +10429,26 @@ function createStore(api, { debounceMs = 500, setTimer = (fn, ms) => setTimeout(
   }
   async function replaceRaw(userId, key, text) {
     need(userId);
-    if (pending.has(id(userId, key)))
-      throw Error("\uC800\uC7A5 \uC911\uC778 \uD30C\uC77C\uC740 \uAD50\uCCB4\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
-    if (text == null) {
-      if (await api.userStorage.exists(key, userId))
-        await api.userStorage.delete(key, userId);
-    } else
-      await api.userStorage.write(key, text, userId);
-    broken.delete(id(userId, key));
-    failures.delete(id(userId, key));
+    await flushKey(userId, key);
+    return serial(id(userId, key), async () => {
+      if (text == null) {
+        if (await api.userStorage.exists(key, userId))
+          await api.userStorage.delete(key, userId);
+      } else
+        await api.userStorage.write(key, text, userId);
+      broken.delete(id(userId, key));
+      failures.delete(id(userId, key));
+    });
   }
   const list = async (userId, prefix) => api.userStorage.list(prefix, need(userId));
   const writeText = (userId, key, text) => setJson(userId, key, String(text), { immediate: true });
   return {
     replaceRaw,
+    flushKey,
     getJson,
     setJson,
     readText,
+    readStoredText,
     writeText,
     remove,
     list,
@@ -10674,12 +10721,12 @@ var import_selected2 = __toESM(require_selected(), 1);
 var import_ledger = __toESM(require_ledger(), 1);
 var import_scenes_generated = __toESM(require_scenes_generated(), 1);
 var import_names_generated = __toESM(require_names_generated(), 1);
-var import_state = __toESM(require_state(), 1);
-var import_places = __toESM(require_places(), 1);
-var import_keepsakes = __toESM(require_keepsakes(), 1);
+var import_state_generated = __toESM(require_state_generated(), 1);
+var import_places_generated = __toESM(require_places_generated(), 1);
+var import_keepsakes_generated = __toESM(require_keepsakes_generated(), 1);
 var import_conflicts_generated = __toESM(require_conflicts_generated(), 1);
-var import_trackers = __toESM(require_trackers(), 1);
-var import_reasons = __toESM(require_reasons(), 1);
+var import_trackers_generated = __toESM(require_trackers_generated(), 1);
+var import_reasons_generated = __toESM(require_reasons_generated(), 1);
 var import_selected = __toESM(require_selected(), 1);
 var import_features = __toESM(require_features(), 1);
 function createRoomFeatures(um) {
@@ -10688,8 +10735,10 @@ function createRoomFeatures(um) {
   const on = (id, key) => import_features.default.resolve(um.settings(), id, key).enabled;
   const sceneDate = (id, scene) => import_ledger.default.dateInText(scene.time || "", um.storyToday(id, um.loadLedger(id)))?.date || null;
   function folded(id, scenes) {
+    if (!scenes)
+      return Object.fromEntries(["state", "places", "keepsakes", "conflicts"].map((key) => [key, data.get(id, key)]));
     const next = {};
-    for (const [key, feature, core] of [["state", "characterState", import_state.default], ["places", "places", import_places.default], ["keepsakes", "keepsakes", import_keepsakes.default]]) {
+    for (const [key, feature, core] of [["state", "characterState", import_state_generated.default], ["places", "places", import_places_generated.default], ["keepsakes", "keepsakes", import_keepsakes_generated.default]]) {
       if (on(id, feature))
         next[key] = core.fold(scenes || import_scenes_generated.default.emptyStore(), data.get(id, key));
     }
@@ -10697,11 +10746,13 @@ function createRoomFeatures(um) {
     return next;
   }
   function refresh(id, scenes) {
+    if (!scenes || !um.scenesReadable(id))
+      return;
     data.using(id, () => {
       const next = folded(id, scenes);
       if (on(id, "trackers"))
-        next.trackers = import_trackers.default.suggest(data.get(id, "trackers"), scenes || import_scenes_generated.default.emptyStore(), (s) => sceneDate(id, s), undefined, { auto: on(id, "autoApply") });
-      next["recall-prefs"] = import_reasons.default.followMerges(data.get(id, "recall-prefs"), scenes);
+        next.trackers = import_trackers_generated.default.suggest(data.get(id, "trackers"), scenes || import_scenes_generated.default.emptyStore(), (s) => sceneDate(id, s), undefined, { auto: on(id, "autoApply") });
+      next["recall-prefs"] = import_reasons_generated.default.followMerges(data.get(id, "recall-prefs"), scenes);
       for (const [key, value] of Object.entries(next)) {
         const before = { ...data.get(id, key) }, after = { ...value };
         delete before.updatedAt;
@@ -10712,11 +10763,11 @@ function createRoomFeatures(um) {
     });
   }
   function preferences(id, scenes = um.loadScenes(id)) {
-    return import_reasons.default.followMerges(data.get(id, "recall-prefs"), scenes);
+    return import_reasons_generated.default.followMerges(data.get(id, "recall-prefs"), scenes);
   }
   function filters(id, scenes = um.loadScenes(id)) {
-    const prefs = import_reasons.default.sets(preferences(id, scenes));
-    const hidden = import_reasons.default.hiddenScenes(scenes, prefs.excluded);
+    const prefs = import_reasons_generated.default.sets(preferences(id, scenes));
+    const hidden = import_reasons_generated.default.hiddenScenes(scenes, prefs.excluded);
     for (const key of prefs.pinned)
       hidden.delete(key);
     const hideFacts = import_conflicts_generated.default.hiddenIds(import_conflicts_generated.default.fold(scenes || import_scenes_generated.default.emptyStore(), data.get(id, "conflicts")), scenes);
@@ -10748,10 +10799,10 @@ function createRoomFeatures(um) {
     return {
       on: true,
       storyDate: um.storyToday(id, ledger),
-      realDate: import_trackers.default.localDate(),
-      items: import_trackers.default.view(file, { story: um.storyToday(id, ledger) }),
+      realDate: import_trackers_generated.default.localDate(),
+      items: import_trackers_generated.default.view(file, { story: um.storyToday(id, ledger) }),
       suggestions: (file.suggestions || []).filter((s) => s.status === "open" && labels.has(s.trackerId)).map((s) => ({ ...s, label: labels.get(s.trackerId) })),
-      applied: import_trackers.default.appliedView(file),
+      applied: import_trackers_generated.default.appliedView(file),
       people: import_names_generated.default.knownPeople(scenes, ledger, data.get(id, "names")),
       sceneDates: Object.fromEntries((scenes?.scenes || []).map((s) => [s.id, sceneDate(id, s)]).filter(([, d]) => d))
     };
@@ -10763,9 +10814,10 @@ function createRoomFeatures(um) {
       characterState,
       places,
       keepsakes,
-      cards: characterState ? import_state.default.view(data.get(id, "state")) : [],
-      placeList: places ? import_places.default.view(data.get(id, "places")) : [],
-      keepList: keepsakes ? import_keepsakes.default.view(data.get(id, "keepsakes")) : [],
+      omittedAuto: Object.fromEntries(["state", "places", "keepsakes"].map((k) => [k, data.get(id, k).omittedAuto || 0])),
+      cards: characterState ? import_state_generated.default.view(data.get(id, "state")) : [],
+      placeList: places ? import_places_generated.default.view(data.get(id, "places")) : [],
+      keepList: keepsakes ? import_keepsakes_generated.default.view(data.get(id, "keepsakes")) : [],
       ...on(id, "trackers") ? { trackers: trackers(id) } : {},
       sceneTitles: Object.fromEntries((um.loadScenes(id)?.scenes || []).map((s) => [s.id, s.title]))
     };
@@ -10773,13 +10825,13 @@ function createRoomFeatures(um) {
   function injection(id, scenes, present, today) {
     const current = folded(id, scenes), out = [];
     if (on(id, "characterState"))
-      out.push(import_state.default.injectionBlock(current.state, present));
+      out.push(import_state_generated.default.injectionBlock(current.state, present));
     if (on(id, "places"))
-      out.push(import_places.default.injectionBlock(current.places, scenes?.scenes?.at(-1)?.place));
+      out.push(import_places_generated.default.injectionBlock(current.places, scenes?.scenes?.at(-1)?.place));
     if (on(id, "keepsakes"))
-      out.push(import_keepsakes.default.injectionBlock(current.keepsakes, present));
+      out.push(import_keepsakes_generated.default.injectionBlock(current.keepsakes, present));
     if (on(id, "trackers"))
-      out.push(import_trackers.default.injectionBlock(import_trackers.default.forBranch(data.get(id, "trackers"), scenes || import_scenes_generated.default.emptyStore()), { present, story: today }));
+      out.push(import_trackers_generated.default.injectionBlock(import_trackers_generated.default.forBranch(data.get(id, "trackers"), scenes || import_scenes_generated.default.emptyStore()), { present, story: today }));
     return out.filter(Boolean);
   }
   function selected(id, messages) {
@@ -10789,10 +10841,16 @@ function createRoomFeatures(um) {
   }
   function inherit(source, target, scenes, ledger, ids, messages) {
     data.using(target, () => {
-      for (const [key, core] of [["state", import_state.default], ["places", import_places.default], ["keepsakes", import_keepsakes.default], ["conflicts", import_conflicts_generated.default]])
-        data.save(target, key, core.fold(scenes || import_scenes_generated.default.emptyStore(), structuredClone(data.get(source, key))));
-      data.save(target, "trackers", import_trackers.default.forBranch(data.get(source, "trackers"), scenes || import_scenes_generated.default.emptyStore()));
-      data.save(target, "recall-prefs", import_reasons.default.prune(import_reasons.default.followMerges(data.get(source, "recall-prefs"), scenes), import_reasons.default.liveIds(scenes, ledger, import_scenes_generated.default.liveFacts)));
+      for (const [key, core] of [["state", import_state_generated.default], ["places", import_places_generated.default], ["keepsakes", import_keepsakes_generated.default], ["conflicts", import_conflicts_generated.default]]) {
+        const previous = structuredClone(data.get(source, key));
+        if (key === "conflicts") {
+          const facts = new Set((scenes?.facts || []).map((f) => f.id));
+          previous.conflicts = previous.conflicts.filter((c) => facts.has(c.a) && facts.has(c.b));
+        }
+        data.save(target, key, core.fold(scenes || import_scenes_generated.default.emptyStore(), previous));
+      }
+      data.save(target, "trackers", import_trackers_generated.default.forBranch(data.get(source, "trackers"), scenes || import_scenes_generated.default.emptyStore()));
+      data.save(target, "recall-prefs", import_reasons_generated.default.prune(import_reasons_generated.default.followMerges(data.get(source, "recall-prefs"), scenes), import_reasons_generated.default.liveIds(scenes, ledger, import_scenes_generated.default.liveFacts)));
       const byId = new Map(messages.map((m) => [m.id, m]));
       const items = data.get(source, "selected").items.flatMap((item) => {
         if (item.parts.some((p) => !byId.has(ids.get(p.sourceId)) || byId.get(ids.get(p.sourceId)).h !== p.hash))
@@ -10855,7 +10913,7 @@ function registerFeatureRoutes(add, chatOf) {
     um.roomData.save(id, "conflicts", import_conflicts_generated.default.answer(um.roomData.get(id, "conflicts"), p.cid, status));
     return import_conflicts_generated.default.view(um.roomData.get(id, "conflicts"), um.loadScenes(id));
   }));
-  for (const [key, feature, core] of [["state", "characterState", import_state.default], ["places", "places", import_places.default], ["keepsakes", "keepsakes", import_keepsakes.default]]) {
+  for (const [key, feature, core] of [["state", "characterState", import_state_generated.default], ["places", "places", import_places_generated.default], ["keepsakes", "keepsakes", import_keepsakes_generated.default]]) {
     add("POST", `chats/:id/${key}`, change((um, id, b) => {
       need(um, id, feature);
       let file = structuredClone(um.roomData.get(id, key));
@@ -10865,15 +10923,15 @@ function registerFeatureRoutes(add, chatOf) {
       else if (b.action === "unlock")
         file = core.unlockField(file, target, b.field);
       else if (b.action === "add")
-        file = key === "state" ? import_state.default.addCard(file, b.name) : key === "places" ? import_places.default.addPlace(file, b.name) : import_keepsakes.default.addItem(file, b.name, b.owner);
+        file = key === "state" ? import_state_generated.default.addCard(file, b.name) : key === "places" ? import_places_generated.default.addPlace(file, b.name) : import_keepsakes_generated.default.addItem(file, b.name, b.owner);
       else if (key === "state" && b.action === "reset")
-        file = import_state.default.deleteCard(file, b.name);
+        file = import_state_generated.default.deleteCard(file, b.name);
       else if (key !== "state" && b.action === "aliases")
         file = core.setAliases(file, target, b.value);
       else if (key !== "state" && b.action === "merge")
-        file = key === "places" ? import_places.default.mergePlaces(file, target, b.into) : import_keepsakes.default.mergeItems(file, target, b.into);
+        file = key === "places" ? import_places_generated.default.mergePlaces(file, target, b.into) : import_keepsakes_generated.default.mergeItems(file, target, b.into);
       else if (key !== "state" && b.action === "delete")
-        file = key === "places" ? import_places.default.deletePlace(file, target) : import_keepsakes.default.deleteItem(file, target);
+        file = key === "places" ? import_places_generated.default.deletePlace(file, target) : import_keepsakes_generated.default.deleteItem(file, target);
       else
         throw Error("\uD3B8\uC9D1 \uBC29\uC2DD\uC744 \uD655\uC778\uD574 \uC8FC\uC138\uC694.");
       um.roomData.save(id, key, core.fold(um.loadScenes(id) || import_scenes_generated.default.emptyStore(), file));
@@ -10884,30 +10942,30 @@ function registerFeatureRoutes(add, chatOf) {
     need(um, id, "trackers");
     let file = structuredClone(um.roomData.get(id, "trackers"));
     const methods = {
-      add: () => import_trackers.default.addItem(file, b.item),
-      edit: () => import_trackers.default.editItem(file, b.id, b.item),
-      delete: () => import_trackers.default.deleteItem(file, b.id),
-      addStart: () => import_trackers.default.addStart(file, b.id, b.date),
-      removeStart: () => import_trackers.default.removeStart(file, b.id, b.date),
-      editStart: () => import_trackers.default.editStart(file, b.id, b.from, b.to),
-      undoApplied: () => import_trackers.default.undoApplied(file, b.aid || b.id),
-      accept: () => import_trackers.default.answerSuggestion(file, b.sid || b.id, "accept"),
-      ignore: () => import_trackers.default.answerSuggestion(file, b.sid || b.id, "ignore"),
+      add: () => import_trackers_generated.default.addItem(file, b.item),
+      edit: () => import_trackers_generated.default.editItem(file, b.id, b.item),
+      delete: () => import_trackers_generated.default.deleteItem(file, b.id),
+      addStart: () => import_trackers_generated.default.addStart(file, b.id, b.date),
+      removeStart: () => import_trackers_generated.default.removeStart(file, b.id, b.date),
+      editStart: () => import_trackers_generated.default.editStart(file, b.id, b.from, b.to),
+      undoApplied: () => import_trackers_generated.default.undoApplied(file, b.aid || b.id),
+      accept: () => import_trackers_generated.default.answerSuggestion(file, b.sid || b.id, "accept"),
+      ignore: () => import_trackers_generated.default.answerSuggestion(file, b.sid || b.id, "ignore"),
       start: () => {
         const item = file.items.find((t) => t.id === b.id);
         if (!item)
           throw Error("\uD2B8\uB798\uCEE4\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
-        const date = import_trackers.default.todayFor(item, { story: um.storyToday(id, um.loadLedger(id)), real: import_trackers.default.localDate() });
+        const date = import_trackers_generated.default.todayFor(item, { story: um.storyToday(id, um.loadLedger(id)), real: import_trackers_generated.default.localDate() });
         if (!date)
           throw Error("\uC2DC\uC791\uC77C\uC744 \uC9C1\uC811 \uC801\uC5B4 \uC8FC\uC138\uC694.");
-        return import_trackers.default.addStart(file, b.id, date);
+        return import_trackers_generated.default.addStart(file, b.id, date);
       },
       fromScene: () => {
         const scene = um.loadScenes(id)?.scenes.find((s) => s.id === b.sceneId);
         const date = scene && um.features.sceneDate(id, scene);
         if (!date)
           throw Error("\uC7A5\uBA74\uC758 \uB0A0\uC9DC\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
-        return import_trackers.default.startFromDate(file, { trackerId: b.id, label: b.label, scope: b.scope, people: b.people, clock: "story", date });
+        return import_trackers_generated.default.startFromDate(file, { trackerId: b.id, label: b.label, scope: b.scope, people: b.people, clock: "story", date });
       }
     };
     if (!Object.hasOwn(methods, b.action))
@@ -10916,12 +10974,12 @@ function registerFeatureRoutes(add, chatOf) {
     return um.features.trackers(id);
   }));
   add("POST", "chats/:id/recall-prefs", change((um, id, b) => {
-    if (!["pin", "exclude"].includes(b.action) || !import_reasons.default.validId(b.id))
+    if (!["pin", "exclude"].includes(b.action) || !import_reasons_generated.default.validId(b.id))
       throw Error("\uC911\uC694/\uBE7C\uAE30 \uD56D\uBAA9\uC744 \uD655\uC778\uD574 \uC8FC\uC138\uC694.");
-    const scenes = um.loadScenes(id), ledger = um.loadLedger(id), ids = import_reasons.default.liveIds(scenes, ledger, import_scenes_generated.default.liveFacts);
+    const scenes = um.loadScenes(id), ledger = um.loadLedger(id), ids = import_reasons_generated.default.liveIds(scenes, ledger, import_scenes_generated.default.liveFacts);
     if (!ids.has(b.id))
       throw Error("\uD574\uB2F9 \uD56D\uBAA9\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
-    const next = import_reasons.default.prune(import_reasons.default.toggle(um.features.preferences(id), b.id, b.action === "pin" ? "pinned" : "excluded"), ids, { scenes: !!scenes, ledger: !!ledger });
+    const next = import_reasons_generated.default.prune(import_reasons_generated.default.toggle(um.features.preferences(id), b.id, b.action === "pin" ? "pinned" : "excluded"), ids, { scenes: !!scenes, ledger: !!ledger });
     um.roomData.save(id, "recall-prefs", next);
     return { recallPrefs: { pinned: next.pinned, excluded: next.excluded } };
   }));
@@ -10958,18 +11016,18 @@ function registerFeatureRoutes(add, chatOf) {
 function buildRecallReport({ trace, scenes, ledger, prefs, recall, selected, query }) {
   const records = new Map([...scenes?.scenes || [], ...scenes?.chapters || [], ...import_scenes_generated.default.liveFacts(scenes || import_scenes_generated.default.emptyStore()), ...ledger?.threads || [], ...selected].map((r) => [r.id, r]));
   const pinned = new Set(prefs.pinned), sections = [];
-  function item(id, reasons, kind = import_reasons.default.kindOf(id)) {
+  function item(id, reasons, kind = import_reasons_generated.default.kindOf(id)) {
     const r = records.get(id);
     if (pinned.has(id) && !reasons.some((x) => x.kind === "pinned"))
       reasons.unshift({ kind: "pinned" });
-    return { id: kind === "selected" ? null : id, kind, title: String(r?.title || r?.text || id).slice(0, 80), pinned: pinned.has(id), reasons: import_reasons.default.labelled(reasons) };
+    return { id: kind === "selected" ? null : id, kind, title: String(r?.title || r?.text || id).slice(0, 80), pinned: pinned.has(id), reasons: import_reasons_generated.default.labelled(reasons) };
   }
   function section(name, items) {
     if (items.length)
       sections.push({ section: name, items });
   }
   for (const [name, ids, reason] of [["chapters", trace.over?.chapters, "chapter"], ["overview", trace.over?.scenes, "recent"], ["facts", trace.over?.facts, "fact"], ["threads", trace.threads, "thread-open"], ["selected", trace.selected, "selected"]]) {
-    section(name, (ids || []).map((id) => item(id, [{ kind: reason }], name === "selected" ? "selected" : import_reasons.default.kindOf(id))));
+    section(name, (ids || []).map((id) => item(id, [{ kind: reason }], name === "selected" ? "selected" : import_reasons_generated.default.kindOf(id))));
   }
   section("recalled", (trace.recalled || []).map((pick) => {
     const reasons = [], semantic = recall?.semantic?.find((x) => x.id === pick.id);
@@ -10988,8 +11046,8 @@ function buildRecallReport({ trace, scenes, ledger, prefs, recall, selected, que
     return item(pick.id, reasons);
   }));
   section("near", (trace.near || []).map((x) => item(x.id, [{ kind: "meaning", score: x.score }])));
-  section("raw", (trace.raw || []).map((x) => ({ id: null, kind: "raw", title: `${x.number}\uBC88 \uBA54\uC2DC\uC9C0`, pinned: false, reasons: import_reasons.default.labelled([{ kind: "keyword", terms: x.hits || [] }]) })));
-  const marks = ["pinned", "excluded"].flatMap((state) => prefs[state].filter((id) => records.has(id)).map((id) => ({ id, kind: import_reasons.default.kindOf(id), state, title: String(records.get(id).title || records.get(id).text || id).slice(0, 80) })));
+  section("raw", (trace.raw || []).map((x) => ({ id: null, kind: "raw", title: `${x.number}\uBC88 \uBA54\uC2DC\uC9C0`, pinned: false, reasons: import_reasons_generated.default.labelled([{ kind: "keyword", terms: x.hits || [] }]) })));
+  const marks = ["pinned", "excluded"].flatMap((state) => prefs[state].filter((id) => records.has(id)).map((id) => ({ id, kind: import_reasons_generated.default.kindOf(id), state, title: String(records.get(id).title || records.get(id).text || id).slice(0, 80) })));
   return { sections, marks };
 }
 
@@ -11005,6 +11063,7 @@ var BACKUP_ROUTES = [
 function createRoomBackup({ um, store, host, version }) {
   const user = um.userId;
   const path = (id, key) => `memory/chats/${id}${import_backup_generated.default.FILES[key]}`;
+  const previousPath = (id) => `memory/restore-undo/${id}/snapshot.prev.json`;
   const safetyPath = (id) => `memory/restore-undo/${id}/snapshot.json`;
   async function snapshot(id) {
     await um.flush();
@@ -11048,19 +11107,24 @@ function createRoomBackup({ um, store, host, version }) {
       }
     }
     try {
-      const next = { ...um.settings(), chats: { ...um.settings().chats } };
-      if (snap.hadSettings)
-        next.chats[id] = snap.settings;
-      else
-        delete next.chats[id];
-      await store.replaceRaw(user, um.keys.settings, JSON.stringify(next));
-      um.replaceSettingsCache(next);
+      await um.saveRoomSettings(id, snap.hadSettings ? snap.settings : undefined);
     } catch (e) {
       failed ||= e;
     }
     um.invalidateRoom(id);
     if (failed)
       throw failed;
+  }
+  async function matchesSnapshot(id, snap) {
+    try {
+      for (const key of import_backup_generated.default.KEYS)
+        if (await store.readStoredText(user, path(id, key)) !== (snap.texts[key] ?? null))
+          return false;
+      const settings = JSON.parse(await store.readStoredText(user, um.keys.settings));
+      return JSON.stringify(settings?.chats?.[id]) === JSON.stringify(snap.hadSettings ? snap.settings : undefined);
+    } catch {
+      return false;
+    }
   }
   async function transact(id, next, before) {
     const release = um.holdRoom(id);
@@ -11071,7 +11135,8 @@ function createRoomBackup({ um, store, host, version }) {
         try {
           await replace(id, before);
         } catch {
-          throw Error(`\uBD88\uB7EC\uC624\uAE30\uC640 \uC774\uC804 \uC0C1\uD0DC \uBCF5\uAD6C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uC548\uC804 \uC0AC\uBCF8: ${safetyPath(id)}. ${error.message}`);
+          if (!await matchesSnapshot(id, before))
+            throw Error(`\uBD88\uB7EC\uC624\uAE30\uC640 \uC774\uC804 \uC0C1\uD0DC \uBCF5\uAD6C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uC548\uC804 \uC0AC\uBCF8: ${safetyPath(id)}. ${error.message}`);
         }
         throw Error(`\uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC774\uC804 \uC0C1\uD0DC\uB85C \uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4. ${error.message}`);
       }
@@ -11095,7 +11160,7 @@ function createRoomBackup({ um, store, host, version }) {
     return { fileName: import_backup_generated.default.fileName(chatName), backup: import_backup_generated.default.build({ chatId: id, chatName, moduleVersion: version, files, settingsEntry: um.settings().chats?.[id], jobRunning: roomBusy(um, id) }) };
   }
   async function preview(id, body) {
-    const doc = uploaded(body), current = await read(id, true);
+    const doc = uploaded(body), current = await read(id, true), existing = await snapshot(id);
     return {
       source: { ...doc.header },
       sameRoom: doc.header.chatId === id,
@@ -11103,7 +11168,7 @@ function createRoomBackup({ um, store, host, version }) {
       backup: import_backup_generated.default.counts(doc.files),
       current: import_backup_generated.default.counts(current),
       vectors: { inBackup: "vectors" in doc.files, willClear: !("vectors" in doc.files) && "vectors" in current },
-      removes: import_backup_generated.default.KEYS.filter((k) => !(k in doc.files) && (k in current) && !["vectors", "lang"].includes(k)),
+      removes: import_backup_generated.default.KEYS.filter((k) => !(k in doc.files) && (k in existing.texts)),
       busy: roomBusy(um, id),
       undoAvailable: !!await safety(id)
     };
@@ -11116,6 +11181,12 @@ function createRoomBackup({ um, store, host, version }) {
       const before = await snapshot(id);
       before.from = { chatId: doc.header.chatId, chatName: doc.header.chatName, createdAt: doc.header.createdAt };
       const text = JSON.stringify(before);
+      const previous = await store.readText(user, safetyPath(id));
+      if (previous !== null) {
+        await store.replaceRaw(user, previousPath(id), previous);
+        if (await store.readText(user, previousPath(id)) !== previous)
+          throw Error("\uC774\uC804 \uC548\uC804 \uC0AC\uBCF8 \uAC80\uC99D\uC5D0 \uC2E4\uD328\uD558\uC5EC \uBD88\uB7EC\uC624\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
+      }
       await store.replaceRaw(user, safetyPath(id), text);
       if (await store.readText(user, safetyPath(id)) !== text)
         throw Error("\uC548\uC804 \uC0AC\uBCF8 \uAC80\uC99D\uC5D0 \uC2E4\uD328\uD558\uC5EC \uBD88\uB7EC\uC624\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
@@ -11138,7 +11209,8 @@ function createRoomBackup({ um, store, host, version }) {
         throw Error("\uB418\uB3CC\uB9B4 \uBD88\uB7EC\uC624\uAE30\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
       const before = await snapshot(id);
       await transact(id, old, before);
-      await store.replaceRaw(user, safetyPath(id), null);
+      await store.replaceRaw(user, safetyPath(id), await store.readText(user, previousPath(id)));
+      await store.replaceRaw(user, previousPath(id), null);
       return { undone: true, restoredFiles: Object.keys(old.texts) };
     }, { check: false });
   }
@@ -11193,11 +11265,9 @@ function createRoomBackup({ um, store, host, version }) {
       for (const key of entry.paths)
         await store.replaceRaw(user, key, null);
       await store.replaceRaw(user, safetyPath(id), null);
+      await store.replaceRaw(user, previousPath(id), null);
       await store.replaceRaw(user, um.keys.sceneError(id), null);
-      const next = { ...um.settings(), chats: { ...um.settings().chats } };
-      delete next.chats[id];
-      await store.replaceRaw(user, um.keys.settings, JSON.stringify(next));
-      um.replaceSettingsCache(next);
+      await um.saveRoomSettings(id, undefined);
       um.invalidateRoom(id);
       return { deleted: true, id };
     }, { check: false });
@@ -11234,12 +11304,12 @@ var import_aliases = __toESM(require_aliases(), 1);
 var import_address_generated = __toESM(require_address_generated(), 1);
 var import_scenes_generated2 = __toESM(require_scenes_generated(), 1);
 var import_features2 = __toESM(require_features(), 1);
-var import_state2 = __toESM(require_state(), 1);
-var import_places2 = __toESM(require_places(), 1);
-var import_keepsakes2 = __toESM(require_keepsakes(), 1);
+var import_state_generated2 = __toESM(require_state_generated(), 1);
+var import_places_generated2 = __toESM(require_places_generated(), 1);
+var import_keepsakes_generated2 = __toESM(require_keepsakes_generated(), 1);
 var import_conflicts_generated2 = __toESM(require_conflicts_generated(), 1);
-var import_trackers2 = __toESM(require_trackers(), 1);
-var import_reasons2 = __toESM(require_reasons(), 1);
+var import_trackers_generated2 = __toESM(require_trackers_generated(), 1);
+var import_reasons_generated2 = __toESM(require_reasons_generated(), 1);
 import { AsyncLocalStorage } from "async_hooks";
 var books = new AsyncLocalStorage;
 import_scenes_generated2.default.setAddressProvider(() => {
@@ -11252,12 +11322,12 @@ function createRoomData({ store, userId, keyFor, persist, settings }) {
   const cache = new Map;
   const loading = new Map;
   const definitions = {
-    state: [1, import_state2.default.emptyState],
-    places: [1, import_places2.default.emptyPlaces],
-    keepsakes: [1, import_keepsakes2.default.emptyKeepsakes],
+    state: [1, import_state_generated2.default.emptyState],
+    places: [1, import_places_generated2.default.emptyPlaces],
+    keepsakes: [1, import_keepsakes_generated2.default.emptyKeepsakes],
     conflicts: [1, import_conflicts_generated2.default.emptyConflicts],
-    trackers: [1, import_trackers2.default.emptyTrackers],
-    "recall-prefs": [1, import_reasons2.default.emptyPrefs],
+    trackers: [1, import_trackers_generated2.default.emptyTrackers],
+    "recall-prefs": [1, import_reasons_generated2.default.emptyPrefs],
     selected: [1, () => ({ version: 1, items: [] })],
     names: [import_aliases.default.NAMES_VERSION, import_aliases.default.emptyTable],
     address: [import_address_generated.default.ADDRESS_VERSION, import_address_generated.default.emptyBook],
@@ -11291,7 +11361,7 @@ function createRoomData({ store, userId, keyFor, persist, settings }) {
       cache.get(id)[name] = data;
   }
   function using(id, fn) {
-    return books.run({ address: () => get(id, "address"), placeKey: () => !import_features2.default.resolve(settings(), id, "characterState").enabled ? null : (name) => import_features2.default.resolve(settings(), id, "places").enabled ? import_places2.default.resolve(get(id, "places"), name)?.id || import_places2.default.keyOf(name) : import_places2.default.keyOf(name) }, () => import_aliases.default.using(get(id, "names"), fn));
+    return books.run({ address: () => get(id, "address"), placeKey: () => !import_features2.default.resolve(settings(), id, "characterState").enabled ? null : (name) => import_features2.default.resolve(settings(), id, "places").enabled ? import_places_generated2.default.resolve(get(id, "places"), name)?.id || import_places_generated2.default.keyOf(name) : import_places_generated2.default.keyOf(name) }, () => import_aliases.default.using(get(id, "names"), fn));
   }
   function seed(id, names) {
     const table = structuredClone(get(id, "names"));
@@ -11699,6 +11769,15 @@ function createMemoryService({ host, store, log = () => {}, now = () => Date.now
     function saveSettings(next) {
       persist(keys.settings, next);
       settingsCache = next;
+    }
+    async function saveRoomSettings(id, entry) {
+      const next = { ...settings(), chats: { ...settings().chats } };
+      if (entry === undefined)
+        delete next.chats[id];
+      else
+        next.chats[id] = entry;
+      saveSettings(next);
+      await store.flushKey(userId, keys.settings);
     }
     async function ensureChat(chatId) {
       await ready();
@@ -12801,8 +12880,8 @@ ${import_ledger3.default.renderCompact(ledger)}`].filter(Boolean).join(`
       const set = settings().memoryLanguage;
       return import_translate.default.LANGS.includes(set) ? set : writeLanguage(chatId);
     }
-    function renderLedger(chatId) {
-      const source = renderMemorySource(chatId);
+    function renderLedger(chatId, { selected = true } = {}) {
+      const source = renderMemorySource(chatId, T.MEMORY_MAX_CHARS, null, selected);
       if (!source)
         return "";
       const target = memoryLanguage(chatId);
@@ -12813,7 +12892,7 @@ ${import_ledger3.default.renderCompact(ledger)}`].filter(Boolean).join(`
         const fixed = memoryHeader(style).length + memoryFooter(style).length + 40;
         const grows = (text.length - fixed) / Math.max(1, source.length - fixed);
         if (grows > 1) {
-          const smaller = renderMemorySource(chatId, Math.floor(fixed + (T.MEMORY_MAX_CHARS - fixed) / grows * 0.97));
+          const smaller = renderMemorySource(chatId, Math.floor(fixed + (T.MEMORY_MAX_CHARS - fixed) / grows * 0.97), null, selected);
           if (smaller)
             text = import_translate.default.translateText(smaller, target, lookup).text;
         }
@@ -12824,10 +12903,10 @@ ${import_ledger3.default.renderCompact(ledger)}`].filter(Boolean).join(`
 
 `);
     }
-    function renderMemorySource(chatId, maxChars = T.MEMORY_MAX_CHARS, trace = null) {
-      return roomData.using(chatId, () => renderMemorySourceInRoom(chatId, maxChars, trace));
+    function renderMemorySource(chatId, maxChars = T.MEMORY_MAX_CHARS, trace = null, selected = true) {
+      return roomData.using(chatId, () => renderMemorySourceInRoom(chatId, maxChars, trace, selected));
     }
-    function renderMemorySourceInRoom(chatId, maxChars, trace) {
+    function renderMemorySourceInRoom(chatId, maxChars, trace, selected) {
       if (!chatEnabled(chatId))
         return "";
       const ledger = ledgerForReply(chatId);
@@ -12888,7 +12967,7 @@ ${open}` : "", routine].filter(Boolean);
             trace.raw = (recall?.raw || []).filter((m) => !scenes.scenes.some((sc) => prefs.hidden.has(sc.id) && m.number >= sc.start && m.number <= sc.end)).slice(0, amount.raw);
         }
       }
-      const chosen = room > 300 ? import_selected2.default.render(api.features.selectedViews.get(chatId) || [], query, Math.min(room, 2500), trace ? trace.selected = [] : null) : "";
+      const chosen = selected && room > 300 ? import_selected2.default.render(api.features.selectedViews.get(chatId) || [], query, Math.min(room, 2500), trace ? trace.selected = [] : null) : "";
       if (chosen)
         story.push(`[\uC9C1\uC811 \uC120\uD0DD\uD574 \uC815\uB9AC\uD55C \uAE30\uC5B5]
 ${chosen}`);
@@ -12904,7 +12983,7 @@ ${footer}` : "";
     async function rendered(chatId) {
       await ensureChat(chatId);
       const text = sanitize(renderLedger(chatId), T.MAX_RENDER_CHARS);
-      renderedCache.set(`${userId}\x00${chatId}`, text);
+      renderedCache.set(`${userId}\x00${chatId}`, sanitize(renderLedger(chatId, { selected: false }), T.MAX_RENDER_CHARS));
       return text;
     }
     async function syncBeforeReply(chatId, { regenerateMessageId, userMessage, budgetMs, signal } = {}) {
@@ -13118,10 +13197,7 @@ ${footer}` : "";
         } catch (error) {
           for (const key of files)
             await store.remove(userId, key);
-          const next = { ...settings(), chats: { ...settings().chats } };
-          delete next.chats[targetId];
-          await store.replaceRaw(userId, keys.settings, JSON.stringify(next));
-          settingsCache = next;
+          await saveRoomSettings(targetId, undefined);
           invalidateRoom(targetId);
           throw error;
         }
@@ -13180,8 +13256,10 @@ ${footer}` : "";
       organizeFor,
       sceneOptions,
       reviewAttributions: (...args) => reviewAttributions(api, ...args),
+      scenesReadable: (id) => !store.blocked(userId, keys.scenes(id)),
       userId,
       ready,
+      saveRoomSettings,
       ensureChat,
       ensureVectors,
       settings,

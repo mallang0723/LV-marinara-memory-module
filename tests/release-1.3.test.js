@@ -290,7 +290,16 @@ test('restore hides intermediate multi-file state from reads and keeps safety co
     await new Promise(r => setTimeout(r, 5)); assert.equal(readDone, false);
     release(); await apply; assert.equal((await read).scenes[0].title, '복원 완료');
     await e.room('POST', 'restore/undo');
-    e.f.api.userStorage.write = async (key, ...args) => { if (key === 'memory/chats/chat-a.scenes.json') throw Error('persistent disk failure'); return original(key, ...args); };
+    let damaged = false;
+    e.f.api.userStorage.write = async (key, ...args) => {
+        if (key === 'memory/chats/chat-a.scenes.json') {
+            // Actually change the data before making rollback fail. A rejected write that leaves
+            // the old bytes intact must no longer produce the false rollback-failure alert (fix1 F1).
+            if (!damaged) { damaged = true; await original(key, ...args); }
+            throw Error('persistent disk failure');
+        }
+        return original(key, ...args);
+    };
     await assert.rejects(e.room('POST', 'restore/apply', { backup }), /안전 사본/);
     e.f.api.userStorage.write = original;
     const fresh = createMemoryService({ host: e.host, store: e.store }).forUser('u1'); await fresh.ensureChat('chat-a');

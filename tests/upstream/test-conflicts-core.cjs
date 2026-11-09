@@ -85,7 +85,7 @@ test('fold: new conflicts open with ids that are not reused; a second look adds 
   assert.equal(grown.conflicts[2].kind, 'value');
 });
 
-test('fold: an open conflict goes away when the facts stop disagreeing or are gone; an answered one stays while both exist', () => {
+test('fold: an open conflict goes away when the facts stop disagreeing or are gone; keep decisions stay even if a fact is temporarily absent (LV fix1)', () => {
   const store = base();
   let file = Cf.fold(store, null);
   file = Cf.answer(file, 'C2', 'keepA');
@@ -93,9 +93,9 @@ test('fold: an open conflict goes away when the facts stop disagreeing or are go
   store.facts[1].text = '아침에만 커피를 즐겨 마신다';
   file = Cf.fold(store, file);
   assert.deepEqual(file.conflicts.map((c) => c.id), ['C2']);
-  // F5 is deleted: the answered conflict goes with it.
+  // LV fix1: a missing fact must not erase an exclusion decision.
   store.facts = store.facts.filter((f) => f.id !== 'F5');
-  assert.deepEqual(Cf.fold(store, file).conflicts, []);
+  assert.deepEqual(Cf.fold(store, file).conflicts.map(c => c.id), ['C2']);
   // An answered one stays even if the wording changed.
   store.facts.push(fact('F5', DOHA, '동생이 8살이다'));
   const kept = Cf.fold(store, file);
@@ -138,6 +138,6 @@ test('view: open ones first, both texts and scenes, answered ones after', () => 
   assert.equal(v.open, 1);
   assert.deepEqual(v.conflicts.map((c) => [c.id, c.status]), [['C2', 'open'], ['C1', 'both']]);
   assert.deepEqual([v.conflicts[0].aText, v.conflicts[0].bText, v.conflicts[0].aScene], ['동생이 7살이다', '동생이 9살이다', 'S1']);
-  assert.deepEqual(Cf.view(null, store), { open: 0, conflicts: [] });
+  assert.deepEqual(Cf.view(null, store), { omittedAuto: 0, open: 0, conflicts: [] });
 });
 

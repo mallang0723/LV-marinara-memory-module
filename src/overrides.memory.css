@@ -70,3 +70,15 @@
   #panel .sidebar .room-switch{position:sticky;bottom:0;z-index:2;margin-top:auto!important;background:#151515;border-top:1px solid #ece8df33}
   :host([data-theme=dark]) #panel .sidebar .room-switch{background:#1d1c1a}
 }
+/* fix1: the desktop scene shelf had non-shrinking cards in a horizontal strip.
+   Wrap at every width so all scene cards (and their children) remain in the workspace. */
+#panel .file-shelf:not(.chapter-grid){flex-wrap:wrap!important;overflow:visible!important;gap:14px!important}
+#panel .file-index{flex:1 1 150px!important;min-width:0!important;max-width:210px!important;box-sizing:border-box}
+#panel .file-index.is-selected{transform:translateY(-6px)!important}
+#panel :is(.file-foot,.reason-row,.conflict-head){flex-wrap:wrap;overflow-wrap:anywhere}
+#panel :is(.paper,.world-field,input,select){min-width:0;max-width:100%;box-sizing:border-box}
+#panel input[type=file],#panel input[type=file]::file-selector-button{min-height:44px!important}
+/* An explicit foreground/background pair keeps the icon visible in either header theme. */
+#panel #themeToggle{color:#151515!important;background:#ece8df!important;border:1px solid #151515!important;opacity:1!important}
+/* Full scene times and enlarged message-range labels must wrap within the card. */
+#panel .file-index :is(.file-range,.file-foot>span){white-space:normal!important;overflow-wrap:anywhere;min-width:0;max-width:100%}

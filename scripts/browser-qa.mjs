@@ -13,6 +13,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { checkFeatureScreens, assertPopulatedTab } from '../qa/feature-checks.mjs';
 import { createQaServer } from './qa-server.mjs';
 
 const pw = await import(process.env.PLAYWRIGHT_MODULE || 'playwright').catch(e => { console.error('Playwright not found (set PLAYWRIGHT_MODULE):', e.message); process.exit(2); });
@@ -57,10 +58,10 @@ function measure({ target, secondarySel, mainScrollers }) {
     const fonts = texts.map(e => ({ e, size: parseFloat(getComputedStyle(e).fontSize), secondary: isSecondary(e) }));
     const smallPrimary = fonts.filter(x => !x.secondary && x.size < 14.95), smallSecondary = fonts.filter(x => x.secondary && x.size < 12.95);
     const lowContrast = texts.filter(e => !inactive(e)).map(e => ({ e, r: ratio(e) })).filter(x => x.r < 4.5);
-    const fields = [...panel.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), textarea, select')].filter(shown);
+    const fields = [...panel.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, select')].filter(shown);
     const smallFieldText = fields.filter(e => parseFloat(getComputedStyle(e).fontSize) < 14.95).map(e => ({ e, size: parseFloat(getComputedStyle(e).fontSize) }));
     const tapSize = e => { const r = e.getBoundingClientRect(); return Math.min(r.width, r.height); };
-    const tapTargets = [...panel.querySelectorAll('button, select, input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), textarea, summary, a[href], [role=button]')].filter(shown).filter(e => !inactive(e) && !e.closest('svg'));
+    const tapTargets = [...panel.querySelectorAll('button, select, input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, summary, a[href], [role=button]')].filter(shown).filter(e => !inactive(e) && !e.closest('svg'));
     const checks = [...panel.querySelectorAll('input[type=checkbox], input[type=radio]')].filter(shown).map(e => e.closest('label') || e);
     const taps = [...new Set([...tapTargets, ...checks])];
     const shortTaps = taps.filter(e => tapSize(e) < 43.5);
@@ -152,12 +153,12 @@ try {
             await sleep(400);
             const txt = await page.evaluate(() => qa.drawerRoot('memory').innerText);
             if (!/이 방은 기억이 (켜져|꺼져) 있어요/.test(txt)) throw Error('drawer card did not show the chat status: ' + txt.slice(0, 120));
-            await page.evaluate(() => qa.switchChat('chat-none'));
-            await sleep(500);
-            const txt2 = await page.evaluate(() => qa.drawerRoot('memory').innerText);
-            if (!/이 방은 기억이 꺼져 있어요/.test(txt2)) throw Error('chat change not reflected: ' + txt2.slice(0, 160));
-            await page.evaluate(() => qa.switchChat('chat-a'));
-            await sleep(500);
+            try {
+                await page.evaluate(() => qa.switchChat('chat-none'));
+                await sleep(500);
+                const txt2 = await page.evaluate(() => qa.drawerRoot('memory').innerText);
+                if (!/이 방은 기억이 꺼져 있어요/.test(txt2)) throw Error('chat change not reflected: ' + txt2.slice(0, 160));
+            } finally { await page.evaluate(() => qa.switchChat('chat-a')); await sleep(500); }
         });
 
         // ----- Extras + memory screen -----
@@ -177,8 +178,10 @@ try {
                     for (const t of ['home', 'scenes', 'search', 'facts', 'ledger', 'life', 'names', 'world', 'inject', 'settings']) {
                         await click('memory', `button[data-tab="${t}"]`, `tab ${t}`);
                         await sleep(300);
+                        await assertPopulatedTab(page, t);
                         await check(`memory-${ui}-${t}`, 'memory');
                     }
+                    await checkFeatureScreens(page, label => check(`memory-${ui}-${label}`, 'memory'));
                 });
             }
         }

@@ -254,6 +254,18 @@ var MEMORY_OVERRIDES = `/* 기억 서재 — override sheet appended after the o
   #panel .sidebar .room-switch{position:sticky;bottom:0;z-index:2;margin-top:auto!important;background:#151515;border-top:1px solid #ece8df33}
   :host([data-theme=dark]) #panel .sidebar .room-switch{background:#1d1c1a}
 }
+/* fix1: the desktop scene shelf had non-shrinking cards in a horizontal strip.
+   Wrap at every width so all scene cards (and their children) remain in the workspace. */
+#panel .file-shelf:not(.chapter-grid){flex-wrap:wrap!important;overflow:visible!important;gap:14px!important}
+#panel .file-index{flex:1 1 150px!important;min-width:0!important;max-width:210px!important;box-sizing:border-box}
+#panel .file-index.is-selected{transform:translateY(-6px)!important}
+#panel :is(.file-foot,.reason-row,.conflict-head){flex-wrap:wrap;overflow-wrap:anywhere}
+#panel :is(.paper,.world-field,input,select){min-width:0;max-width:100%;box-sizing:border-box}
+#panel input[type=file],#panel input[type=file]::file-selector-button{min-height:44px!important}
+/* An explicit foreground/background pair keeps the icon visible in either header theme. */
+#panel #themeToggle{color:#151515!important;background:#ece8df!important;border:1px solid #151515!important;opacity:1!important}
+/* Full scene times and enlarged message-range labels must wrap within the card. */
+#panel .file-index :is(.file-range,.file-foot>span){white-space:normal!important;overflow-wrap:anywhere;min-width:0;max-width:100%}
 `;
 
 // src/style.js
@@ -2006,7 +2018,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     }
     return `<div class="eyebrow">FACTS · ${store.facts.length}</div><h1>알게 된 사실</h1>
       <p class="intro">인물마다 앞으로도 계속 유효한 설정·성격·과거·관계입니다. 인물마다 최신 것부터 고르게 기억 칸에 들어가고, 많이 쌓이면 같은 주제끼리 합쳐집니다.</p>
-      ${conflictsPaper(conflicts, store)}
+      ${omissionNotice({ conflicts: conflicts?.omittedAuto })}${conflictsPaper(conflicts, store)}
       ${[...groups].map(([who, list]) => `<div class="paper"><h2>${esc(who)}</h2>${list.map((f) => {
       const replaced = f.replacedBy && ids.has(f.replacedBy);
       return `<div class="fact-row" data-fact="${esc(f.id)}"><label>${esc(f.id)}${f.unaware?.length ? ` · 모름: ${esc(f.unaware.join("·"))}` : ""}${f.guess?.length ? ` · 짐작만: ${esc(f.guess.join("·"))}` : ""}${f.edited || f.knowSet?.length || f.knownLock ? " · 직접 고침" : ""}${replaced ? ` · ${esc(f.replacedBy)}로 바뀜(기억 칸에서 제외)` : ""}${superseded.has(f.id) ? " · 기록 충돌에서 뒤로 물림(기억 칸에서 제외)" : ""}</label>
@@ -2162,6 +2174,11 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       ${names?.busy ? '<p class="warn">지금 이 방을 정리하는 중이라 적용할 수 없습니다. 정리가 끝난 뒤 다시 미리 보기를 해 주세요.</p>' : ""}
       <div class="buttons">${p.total ? `<button class="primary" data-act="${armedKey}">${armed === armedKey ? "한 번 더 누르면 적용합니다" : merge ? "합치기" : "적용"}</button>` : '<span class="hint">바뀌는 곳이 없습니다.</span>'}<button class="ghost" data-act="nameCancel">닫기</button></div></div>`;
   }
+  function omissionNotice(counts) {
+    const labels = { state: "인물 상태", places: "장소", keepsakes: "소중한 물건", conflicts: "열린 충돌" };
+    const parts = Object.entries(counts || {}).filter(([, n]) => n > 0).map(([k, n]) => labels[k] + " " + n + "개");
+    return parts.length ? '<p class="note cap-notice" role="status">자동 항목 ' + esc(parts.join(" · ")) + "는 표시 한도로 생략했습니다. 직접 고친 기록과 판단은 보존합니다.</p>" : "";
+  }
   function viewWorld() {
     if (!info)
       return emptyRoom();
@@ -2171,7 +2188,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     return `<div class="eyebrow">STORY NOW</div><h1>인물·장소</h1>
       <p class="intro">장면을 정리할 때 같은 모델 호출에서 함께 읽어 둔 인물의 현재 상태, 장소의 모습, 소중한 물건입니다. 켠 뒤에 새로 정리하는 장면부터 채워지고, 원문에 보인 것만 적습니다. 고친 칸은 잠겨서 자동 기록이 덮어쓰지 않습니다.</p>
       ${off ? '<div class="note" role="status">이 방에서는 <b>인물 현재 상태</b>·<b>장소 기억</b>·<b>소중한 물건</b>·<b>날짜·주기 트래커</b>가 모두 꺼져 있습니다. <button data-tab="settings">설정 → 추가 기능에서 켜기</button></div>' : ""}
-      ${statePaper(world, worldForm, armed)}
+      ${omissionNotice(world.omittedAuto)}${statePaper(world, worldForm, armed)}
       ${placesPaper(world, worldForm, armed)}
       ${keepsakesPaper(world, worldForm, armed)}
       ${trackersPaper(world, armed)}`;
@@ -2538,9 +2555,9 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       const d = preview.data;
       const s = d.source;
       previewHtml = `<div class="note" role="status">
-        <b>불러올 백업</b>: ${esc(s.chatName || "(이름 없음)")} · 방 ID ${esc(s.chatId)} · ${esc(date(s.createdAt))} · 모듈 ${esc(s.moduleVersion || "?")}
+        <p class="restore-removes">지울 파일: ${esc(d.removes?.join(", ") || "없음")}</p><b>불러올 백업</b>: ${esc(s.chatName || "(이름 없음)")} · 방 ID ${esc(s.chatId)} · ${esc(date(s.createdAt))} · 모듈 ${esc(s.moduleVersion || "?")}
         <ul>${LINES.map(([k, label]) => `<li>${label}: 백업 ${esc(d.backup[k])} · 지금 ${esc(d.current[k])}</li>`).join("")}</ul>
-        <p class="hint">불러오면 이 방의 기억 파일이 백업의 내용으로 <b>통째로 바뀝니다</b>(백업에 없는 파일은 지워집니다). 바꾸기 전에 지금 상태를 안전 사본으로 한 번 남기며, 아래 '불러오기 되돌리기'로 돌릴 수 있습니다. 이 방의 '기억 사용' 켜짐 여부는 지금 그대로 둡니다.${d.vectors.inBackup ? "" : " 백업에 검색 색인이 없어 <b>지금의 검색 색인은 지우고</b> 다음 정리 때 다시 만듭니다."}${s.jobRunning ? " 이 백업은 정리 작업이 돌아가는 중에 받은 것이라 파일끼리 시점이 조금 다를 수 있습니다." : ""}</p>
+        <p class="hint">불러오면 이 방의 기억 파일이 백업의 내용으로 <b>통째로 바뀝니다</b>(백업에 없는 파일은 지워집니다). 바꾸기 전에 지금 상태와 직전 안전 사본을 보관하며, 아래 '불러오기 되돌리기'로 돌릴 수 있습니다. 이 방의 '기억 사용' 켜짐 여부는 지금 그대로 둡니다.${d.vectors.inBackup ? "" : " 백업에 검색 색인이 없어 <b>지금의 검색 색인은 지우고</b> 다음 정리 때 다시 만듭니다."}${s.jobRunning ? " 이 백업은 정리 작업이 돌아가는 중에 받은 것이라 파일끼리 시점이 조금 다를 수 있습니다." : ""}</p>
         ${d.crossRoomRequired ? `<div class="note"><label class="check-row"><input type="checkbox" id="restoreCross" ${preview.cross ? "checked" : ""}><span><b>다른 방의 백업을 이 방에 적용</b><small>이 백업은 다른 방(${esc(s.chatId)})에서 받은 것입니다. 메시지 번호와 ID는 그대로 두므로 이 방의 메시지와 맞지 않을 수 있습니다. 확인하시면 체크해 주세요.</small></span></label></div>` : ""}
         <div class="buttons"><button class="primary" data-act="restoreApply" ${busyJob || d.crossRoomRequired && !preview.cross ? "disabled" : ""}>${arm === "restoreApply" ? "한 번 더 누르면 백업을 불러옵니다" : "이 백업 불러오기"}</button><button class="ghost" data-act="restoreCancel">취소</button></div>
       </div>`;

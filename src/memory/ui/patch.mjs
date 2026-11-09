@@ -135,6 +135,16 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceRange(s, "      const range = sel.getRangeAt(0), element", "      const boxes = range.getClientRects()", "      const range = sel.getRangeAt(0);\n      const parts = LV.selectionParts(range);\n", 'Lumiverse message selection');
     s = replaceAnchor(s, "padding:9px 13px;border:1px solid #d4c9bc", "min-height:44px;min-width:44px;padding:9px 13px;border:1px solid #d4c9bc", { name: 'selection touch size' });
     s = replaceAnchor(s, "font:600 13px sans-serif;box-shadow", "font:600 15px sans-serif;box-shadow", { name: 'selection font size' });
+    s = replaceAnchor(s, '${statePaper(world, worldForm, armed)}', '${omissionNotice(world.omittedAuto)}${statePaper(world, worldForm, armed)}', { name: 'world omission counts' });
+    s = replaceAnchor(s, '${conflictsPaper(conflicts, store)}', '${omissionNotice({ conflicts: conflicts?.omittedAuto })}${conflictsPaper(conflicts, store)}', { name: 'conflict omission count' });
+    s = replaceAnchor(s, '  function viewWorld() {', `  function omissionNotice(counts) {
+    const labels = { state: '인물 상태', places: '장소', keepsakes: '소중한 물건', conflicts: '열린 충돌' };
+    const parts = Object.entries(counts || {}).filter(([, n]) => n > 0).map(([k, n]) => labels[k] + ' ' + n + '개');
+    return parts.length ? '<p class="note cap-notice" role="status">자동 항목 ' + esc(parts.join(' · ')) + '는 표시 한도로 생략했습니다. 직접 고친 기록과 판단은 보존합니다.</p>' : '';
+  }
+  function viewWorld() {`, { name: 'Korean omission notice' });
+    s = replaceAnchor(s, '<b>불러올 백업</b>:', '<p class="restore-removes">지울 파일: ${esc(d.removes?.join(", ") || "없음")}</p><b>불러올 백업</b>:', { name: 'show all removed files' });
+    s = replaceAnchor(s, "바꾸기 전에 지금 상태를 안전 사본으로 한 번 남기며", "바꾸기 전에 지금 상태와 직전 안전 사본을 보관하며", { name: 'two restore snapshots' });
     // return a handle instead of installing at evaluation time
     s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
     return s;

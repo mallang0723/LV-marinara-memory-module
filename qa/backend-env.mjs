@@ -19,6 +19,8 @@ function storyRows(n) {
 export async function createQaEnv({ messages = 44 } = {}) {
     const outbox = [];
     const f = fake({ onSend: (m, user) => outbox.push({ m, user }) });
+    f.chats.set('chat-none', { id: 'chat-none', name: '빈 방', metadata: {} });
+    f.messages.set('chat-none', []);
     f.addMessages('chat-a', storyRows(messages));
     f.addMessages('chat-a', [{ id: 'qa-selected-message', role: 'user', content: '하루가 서아에게 편지를 건넸다.' }]);
     f.chats.get('chat-a').character_id = 'char-haru';
@@ -35,7 +37,7 @@ export async function createQaEnv({ messages = 44 } = {}) {
     };
     start({ ...f.api, log: { info() {} } }, { tunables: { SCENE_MIN_PENDING: 1 }, store: { debounceMs: 0 }, afterReplyMs: 20 });
     const U = 'qa-user';
-    const call = (m, p, b) => f.rpc(m, p, b, U);
+    const call = async (m, p, b) => { const r = await f.rpc(m, p, b, U); if (!r.ok) throw Error(`QA seed ${m} ${p}: ${r.error}`); return r; };
     await call('POST', 'ext/settings', { window: 8 });
     await call('POST', 'memory-module/settings', { connection: 'conn-a' });
     await call('POST', 'memory-module/settings/recall', { mode: 'fast' });
@@ -50,6 +52,9 @@ export async function createQaEnv({ messages = 44 } = {}) {
     // who knows what: the 아는 사람 / 모르는 사람 chips of the facts tab (hand edits, so they are kept as written)
     const facts = (await call('GET', 'memory-module/chats/chat-a/scenes')).data.facts || [];
     for (const [i, fact] of facts.entries()) await call('PATCH', `memory-module/chats/chat-a/facts/${fact.id}`, i % 2 === 0 ? { knownBy: ['하루', '서아'] } : { knownBy: ['하루'], unaware: ['서아'] });
+    if (facts.length < 2) throw Error('QA needs two facts for conflicts');
+    await call('PATCH', `memory-module/chats/chat-a/facts/${facts[0].id}`, { about: '하루', text: '하루는 커피를 즐겨 마신다' });
+    await call('PATCH', `memory-module/chats/chat-a/facts/${facts[1].id}`, { about: '하루', text: '하루는 커피를 즐겨 마시지 않는다' });
     for (const key of ['characterState', 'places', 'keepsakes', 'trackers']) await call('POST', 'memory-module/chats/chat-a/feature-mode', { key, mode: 'on' });
     await call('POST', 'memory-module/chats/chat-a/state', { action: 'set', name: '하루', field: 'outfit', value: '앞치마' });
     await call('POST', 'memory-module/chats/chat-a/places', { action: 'add', name: '달빛 빵집' });

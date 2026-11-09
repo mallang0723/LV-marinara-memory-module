@@ -2,12 +2,12 @@
 import L from './core/ledger.cjs';
 import S from './core/scenes.generated.cjs';
 import N from './core/names.generated.cjs';
-import St from './core/state.cjs';
-import Pl from './core/places.cjs';
-import Ks from './core/keepsakes.cjs';
+import St from './core/state.generated.cjs';
+import Pl from './core/places.generated.cjs';
+import Ks from './core/keepsakes.generated.cjs';
 import Cf from './core/conflicts.generated.cjs';
-import Tk from './core/trackers.cjs';
-import Rp from './core/reasons.cjs';
+import Tk from './core/trackers.generated.cjs';
+import Rp from './core/reasons.generated.cjs';
 import Selected from './core/selected.cjs';
 import F from './core/features.cjs';
 
@@ -17,6 +17,7 @@ export function createRoomFeatures(um) {
     const on = (id, key) => F.resolve(um.settings(), id, key).enabled;
     const sceneDate = (id, scene) => L.dateInText(scene.time || '', um.storyToday(id, um.loadLedger(id)))?.date || null;
     function folded(id, scenes) {
+        if (!scenes) return Object.fromEntries(['state', 'places', 'keepsakes', 'conflicts'].map(key => [key, data.get(id, key)]));
         const next = {};
         for (const [key, feature, core] of [['state', 'characterState', St], ['places', 'places', Pl], ['keepsakes', 'keepsakes', Ks]]) {
             if (on(id, feature)) next[key] = core.fold(scenes || S.emptyStore(), data.get(id, key));
@@ -25,6 +26,7 @@ export function createRoomFeatures(um) {
         return next;
     }
     function refresh(id, scenes) {
+        if (!scenes || !um.scenesReadable(id)) return;
         data.using(id, () => {
             const next = folded(id, scenes);
             if (on(id, 'trackers')) next.trackers = Tk.suggest(data.get(id, 'trackers'), scenes || S.emptyStore(), s => sceneDate(id, s), undefined, { auto: on(id, 'autoApply') });
@@ -70,6 +72,7 @@ export function createRoomFeatures(um) {
         refresh(id, um.loadScenes(id));
         const characterState = on(id, 'characterState'), places = on(id, 'places'), keepsakes = on(id, 'keepsakes');
         return { characterState, places, keepsakes,
+            omittedAuto: Object.fromEntries(['state', 'places', 'keepsakes'].map(k => [k, data.get(id, k).omittedAuto || 0])),
             cards: characterState ? St.view(data.get(id, 'state')) : [],
             placeList: places ? Pl.view(data.get(id, 'places')) : [], keepList: keepsakes ? Ks.view(data.get(id, 'keepsakes')) : [],
             ...(on(id, 'trackers') ? { trackers: trackers(id) } : {}),
@@ -92,7 +95,15 @@ export function createRoomFeatures(um) {
     }
     function inherit(source, target, scenes, ledger, ids, messages) {
         data.using(target, () => {
-            for (const [key, core] of [['state', St], ['places', Pl], ['keepsakes', Ks], ['conflicts', Cf]]) data.save(target, key, core.fold(scenes || S.emptyStore(), structuredClone(data.get(source, key))));
+            for (const [key, core] of [['state', St], ['places', Pl], ['keepsakes', Ks], ['conflicts', Cf]]) {
+                const previous = structuredClone(data.get(source, key));
+                if (key === 'conflicts') {
+                    // A fork inherits only common facts; future source-room decisions do not belong to it.
+                    const facts = new Set((scenes?.facts || []).map(f => f.id));
+                    previous.conflicts = previous.conflicts.filter(c => facts.has(c.a) && facts.has(c.b));
+                }
+                data.save(target, key, core.fold(scenes || S.emptyStore(), previous));
+            }
             data.save(target, 'trackers', Tk.forBranch(data.get(source, 'trackers'), scenes || S.emptyStore()));
             data.save(target, 'recall-prefs', Rp.prune(Rp.followMerges(data.get(source, 'recall-prefs'), scenes), Rp.liveIds(scenes, ledger, S.liveFacts)));
             const byId = new Map(messages.map(m => [m.id, m]));
