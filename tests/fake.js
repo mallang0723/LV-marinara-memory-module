@@ -12,6 +12,8 @@ export function fake(opts = {}) {
     const calls = [], sent = [], toasts = [];
     const interceptors = [], macros = new Map(), commands = { list: [], onInvoked: null };
     const handlers = new Map();
+    // rpcPool like the host's (src/spindle/shared-rpc-pool.service.ts): sync publishes under `<identifier>.<channel>`; read of a missing endpoint throws
+    const rpc = { synced: new Map(), policies: new Map(), peers: new Map(), reads: [] };
     const frontendHandlers = new Set();
     let seq = 0;
     const nextId = p => `${p}-${++seq}`;
@@ -62,6 +64,11 @@ export function fake(opts = {}) {
             if (!handlers.has(event)) handlers.set(event, new Set());
             handlers.get(event).add(handler);
             return () => handlers.get(event).delete(handler);
+        },
+        rpcPool: opts.noRpcPool ? undefined : {
+            sync(endpoint, value, policy) { rpc.synced.set(endpoint, clone(value)); rpc.policies.set(endpoint, clone(policy)); return `anon_memory_lv.${endpoint}`; },
+            read: async endpoint => { rpc.reads.push(endpoint); if (!rpc.peers.has(endpoint)) throw new Error(`Shared RPC endpoint "${endpoint}" not found`); return clone(rpc.peers.get(endpoint)); },
+            unregister(endpoint) { rpc.synced.delete(endpoint); rpc.policies.delete(endpoint); },
         },
         registerInterceptor(handler, priority) {
             if (state.denied.includes('interceptor')) return () => {};
@@ -157,7 +164,7 @@ export function fake(opts = {}) {
     };
     const f = {
         api, state, files, calls, sent, interceptors, macros, commands, chats, characters, personas, books, entries, messages, connections, handlers,
-        frontendHandler: null, model: null, toasts,
+        frontendHandler: null, model: null, toasts, rpcPool: rpc,
         emit,
         /** Appends messages [{role, name, content, hidden?, personaId?}] to a chat, numbering them like the host (index_in_chat). */
         addMessages(chatId, list) {

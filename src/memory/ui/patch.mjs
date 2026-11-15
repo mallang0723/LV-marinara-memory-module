@@ -19,6 +19,13 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceAnchor(s, "/*__UI_CSS__*/ ''", () => '/*__UI_CSS__*/ ' + JSON.stringify(uiCss), { name: 'ui css' });
     s = replaceAnchor(s, "/*__THEME_CSS__*/ ''", () => '/*__THEME_CSS__*/ ' + JSON.stringify(themeCss), { name: 'theme css' });
     s = replaceAnchor(s, "'/*__VERSION__*/'", () => JSON.stringify(version), { name: 'version' });
+    // The translator's glossary: the original reads another extension's storage over /api/personal-extensions (a Marinara-only route, 404 here);
+    // the backend reads it from the chat's metadata where the translator publishes it (src/adapter/translator.js) and sends it to the same route.
+    s = replaceRange(s, '  /**\n   * The glossary of the 번역 프리셋·단어장 extension for this room', '  /** The Korean for a memory text, when there is one and it differs. */', `  async function syncGlossary(id) {
+    try { await LV.syncGlossary(id); } catch {}
+  }
+
+`, 'translator glossary');
     // transport: the screen's fetch('/api/memory-module...') and fetch('/api/connections') go through the shim, never to the network
     s = replaceAnchor(s, "response = await fetch(path.startsWith('/api/') ? path : BASE + path, init);", "response = await LV.fetch(path.startsWith('/api/') ? path : BASE + path, init);", { name: 'fetch' });
     s = replaceAnchor(s, "return localStorage.getItem('marinara-active-chat-id') || '';", "return LV.activeChatId() || '';", { name: 'active chat id' });

@@ -19,6 +19,7 @@ export function start(api, options = {}) {
     const log = m => { try { api.log?.info?.(`[memory-library] ${m}`); } catch { /* optional */ } };
     const host = createHostAdapter(api, { log });
     const manager = createManager({ api, log, host, version: VERSION, tunables: options.tunables || {}, afterReplyMs: options.afterReplyMs, debounceMs: options.store?.debounceMs });
+    manager.translator.publish();   // LV-TX v1 handshake: { requires: [] }, silently skipped on a host without rpcPool
     const router = createRouter();
     const disposers = [];
     const timers = manager.timers;
@@ -33,6 +34,14 @@ export function start(api, options = {}) {
         await um.flush();
         return { settings: next };
     });
+    // The translator's glossary of a chat (the screen asks when it opens a room). Always answers: absent or incompatible = nothing applied.
+    router.add('POST', 'ext/translator/sync', async ({ userId, body }) => {
+        const chatId = typeof body?.chatId === 'string' ? body.chatId : '';
+        if (!chatId) return { applied: false };
+        const um = manager.forUser(userId);
+        await um.ready();
+        try { return await um.syncTranslatorGlossary(chatId); } catch (e) { log(`translator glossary: ${e?.message || e}`); return { applied: false }; }
+    });
     router.add('GET', 'ext/settings', async ({ userId }) => {
         const um = manager.forUser(userId);
         await um.ready();
@@ -42,7 +51,7 @@ export function start(api, options = {}) {
     disposers.push(router.attach(api));
 
     const injector = createInjector({ manager, log });
-    let offInterceptor = null, offEnded = null, offForked = null, macroOn = false, offPerm = null, offCommands = null;
+    let offInterceptor = null, offEnded = null, offForked = null, macroOn = false, offPerm = null, offCommands = null, offChat = null;
 
     function wire() {
         // the interceptor needs the `interceptor` permission; it can be granted after the extension started
@@ -102,6 +111,18 @@ export function start(api, options = {}) {
             } catch (e) { log(`CHAT_FORKED: ${e?.message || e}`); }
         });
     } catch (e) { log(`CHAT_FORKED: ${e?.message || e}`); }
+    // The translator wrote a new glossary into the chat's metadata: pass it on for rooms that keep memory (no polling; the screen asks too).
+    try {
+        offChat = api.on('CHAT_CHANGED', (payload, userId) => {
+            try {
+                const id = payload?.chat?.id;
+                if (!userId || typeof id !== 'string' || !Array.isArray(payload.changedFields) || !payload.changedFields.includes('metadata.st_translator')) return;
+                const um = manager.users.get(userId);
+                if (!um || um.settings().moduleMemory === false || !um.chatEnabled(id)) return;
+                um.ready().then(() => um.syncTranslatorGlossary(id)).catch(() => {});
+            } catch (e) { log(`CHAT_CHANGED: ${e?.message || e}`); }
+        });
+    } catch (e) { log(`CHAT_CHANGED: ${e?.message || e}`); }
     // The message snapshot follows the host's message events (no re-read of the chat): payloads carry the changed message.
     const offMessages = [];
     for (const type of ['MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED', 'SWIPE_EDITED']) {
@@ -120,7 +141,7 @@ export function start(api, options = {}) {
     } catch (e) { log(`commands: ${e?.message || e}`); }
 
     return async () => {
-        for (const d of [offInterceptor, offEnded, offForked, offPerm, offCommands, ...offMessages, ...disposers]) { try { d?.(); } catch { /* ignore */ } }
+        for (const d of [offInterceptor, offEnded, offForked, offChat, offPerm, offCommands, ...offMessages, ...disposers]) { try { d?.(); } catch { /* ignore */ } }
         try { api.unregisterMacro?.(MACRO_NAME); } catch { /* ignore */ }
         try { await manager.dispose(); } catch { /* ignore */ }
     };

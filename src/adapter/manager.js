@@ -5,6 +5,9 @@ import { createRouter, normalizePath } from '../common/router.js';
 import { createUserService } from './upstream.js';
 import { running } from './dispatch.js';
 import { createHostAdapter } from '../common/host-adapter.js';
+import { createTranslatorLink } from './translator.js';
+
+const TRANSLATOR_GLOSSARY_SOURCE = '번역 프리셋·단어장';
 
 export const MEMORY_MARKER = '[Memory: what the characters remember from earlier in this story';
 export const RECALL_BUDGET_MS = 6000;
@@ -18,20 +21,21 @@ export function sanitize(text, max = 60000) {
 
 const replyShim = () => ({ code: 200, payload: undefined, status(n) { this.code = n; return this; }, send(x) { this.payload = x; return x; }, header() { return this; }, get statusCode() { return this.code; } });
 
-export function createManager({ api, log = () => {}, tunables = {}, version = '0', host = createHostAdapter(api, { log }), afterReplyMs = 1500, debounceMs } = {}) {
+export function createManager({ api, log = () => {}, tunables = {}, version = '0', host = createHostAdapter(api, { log }), translator = createTranslatorLink(api, { version, log }), afterReplyMs = 1500, debounceMs } = {}) {
     const users = new Map();
     const timers = new Set();
 
     function build(userId) {
         const env = { ...(tunables.env || {}) };
         env.MEMORY_MODULE_RECALL_TIMEOUT_MS ??= String(tunables.recallBudgetMs ?? RECALL_BUDGET_MS);
-        const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId) });
+        const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId), translator });
         const router = createRouter();
         for (const r of u.routes) {
             const pattern = r.path.replace(/^\/api\//, '');
             router.add(r.method, pattern, async ctx => invoke(r, ctx));
         }
         const rendered = new Map();
+        const sentGlossary = new Map();
         const settings = () => u.X.settings();
         const chatEnabled = chatId => settings().chats?.[chatId]?.enabled === true;
         const preloadRoom = (chatId, ...more) => u.vfs.preload(...[chatId, ...more].filter(Boolean).flatMap(id => [`chats/${id}.`, `restore-undo/${id}/`]));
@@ -90,6 +94,19 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
                 return limit ? { source: 'lumiverse', limit, label: `루미버스 메시지 제한 ${limit}개를 따릅니다.` } : { source: 'extension', limit: s.window, label: `기억 서재 창 크기 ${s.window}개를 씁니다(루미버스 메시지 제한이 꺼져 있음).` };
             },
             onMessage: (type, payload) => u.eng.onMessage(type, payload),
+            /**
+             * The translator's published glossary of this chat goes through upstream's own glossary route (same body the screen used to send
+             * after reading the translator's storage). Nothing is sent when the translator is absent or incompatible, has published
+             * nothing, or the text is the one already sent.
+             */
+            async syncTranslatorGlossary(chatId) {
+                const text = await u.eng.translatorGlossary(chatId);
+                if (text == null) return { applied: false };
+                if (sentGlossary.get(chatId) === text) return { applied: false, same: true };
+                const out = await inst.handle({ method: 'POST', path: `memory-module/chats/${encodeURIComponent(chatId)}/glossary`, body: { glossary: text, source: TRANSLATOR_GLOSSARY_SOURCE } });
+                sentGlossary.set(chatId, text);
+                return { applied: true, ...out };
+            },
         };
         return inst;
     }
@@ -108,6 +125,7 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
         for (const t of timers) clearTimeout(t);
         for (const inst of users.values()) { try { await inst.flush(); } catch { /* reported by flush callers */ } inst.u.dispose(); }
         host.dispose?.();
+        translator.dispose();
     }
-    return { forUser, users, mount, host, dispose, timers, afterReplyMs, MEMORY_MARKER, normalizePath, running };
+    return { forUser, users, mount, host, translator, dispose, timers, afterReplyMs, MEMORY_MARKER, normalizePath, running };
 }

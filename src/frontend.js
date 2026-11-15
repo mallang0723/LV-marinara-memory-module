@@ -35,6 +35,8 @@ export function setup(ctx, opts = {}) {
         css: MEMORY_OVERRIDES,
         selectionParts: range => selectedMessageParts(range, doc),
         fetch: createFetch(link),
+        /** The translator's glossary for this room, applied by the backend (no host storage is read here). */
+        syncGlossary: id => link.call('POST', 'ext/translator/sync', { chatId: id }),
         activeChatId: getChatId,
         mountHost,
         onOpen: open => memoryGuard.sync(open),

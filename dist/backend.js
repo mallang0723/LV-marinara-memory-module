@@ -20134,6 +20134,101 @@ function createVfs({ storage, userId, debounceMs = 400, log = () => {}, setTimer
   return { fs, init, preload, run, flush, loadMisses, failures: () => new Map(failures), misses, stats: () => ({ files: files.size, known: known.size, dirty: dirty.size, writes }), pathOf, keyOf, ROOT };
 }
 
+// src/adapter/translator.js
+var SELF_ID = "anon_memory_lv";
+var PEER_ID = "st_translator";
+var CONTRACT_NAME = "lv-tx";
+var CONTRACT_VERSION = 1;
+var PROVIDES = ["reads-pub-translation@1", "reads-glossary@1"];
+var PEER_TTL_MS = 20000;
+function hashText(str) {
+  let h = 2166136261;
+  const s = String(str ?? "");
+  for (let i = 0;i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+var isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+function handshake(version) {
+  return { name: CONTRACT_NAME, v: CONTRACT_VERSION, ext: SELF_ID, version, provides: [...PROVIDES] };
+}
+function classifyPeer(value) {
+  if (!isObject(value))
+    return "none";
+  if (value.name !== CONTRACT_NAME || typeof value.v !== "number")
+    return "incompatible";
+  return value.v === CONTRACT_VERSION ? "ok" : "incompatible";
+}
+function createTranslatorLink(api, { version = "0", ttlMs = PEER_TTL_MS, now = () => Date.now(), log = () => {} } = {}) {
+  const pool = api?.rpcPool;
+  let published = false;
+  let current = { state: "none", version: null };
+  let at = -Infinity, inflight = null;
+  function publish() {
+    if (published || !pool?.sync)
+      return published;
+    try {
+      pool.sync("contract", handshake(version), { requires: [] });
+      published = true;
+    } catch (e) {
+      log(`translator handshake: ${e?.message || e}`);
+    }
+    return published;
+  }
+  async function refresh(force = false) {
+    if (!pool?.read)
+      return current;
+    if (!force && now() - at < ttlMs)
+      return current;
+    if (inflight)
+      return inflight;
+    inflight = (async () => {
+      try {
+        const value = await pool.read(`${PEER_ID}.contract`);
+        current = { state: classifyPeer(value), version: isObject(value) && typeof value.version === "string" ? value.version : null };
+      } catch {
+        current = { state: "none", version: null };
+      }
+      at = now();
+      return current;
+    })().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  }
+  function dispose() {
+    try {
+      if (published)
+        pool?.unregister?.("contract");
+    } catch {}
+    published = false;
+  }
+  return { publish, refresh, state: () => current.state, version: () => current.version, dispose };
+}
+function readPub(content, metadata) {
+  const pub = isObject(metadata) && isObject(metadata[PEER_ID]) ? metadata[PEER_ID].pub : null;
+  if (!isObject(pub) || pub.v !== 1 || typeof pub.text !== "string" || !pub.text.trim())
+    return null;
+  if (typeof content !== "string" || !content || pub.h !== hashText(content))
+    return null;
+  const paras = {};
+  if (isObject(pub.paras)) {
+    for (const [k, v] of Object.entries(pub.paras))
+      if (typeof v === "string" && v.trim())
+        paras[k] = v;
+  }
+  return { text: pub.text, paras: Object.keys(paras).length ? paras : null, edited: isObject(pub.edited) ? Object.keys(pub.edited) : [], lang: typeof pub.lang === "string" ? pub.lang : null };
+}
+function readGlossary(chatMetadata) {
+  const own = isObject(chatMetadata) ? chatMetadata[PEER_ID] : null;
+  const g = isObject(own) && own.v === 1 ? own.glossary : null;
+  if (!isObject(g) || typeof g.text !== "string" || g.hash !== hashText(g.text))
+    return null;
+  return g.text;
+}
+
 // src/adapter/engine.js
 var PAGE2 = 200;
 var TAIL = 30;
@@ -20143,7 +20238,7 @@ var iso2 = (t) => {
     return null;
   return new Date(n < 1000000000000 ? n * 1000 : n).toISOString();
 };
-function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabilities?.["chat-lean-messages-v1"], getMessageLimit = async () => null, getWindow = () => null }) {
+function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.["chat-lean-messages-v1"], getMessageLimit = async () => null, getWindow = () => null }) {
   const call = async (fn) => {
     try {
       return await fn();
@@ -20163,8 +20258,25 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
     translatorRow(out, m);
     return out;
   };
-  function translatorRow(row, dto) {}
-  const dtoOf = (m) => ({ id: m.id, role: m.role, is_user: m.is_user, name: m.name, content: m.content, swipe_id: m.swipe_id, extra: m.extra, metadata: m.metadata, index_in_chat: m.index_in_chat });
+  function translatorRow(row, dto) {
+    if (translator?.state() !== "ok")
+      return;
+    const pub = readPub(row.content, dto.metadata);
+    if (!pub)
+      return;
+    row.extra.translation = pub.text;
+    row.extra.translationSource = row.content;
+    if (pub.paras)
+      row.extra.paraTranslate = { map: pub.paras };
+  }
+  async function translatorGlossary(chatId) {
+    if (translator)
+      await translator.refresh();
+    if (translator?.state() !== "ok")
+      return null;
+    return readGlossary((await authorize(chatId)).metadata);
+  }
+  const dtoOf = (m) => ({ id: m.id, role: m.role, is_user: m.is_user, name: m.name, content: m.content, swipe_id: m.swipe_id, extra: m.extra, metadata: m.metadata ?? m.extra?.spindle_metadata, index_in_chat: m.index_in_chat });
   async function authorize(chatId) {
     const c = await call(() => api.chats.get(chatId, userId));
     if (!c)
@@ -20214,6 +20326,8 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
   const chatCache = new Map;
   const chatsApi = {
     async listMessages(chatId) {
+      if (translator)
+        await translator.refresh();
       const s = await snapshot(chatId);
       return s.rows.map(shapeRow);
     },
@@ -20399,7 +20513,7 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
     return null;
   } };
   const engine = { chats: chatsApi, characters, connections, createLLMProvider, resolveBaseUrl: (c) => c?.baseUrl || "lumiverse://connection", gameStates };
-  return { engine, onMessage, invalidate, dropChat, refreshTail, stats, snapshotRows: async (id) => (await snapshot(id)).rows, resetEmbeddings: () => {
+  return { engine, onMessage, invalidate, dropChat, refreshTail, translatorGlossary, stats, snapshotRows: async (id) => (await snapshot(id)).rows, resetEmbeddings: () => {
     embedConns = null;
   }, getMessageLimit };
 }
@@ -20466,10 +20580,10 @@ function collectRoutes(register) {
   register(make(""));
   return { routes, hooks };
 }
-function createUserService({ api, userId, log = () => {}, env = {}, version = "0", vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit }) {
+function createUserService({ api, userId, log = () => {}, env = {}, version = "0", vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit, translator }) {
   let svc = null;
   const vfs = realFs ? null : injectedVfs || createVfs({ storage: api.userStorage, userId, log, ...debounceMs != null ? { debounceMs } : {} });
-  const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, getWindow: () => {
+  const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getWindow: () => {
     try {
       return Number(svc?._test.settings().window) || null;
     } catch {
@@ -20532,6 +20646,7 @@ function createUserService({ api, userId, log = () => {}, env = {}, version = "0
 }
 
 // src/adapter/manager.js
+var TRANSLATOR_GLOSSARY_SOURCE = "\uBC88\uC5ED \uD504\uB9AC\uC14B\xB7\uB2E8\uC5B4\uC7A5";
 var MEMORY_MARKER = "[Memory: what the characters remember from earlier in this story";
 var RECALL_BUDGET_MS = 6000;
 var LV_KEYS = ["moduleMemory", "autoInject", "interceptorBudgetMs", "window"];
@@ -20555,19 +20670,20 @@ var replyShim = () => ({ code: 200, payload: undefined, status(n) {
 }, get statusCode() {
   return this.code;
 } });
-function createManager({ api, log = () => {}, tunables = {}, version = "0", host = createHostAdapter(api, { log }), afterReplyMs = 1500, debounceMs } = {}) {
+function createManager({ api, log = () => {}, tunables = {}, version = "0", host = createHostAdapter(api, { log }), translator = createTranslatorLink(api, { version, log }), afterReplyMs = 1500, debounceMs } = {}) {
   const users = new Map;
   const timers = new Set;
   function build(userId) {
     const env = { ...tunables.env || {} };
     env.MEMORY_MODULE_RECALL_TIMEOUT_MS ??= String(tunables.recallBudgetMs ?? RECALL_BUDGET_MS);
-    const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId) });
+    const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId), translator });
     const router = createRouter();
     for (const r of u.routes) {
       const pattern = r.path.replace(/^\/api\//, "");
       router.add(r.method, pattern, async (ctx) => invoke(r, ctx));
     }
     const rendered = new Map;
+    const sentGlossary = new Map;
     const settings = () => u.X.settings();
     const chatEnabled = (chatId) => settings().chats?.[chatId]?.enabled === true;
     const preloadRoom = (chatId, ...more) => u.vfs.preload(...[chatId, ...more].filter(Boolean).flatMap((id) => [`chats/${id}.`, `restore-undo/${id}/`]));
@@ -20663,7 +20779,17 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
         const s = inst.lvSettings();
         return limit ? { source: "lumiverse", limit, label: `\uB8E8\uBBF8\uBC84\uC2A4 \uBA54\uC2DC\uC9C0 \uC81C\uD55C ${limit}\uAC1C\uB97C \uB530\uB985\uB2C8\uB2E4.` } : { source: "extension", limit: s.window, label: `\uAE30\uC5B5 \uC11C\uC7AC \uCC3D \uD06C\uAE30 ${s.window}\uAC1C\uB97C \uC501\uB2C8\uB2E4(\uB8E8\uBBF8\uBC84\uC2A4 \uBA54\uC2DC\uC9C0 \uC81C\uD55C\uC774 \uAEBC\uC838 \uC788\uC74C).` };
       },
-      onMessage: (type, payload) => u.eng.onMessage(type, payload)
+      onMessage: (type, payload) => u.eng.onMessage(type, payload),
+      async syncTranslatorGlossary(chatId) {
+        const text = await u.eng.translatorGlossary(chatId);
+        if (text == null)
+          return { applied: false };
+        if (sentGlossary.get(chatId) === text)
+          return { applied: false, same: true };
+        const out = await inst.handle({ method: "POST", path: `memory-module/chats/${encodeURIComponent(chatId)}/glossary`, body: { glossary: text, source: TRANSLATOR_GLOSSARY_SOURCE } });
+        sentGlossary.set(chatId, text);
+        return { applied: true, ...out };
+      }
     };
     return inst;
   }
@@ -20691,8 +20817,9 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
       inst.u.dispose();
     }
     host.dispose?.();
+    translator.dispose();
   }
-  return { forUser, users, mount, host, dispose, timers, afterReplyMs, MEMORY_MARKER, normalizePath, running };
+  return { forUser, users, mount, host, translator, dispose, timers, afterReplyMs, MEMORY_MARKER, normalizePath, running };
 }
 
 // src/common/injector.js
@@ -20807,6 +20934,7 @@ function start(api, options = {}) {
   };
   const host = createHostAdapter(api, { log });
   const manager = createManager({ api, log, host, version: VERSION, tunables: options.tunables || {}, afterReplyMs: options.afterReplyMs, debounceMs: options.store?.debounceMs });
+  manager.translator.publish();
   const router = createRouter();
   const disposers = [];
   const timers = manager.timers;
@@ -20820,6 +20948,19 @@ function start(api, options = {}) {
     await um.flush();
     return { settings: next };
   });
+  router.add("POST", "ext/translator/sync", async ({ userId, body }) => {
+    const chatId = typeof body?.chatId === "string" ? body.chatId : "";
+    if (!chatId)
+      return { applied: false };
+    const um = manager.forUser(userId);
+    await um.ready();
+    try {
+      return await um.syncTranslatorGlossary(chatId);
+    } catch (e) {
+      log(`translator glossary: ${e?.message || e}`);
+      return { applied: false };
+    }
+  });
   router.add("GET", "ext/settings", async ({ userId }) => {
     const um = manager.forUser(userId);
     await um.ready();
@@ -20828,7 +20969,7 @@ function start(api, options = {}) {
   });
   disposers.push(router.attach(api));
   const injector = createInjector({ manager, log });
-  let offInterceptor = null, offEnded = null, offForked = null, macroOn = false, offPerm = null, offCommands = null;
+  let offInterceptor = null, offEnded = null, offForked = null, macroOn = false, offPerm = null, offCommands = null, offChat = null;
   function wire() {
     if (!offInterceptor && (!api.permissions?.has || api.permissions.has("interceptor"))) {
       try {
@@ -20907,6 +21048,23 @@ function start(api, options = {}) {
   } catch (e) {
     log(`CHAT_FORKED: ${e?.message || e}`);
   }
+  try {
+    offChat = api.on("CHAT_CHANGED", (payload, userId) => {
+      try {
+        const id = payload?.chat?.id;
+        if (!userId || typeof id !== "string" || !Array.isArray(payload.changedFields) || !payload.changedFields.includes("metadata.st_translator"))
+          return;
+        const um = manager.users.get(userId);
+        if (!um || um.settings().moduleMemory === false || !um.chatEnabled(id))
+          return;
+        um.ready().then(() => um.syncTranslatorGlossary(id)).catch(() => {});
+      } catch (e) {
+        log(`CHAT_CHANGED: ${e?.message || e}`);
+      }
+    });
+  } catch (e) {
+    log(`CHAT_CHANGED: ${e?.message || e}`);
+  }
   const offMessages = [];
   for (const type of ["MESSAGE_SENT", "MESSAGE_EDITED", "MESSAGE_DELETED", "MESSAGE_SWIPED", "SWIPE_EDITED"]) {
     try {
@@ -20944,7 +21102,7 @@ function start(api, options = {}) {
     log(`commands: ${e?.message || e}`);
   }
   return async () => {
-    for (const d of [offInterceptor, offEnded, offForked, offPerm, offCommands, ...offMessages, ...disposers]) {
+    for (const d of [offInterceptor, offEnded, offForked, offChat, offPerm, offCommands, ...offMessages, ...disposers]) {
       try {
         d?.();
       } catch {}

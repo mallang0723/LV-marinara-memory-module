@@ -25,10 +25,10 @@ export function collectRoutes(register) {
     return { routes, hooks };
 }
 
-export function createUserService({ api, userId, log = () => {}, env = {}, version = '0', vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit }) {
+export function createUserService({ api, userId, log = () => {}, env = {}, version = '0', vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit, translator }) {
     let svc = null;
     const vfs = realFs ? null : injectedVfs || createVfs({ storage: api.userStorage, userId, log, ...(debounceMs != null ? { debounceMs } : {}) });
-    const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, getWindow: () => { try { return Number(svc?._test.settings().window) || null; } catch { return null; } } });
+    const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getWindow: () => { try { return Number(svc?._test.settings().window) || null; } catch { return null; } } });
     const exits = [];
     const fakeProcess = { env: { DATA_DIR: DATA_ROOT, ...env }, pid: 0, argv: ['lumiverse-extension'], stderr: { write: s => log(String(s).trimEnd()) }, lvRecallBudgetMs: () => { try { return Number(svc?._test.settings().interceptorBudgetMs) || 0; } catch { return 0; } }, on: (ev, fn) => { if (ev === 'exit') exits.push(fn); } };
     const urlShim = { pathToFileURL: p => new URL('file://' + p) };

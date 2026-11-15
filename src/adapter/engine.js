@@ -3,13 +3,14 @@
 // `chat-lean-messages-v1`, else the one full read the host offers) and then kept current from the host's message events;
 // there is never a full read per call or per tick. `refreshTail` re-reads only the last few messages.
 import { wrapHostError } from '../common/store.js';
+import { readPub, readGlossary } from './translator.js';
 
 const PAGE = 200;
 const TAIL = 30;
 const iso = t => { const n = Number(t); if (!Number.isFinite(n) || n <= 0) return null; return new Date(n < 1e12 ? n * 1000 : n).toISOString(); };
 const clone = v => (v == null ? v : structuredClone(v));
 
-export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabilities?.['chat-lean-messages-v1'], getMessageLimit = async () => null, getWindow = () => null }) {
+export function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.['chat-lean-messages-v1'], getMessageLimit = async () => null, getWindow = () => null }) {
     const call = async fn => { try { return await fn(); } catch (e) { throw wrapHostError(e); } };
     const stats = { fullReads: 0, pageReads: 0, tailReads: 0, events: 0 };
 
@@ -27,12 +28,27 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
         translatorRow(out, m);
         return out;
     };
-    // ---- hook points for the translator contract "LV-TX v1" (B3, not implemented here) ----
-    // message:  metadata.st_translator.pub = {v:1, h, lang:'ko', text, paras:{<fnv32b36(normKey)>:ko}, edited, at}
-    //           -> to be synthesised into row.extra.translation / translationSource / paraTranslate.map when `h` matches the content
-    // chat:     chat.metadata.st_translator.glossary = {v:1, text, hash, at} -> POST chats/:id/glossary
-    function translatorRow(row, dto) { /* B3 */ }
-    const dtoOf = m => ({ id: m.id, role: m.role, is_user: m.is_user, name: m.name, content: m.content, swipe_id: m.swipe_id, extra: m.extra, metadata: m.metadata, index_in_chat: m.index_in_chat });
+    // ---- translator contract "LV-TX v1" (src/adapter/translator.js) ----
+    // The translator's public translation of a message becomes what upstream already reads off a Marinara row: extra.translation +
+    // translationSource (chatMessages, the Korean the library finds old lines by) and extra.paraTranslate.map (noteSourceKo, the
+    // paragraph translations quoted lines are shown with). Used only while the translator is present and speaks v1, and only when its
+    // hash matches the message text as it is now.
+    function translatorRow(row, dto) {
+        if (translator?.state() !== 'ok') return;
+        const pub = readPub(row.content, dto.metadata);
+        if (!pub) return;
+        row.extra.translation = pub.text;
+        row.extra.translationSource = row.content;
+        if (pub.paras) row.extra.paraTranslate = { map: pub.paras };
+    }
+    /** The glossary the translator published in the chat's metadata (one chat read, no message read), or null. */
+    async function translatorGlossary(chatId) {
+        if (translator) await translator.refresh();
+        if (translator?.state() !== 'ok') return null;
+        return readGlossary((await authorize(chatId)).metadata);
+    }
+    // Message events carry the host's raw message: the extensions' metadata is extra.spindle_metadata there, `metadata` in a read.
+    const dtoOf = m => ({ id: m.id, role: m.role, is_user: m.is_user, name: m.name, content: m.content, swipe_id: m.swipe_id, extra: m.extra, metadata: m.metadata ?? m.extra?.spindle_metadata, index_in_chat: m.index_in_chat });
     async function authorize(chatId) {
         const c = await call(() => api.chats.get(chatId, userId));
         if (!c) throw Object.assign(new Error('채팅을 찾지 못했습니다.'), { status: 404 });
@@ -70,6 +86,7 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
     const chatCache = new Map();
     const chatsApi = {
         async listMessages(chatId) {
+            if (translator) await translator.refresh();   // cached for 20 s; a failed read is "none"
             const s = await snapshot(chatId);
             return s.rows.map(shapeRow);
         },
@@ -204,5 +221,5 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
     // date line a message carries itself and carries it on to the next messages (addTrackerClock).
     const gameStates = { async getCommittedForMessages() { return new Map(); }, async getLatestForMessages() { return null; } };
     const engine = { chats: chatsApi, characters, connections, createLLMProvider, resolveBaseUrl: c => c?.baseUrl || 'lumiverse://connection', gameStates };
-    return { engine, onMessage, invalidate, dropChat, refreshTail, stats, snapshotRows: async id => (await snapshot(id)).rows, resetEmbeddings: () => { embedConns = null; } , getMessageLimit };
+    return { engine, onMessage, invalidate, dropChat, refreshTail, translatorGlossary, stats, snapshotRows: async id => (await snapshot(id)).rows, resetEmbeddings: () => { embedConns = null; } , getMessageLimit };
 }

@@ -1569,29 +1569,9 @@ pre{font-size:12.5px!important;line-height:1.85!important}
         trError = error?.message || String(error);
     }
   }
-  const GLOSSARY_EXTENSION = "번역 프리셋·단어장";
-  const glossarySent = new Map;
-  let glossaryExtensionId;
   async function syncGlossary(id) {
     try {
-      if (glossaryExtensionId === undefined) {
-        const list = await api("GET", "/api/personal-extensions/runtime/client");
-        glossaryExtensionId = (Array.isArray(list) ? list : []).find((e) => typeof e?.name === "string" && e.name.startsWith(GLOSSARY_EXTENSION))?.id || null;
-      }
-      if (!glossaryExtensionId)
-        return;
-      const stored = await api("GET", `/api/personal-extensions/${encodeURIComponent(glossaryExtensionId)}/storage`);
-      const config = stored?.value?.config;
-      if (!config || typeof config !== "object")
-        return;
-      const scope = config.chats?.[id] || config.defaults;
-      if (typeof scope?.glossary !== "string")
-        return;
-      const text = scope.glossary;
-      if (glossarySent.get(id) === text)
-        return;
-      await api("POST", `/chats/${encodeURIComponent(id)}/glossary`, { glossary: text, source: GLOSSARY_EXTENSION });
-      glossarySent.set(id, text);
+      await LV.syncGlossary(id);
     } catch {}
   }
   function ko(text) {
@@ -5399,6 +5379,7 @@ function setup(ctx, opts = {}) {
     css: MEMORY_OVERRIDES,
     selectionParts: (range) => selectedMessageParts(range, doc),
     fetch: createFetch(link),
+    syncGlossary: (id) => link.call("POST", "ext/translator/sync", { chatId: id }),
     activeChatId: getChatId,
     mountHost,
     onOpen: (open) => memoryGuard.sync(open),
