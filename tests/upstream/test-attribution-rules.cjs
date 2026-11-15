@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 // Deterministic speaker/listener rules. Invented names and lines only.
 const assert = require('node:assert/strict');
 const S = require('../../src/memory/core/scenes.generated.cjs');

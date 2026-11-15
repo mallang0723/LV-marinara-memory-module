@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 // The room's name table: one resolver for every name comparison, rename preview/apply/undo, duplicates and
 // "같은 사람일 수 있음" suggestions. Invented names only.

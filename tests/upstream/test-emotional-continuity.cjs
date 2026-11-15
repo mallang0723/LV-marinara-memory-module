@@ -1,7 +1,9 @@
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const S = require('../../src/memory/core/scenes.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
+const service = require('../upstream-service.cjs')._test;
 
 test('chapter input includes only what each person remembers', () => {
   const store = S.emptyStore();
@@ -15,6 +17,19 @@ test('chapter input includes only what each person remembers', () => {
   assert.match(text,/도윤의 회상: 지안 곁에서 편안했다/);
   assert.match(text,/흐릿함.*손을 잡은 기억/);
   assert.doesNotMatch(text,/잊은 비밀|몰랐던 사실/);
+});
+
+test('staged rebuild leaves saved chapters untouched if a later model call fails', async () => {
+  const original=S.emptyStore();
+  original.scenes=Array.from({length:70},(_,i)=>({id:`S${i+1}`,start:i+1,end:i+1,title:'장면',summary:'이야기',events:[],recollections:[],later:[]}));
+  original.chapters=[{id:'C1',scenes:['S1','S2'],title:'기존 챕터',summary:'원래 요약',turns:[],keep:[]}];
+  service.saveScenes('continuity-test',original);
+  const staged=structuredClone(original);
+  staged.chapters=[]; staged.arcs=[]; staged.nextChapter=1; staged.nextArc=1;
+  let calls=0;
+  const model={provider:{chatComplete:async()=>{calls++; if(calls===2) throw Error('모의 연결 오류'); return {content:JSON.stringify({end:'S20',title:'새 챕터',summary:'새 요약',turns:[],keep:[]})};}}};
+  await assert.rejects(service.condense('continuity-test',staged,model,{cancel:false},{maxCalls:Infinity,chaptersOnly:true,staged:true}),/모의 연결 오류/);
+  assert.equal(service.loadScenes('continuity-test').chapters[0].title,'기존 챕터');
 });
 
 test('short old chapter preserves the later relationship change when it fits', () => {

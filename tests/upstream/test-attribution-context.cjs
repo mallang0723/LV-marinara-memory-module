@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 const assert = require('node:assert/strict');
 const S = require('../../src/memory/core/scenes.generated.cjs');
 const q = {number:1,sentence:2,text:'"Signor Rossi, mi perdoni!" (로시 씨, 죄송합니다!)',by:'로시',to:null,attributionChecked:1};

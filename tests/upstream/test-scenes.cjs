@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 // node --test tests/test-scenes.cjs
 'use strict';
 const test = require('node:test');
@@ -90,8 +90,8 @@ test('render: summaries for older scenes, the newest expanded with quotes and wh
   const { slice } = S.nextSlice(store, chat, 2, { lead: 0, minVisible: 0 });
   S.commitScenes(store, S.applyScenes(store, goodResult, slice, 6));
   const text = S.renderScenes(store, 7, { expand: 1 });
-  assert.match(text, /^\[지난 장면들\]\n① 10-18 00:05~00:20 · 서재 — 약 냄새: 서아가 약 냄새를 지적함\./);
-  assert.match(text, /② 01:05~01:42 · 서재 문 앞 — 금주 약속\n문을 잠갔다가 서약을 받고 엶\.\n사건:\n- 서아가 열쇠로 문을 잠금\n  "……들어올 거잖아\."\n/);
+  assert.match(text, /^\[지난 장면들\]\nS1 10-18 00:05~00:20 · 서재 — 약 냄새: 서아가 약 냄새를 지적함\./);
+  assert.match(text, /S2 01:05~01:42 · 서재 문 앞 — 금주 약속\n문을 잠갔다가 서약을 받고 엶\.\n사건:\n- 서아가 열쇠로 문을 잠금\n  "……들어올 거잖아\."\n/);
   assert.match(text, /I'm not coming in\./);
   assert.doesNotMatch(text, /<speaker/);
   assert.match(text, /- 서아 \[흐릿하게만 기억함: 몸살기 열\] 그때: 열에 들떠 있었다\./);
@@ -136,7 +136,7 @@ test('who-forgets notes use the right particle and summaries sit on adjacent lin
   store.scenes.push({ ...store.scenes[0], id: 'S9', start: 7, end: 7, title: '아침', summary: '아침이 됨.', recollections: [] });
   const text = S.renderScenes(store, 8, { expand: 1 });
   assert.match(text, /※ 하준은 기억 못 함\(수면\)/);
-  assert.match(text, /약 냄새: 서아가 약 냄새를 지적함\. ※ 하준은 기억 못 함\(수면\)\n② [^\n]*금주 약속: /);
+  assert.match(text, /약 냄새: 서아가 약 냄새를 지적함\. ※ 하준은 기억 못 함\(수면\)\nS2 [^\n]*금주 약속: /);
 });
 
 test('facts: the name is not repeated, a changed fact replaces the old one, and both come back if the new one is dropped', () => {
@@ -153,7 +153,8 @@ test('facts: the name is not repeated, a changed fact replaces the old one, and 
   assert.equal(applied.facts[0].text, '몸살기 때 기억을 잃는다');
   S.commitScenes(store, applied);
   const text = S.renderScenes(store, 7);
-  assert.match(text, /\[알게 된 사실\]\n- 서아: 몸살기 때 기억을 잃는다 \/ 문을 이미 열었다\./);
+  // One fact per line under its person.
+  assert.match(text, /\[알게 된 사실\]\n- 서아:\n  · 몸살기 때 기억을 잃는다\n  · 문을 이미 열었다\./);
   assert.doesNotMatch(text, /문신에 묶여/);
   S.reconcileScenes(store, L.prepareMessages(chat.map((m) => (m.id === 'u3' ? { ...m, content: '바뀜.' } : m))));
   assert.match(S.renderScenes(store, 7), /문신에 묶여 있다/);
@@ -364,6 +365,8 @@ function longStore(n) {
 
 test('long story: old scenes become a chapter, cut where the model says one stretch of the story ends', () => {
   const store = longStore(49);
+  // The recent messages start at S41: the 40 scenes before them all fit the memory's scene list.
+  store.window = { firstInside: 121 };
   assert.equal(S.nextChapter(store), null, '49 scenes: 30 kept as they are + up to 20 offered');
   store.scenes.push({ ...store.scenes[0], id: 'S50', start: 148, end: 150, title: '장면 50' });
   const offered = S.nextChapter(store);

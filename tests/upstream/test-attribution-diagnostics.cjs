@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 const assert=require('node:assert/strict'); const S=require('../../src/memory/core/scenes.generated.cjs');
 const q={number:1,sentence:1,text:'"비공개 원문"',by:'직원',to:'손님'};const scene={id:'S1',events:[{quotes:[q]}]};
 const entries=S.attributionCandidates({scenes:[scene],personas:['직원','손님']},[{number:1,sentences:[q.text,'직원의 말이 끊겼다.']}]);

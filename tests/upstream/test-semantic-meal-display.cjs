@@ -1,12 +1,12 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
 const now = '2025-11-17T10:05';
 const make = (texts) => ({ routine: [
-  { who: '이리나', what: 'wake', at: '2025-11-17T08:00' },
-  ...texts.map((text, i) => ({ who: '이리나', what: 'meal', text, at: `2025-11-17T08:${20 + i * 5}`, number: i + 1 })),
+  { who: '세레나', what: 'wake', at: '2025-11-17T08:00' },
+  ...texts.map((text, i) => ({ who: '세레나', what: 'meal', text, at: `2025-11-17T08:${20 + i * 5}`, number: i + 1 })),
 ] });
 
 test('model groups synonyms within one meal and keeps distinct foods and original records', () => {

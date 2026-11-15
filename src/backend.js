@@ -1,13 +1,12 @@
 // 기억 서재 (Lumiverse) — backend entry. The Spindle worker exposes the API as global `spindle`.
 // Wires: store, host adapter, memory service, the router (frontend RPC), the interceptor, the {{memory_ledger}} macro,
 // GENERATION_ENDED -> ledger update, the Ctrl+K commands, and permission changes (a permission granted later is picked up).
-import { createStore } from './common/store.js';
 import { createHostAdapter } from './common/host-adapter.js';
 import { createRouter } from './common/router.js';
 import { createInjector } from './common/injector.js';
 import { registerHostRoutes } from './common/host-routes.js';
-import { createMemoryService, MEMORY_MARKER } from './memory/service.js';
-import { registerMemoryRoutes } from './memory/routes.js';
+import { createManager, MEMORY_MARKER } from './adapter/manager.js';
+import { VERSION } from './version.js';
 
 export const MACRO_NAME = 'memory_ledger';   // the macro lexer only knows [a-zA-Z0-9_-] names (src/macros/MacroLexer.ts:136), so no {{기억}}
 export const COMMANDS = [
@@ -18,35 +17,31 @@ export const COMMANDS = [
 
 export function start(api, options = {}) {
     const log = m => { try { api.log?.info?.(`[memory-library] ${m}`); } catch { /* optional */ } };
-    const store = createStore(api, options.store);
     const host = createHostAdapter(api, { log });
-    const service = createMemoryService({ host, store, log, tunables: options.tunables || {} });
+    const manager = createManager({ api, log, host, version: VERSION, tunables: options.tunables || {}, afterReplyMs: options.afterReplyMs, debounceMs: options.store?.debounceMs });
     const router = createRouter();
     const disposers = [];
-    const timers = new Set();
+    const timers = manager.timers;
 
     registerHostRoutes(router, host);
-    registerMemoryRoutes(router, service);
-    router.add('GET', 'ext/info', async ({ userId }) => ({ version: service.VERSION, permissions: Object.fromEntries(['generation', 'chats', 'chat_mutation', 'characters', 'interceptor'].map(p => [p, api.permissions?.has ? api.permissions.has(p) : true])), userId: !!userId}));
+    manager.mount(router);
+    router.add('GET', 'ext/info', async ({ userId }) => ({ version: VERSION, permissions: Object.fromEntries(['generation', 'chats', 'chat_mutation', 'characters', 'interceptor'].map(p => [p, api.permissions?.has ? api.permissions.has(p) : true])), userId: !!userId }));
     router.add('POST', 'ext/settings', async ({ userId, body }) => {
-        const um = service.forUser(userId);
+        const um = manager.forUser(userId);
         await um.ready();
-        const allowed = ['moduleMemory', 'autoInject', 'interceptorBudgetMs', 'window'];
-        const next = { ...um.settings() };
-        for (const k of allowed) if (k in (body || {})) next[k] = body[k];
-        um.saveSettings(next);
+        const next = await um.saveLvSettings(body);
         await um.flush();
-        return { settings: Object.fromEntries(allowed.map(k => [k, next[k]])) };
+        return { settings: next };
     });
     router.add('GET', 'ext/settings', async ({ userId }) => {
-        const um = service.forUser(userId);
+        const um = manager.forUser(userId);
         await um.ready();
-        const s = um.settings();
-        return { moduleMemory: s.moduleMemory !== false, autoInject: s.autoInject !== false, interceptorBudgetMs: s.interceptorBudgetMs || 6000, window: s.window || service.T.DEFAULT_WINDOW, windowInfo: await um.chatWindowInfo() };
+        const s = um.lvSettings();
+        return { ...s, windowInfo: await um.windowInfo() };
     });
     disposers.push(router.attach(api));
 
-    const injector = createInjector({ service, log });
+    const injector = createInjector({ manager, log });
     let offInterceptor = null, offEnded = null, offForked = null, macroOn = false, offPerm = null, offCommands = null;
 
     function wire() {
@@ -65,7 +60,7 @@ export function start(api, options = {}) {
                         if (!id) return '';
                         // Older hosts omit userId here. The user-scoped interceptor replaces this marker.
                         if (!ctx?.userId) return `${MEMORY_MARKER}]\n[End of memory.]`;
-                        return service.users.get(ctx.userId)?.cachedRendered(id) || '';
+                        return manager.users.get(ctx.userId)?.cachedRendered(id) || '';
                     },
                 });
                 macroOn = true;
@@ -80,10 +75,15 @@ export function start(api, options = {}) {
                     if (!payload || typeof payload.chatId !== 'string' || !userId) return;
                     if (payload.error) return;
                     if (payload.generationType === 'impersonate' || payload.generationType === 'quiet') return;
-                    const um = service.forUser(userId);
+                    const um = manager.forUser(userId);
                     const t = setTimeout(async () => {
                         timers.delete(t);
-                        try { await um.ready(); await um.ensureChat(payload.chatId); if (um.settings().moduleMemory !== false && um.chatEnabled(payload.chatId)) await um.processChat(payload.chatId, { reason: 'reply' }); } catch (e) { log(`reply hook: ${e?.message || e}`); }
+                        try {
+                            await um.ready();
+                            if (um.settings().moduleMemory === false || !um.chatEnabled(payload.chatId)) return;
+                            await um.refreshTail(payload.chatId);     // only the last messages are read again
+                            await um.processChat(payload.chatId, { reason: 'reply' });
+                        } catch (e) { log(`reply hook: ${e?.message || e}`); }
                     }, options.afterReplyMs ?? 1500);
                     timers.add(t);
                 } catch (e) { log(`GENERATION_ENDED: ${e?.message || e}`); }
@@ -95,15 +95,20 @@ export function start(api, options = {}) {
         offForked = api.on('CHAT_FORKED', async (payload, userId) => {
             try {
                 if (!payload || typeof payload.sourceChatId !== 'string' || typeof payload.forkedChatId !== 'string' || !userId) return;
-                const um = service.forUser(userId);
+                const um = manager.forUser(userId);
                 await um.ready();
                 if (um.settings().moduleMemory === false) return;
-                await um.branchCreated(payload.sourceChatId, payload.forkedChatId, payload.messageIdMap || {});
+                await um.inherit(payload.sourceChatId, payload.forkedChatId);
             } catch (e) { log(`CHAT_FORKED: ${e?.message || e}`); }
         });
     } catch (e) { log(`CHAT_FORKED: ${e?.message || e}`); }
+    // The message snapshot follows the host's message events (no re-read of the chat): payloads carry the changed message.
+    const offMessages = [];
+    for (const type of ['MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED', 'SWIPE_EDITED']) {
+        try { offMessages.push(api.on(type, (payload, userId) => { try { if (userId && manager.users.has(userId)) manager.users.get(userId).onMessage(type, payload); } catch (e) { log(`${type}: ${e?.message || e}`); } })); } catch (e) { log(`${type}: ${e?.message || e}`); }
+    }
     wire();
-    try { offPerm = api.permissions?.onChanged?.(detail => { if (detail?.permission === 'embeddings') for (const um of service.users?.values?.() || []) um.embeddingSource?.(true); wire(); }); } catch { /* optional */ }
+    try { offPerm = api.permissions?.onChanged?.(detail => { if (detail?.permission === 'embeddings') for (const um of manager.users.values()) um.resetEmbeddings?.(); wire(); }); } catch { /* optional */ }
 
     // Ctrl+K: the host passes the invoking user to the worker message but not to the handler (worker-runtime.ts:5195-5200),
     // so the backend only broadcasts "command X in chat Y" and each frontend acts if it is looking at that chat.
@@ -115,11 +120,9 @@ export function start(api, options = {}) {
     } catch (e) { log(`commands: ${e?.message || e}`); }
 
     return async () => {
-        host.dispose();
-        for (const t of timers) clearTimeout(t);
-        for (const d of [offInterceptor, offEnded, offForked, offPerm, offCommands, ...disposers]) { try { d?.(); } catch { /* ignore */ } }
+        for (const d of [offInterceptor, offEnded, offForked, offPerm, offCommands, ...offMessages, ...disposers]) { try { d?.(); } catch { /* ignore */ } }
         try { api.unregisterMacro?.(MACRO_NAME); } catch { /* ignore */ }
-        try { await store.flush(); } catch { /* ignore */ }
+        try { await manager.dispose(); } catch { /* ignore */ }
     };
 }
 

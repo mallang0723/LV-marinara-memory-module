@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 // A dialogue line whose quote marks do not match (opened with " and closed with ”, or the reverse, or an inch
 // mark before it) is one sentence with its translation, not one piece per period. Paragraphs that read fine

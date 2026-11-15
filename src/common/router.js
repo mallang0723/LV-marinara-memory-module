@@ -16,6 +16,7 @@ export function normalizePath(path) {
 
 export function createRouter() {
     const routes = [];
+    const fallbacks = [];
     const compile = pattern => pattern.split('/').filter(Boolean);
     function add(method, pattern, handler) {
         routes.push({ method: method.toUpperCase(), parts: compile(pattern), pattern, handler });
@@ -39,6 +40,10 @@ export function createRouter() {
         if (typeof userId !== 'string' || !userId) throw Object.assign(new Error('userId required'), { status: 401 });
         const norm = normalizePath(path);
         const m = match(String(method).toUpperCase(), norm.path);
+        if (!m) {
+            const fb = fallbacks.find(f => norm.path.startsWith(f.prefix));
+            if (fb) return fb.handler({ userId, method: String(method).toUpperCase(), path: norm.path, query: norm.query, body: body ?? {} });
+        }
         if (!m) throw Object.assign(new Error(`길을 찾지 못했습니다 (${method} ${norm.path})`), { status: 404 });
         return m.route.handler({ userId, params: m.params, query: norm.query, body: body ?? {}, path: norm.path });
     }
@@ -55,6 +60,8 @@ export function createRouter() {
             try { spindle.sendToFrontend({ ...reply, requestId: payload.requestId }, userId, frontendSessionId ? { frontendSessionId } : undefined); } catch { /* frontend gone */ }
         });
     }
-    const api = { add, handle, attach, match, list: () => routes.map(r => `${r.method} ${r.pattern}`) };
+    /** Everything under `prefix` that no exact route matched goes to handler({userId, method, path, query, body}). */
+    const fallback = (prefix, handler) => { fallbacks.push({ prefix, handler }); return api; };
+    const api = { add, fallback, handle, attach, match, list: () => routes.map(r => `${r.method} ${r.pattern}`) };
     return api;
 }

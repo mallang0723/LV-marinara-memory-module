@@ -1,10 +1,11 @@
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const L = require('../../src/memory/core/ledger.cjs');
-const S = require('../../src/memory/core/scenes.cjs');
+const S = require('../../src/memory/core/scenes.generated.cjs');
 
 const expectedChat = [
   ['서아', '오늘 저녁 같이 먹자'],

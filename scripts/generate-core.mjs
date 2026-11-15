@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { patchService } from '../src/memory/core-patch.mjs';
 import { patchScenes, patchRecall, patchNames, patchAddress, patchCards, patchReasons, patchTrackers, patchConflicts } from '../src/memory/core-patch.mjs';
 import { verify } from './verify-original.mjs';
 
@@ -11,6 +12,8 @@ export function generateCore() {
         new URL(`../src/memory/core/${name}.generated.cjs`, import.meta.url),
         '// GENERATED from the pinned upstream original. Do not edit.\n' + patch(readFileSync(new URL(`../src/memory/core/${name}.cjs`, import.meta.url), 'utf8')),
     ]);
+    modules.push([new URL('../src/memory/core/service.generated.cjs', import.meta.url),
+        '// GENERATED from the pinned upstream service.cjs. Do not edit.\n' + patchService(readFileSync(new URL('../src/memory/core/service.cjs', import.meta.url), 'utf8'))]);
     for (const [url, source] of modules) writeFileSync(url, source);
 }
 

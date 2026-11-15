@@ -44,6 +44,7 @@ export function fake(opts = {}) {
     const emit = (event, payload, user) => { for (const h of [...(handlers.get(event) || [])]) h(clone(payload), user); };
 
     const api = {
+        host: opts.lean ? { descriptorVersion: 1, capabilities: { 'chat-lean-messages-v1': 1 } } : undefined,
         permissions: { has: p => !state.denied.includes(p), onChanged: fn => { api._onPerm = fn; return () => { api._onPerm = null; }; }, onDenied: () => () => {}, getGranted: async () => [] },
         frontendCapabilities: { declare: () => () => {} },
         userStorage: {
@@ -51,7 +52,8 @@ export function fake(opts = {}) {
             read: async (path, user) => { need(null, user); if (!files.has(`${user}:${path}`)) throw new Error('File not found'); return files.get(`${user}:${path}`); },
             write: async (path, data, user) => { need(null, user); if (path.includes('..')) throw new Error('Path traversal detected'); files.set(`${user}:${path}`, String(data)); },
             delete: async (path, user) => { need(null, user); files.delete(`${user}:${path}`); },
-            list: async (prefix = '', user) => { need(null, user); return [...files.keys()].filter(k => k.startsWith(`${user}:${prefix}`)).map(k => k.slice(user.length + 1)); },
+            // like the host: entries relative to the prefix folder, recursive, files only (worker-host-storage-api.ts:137-149)
+            list: async (prefix = '', user) => { need(null, user); const base = prefix ? prefix.replace(/\/$/, '') + '/' : ''; return [...files.keys()].filter(k => k.startsWith(`${user}:${base}`)).map(k => k.slice(user.length + 1 + base.length)); },
             getJson: async (path, o = {}) => { try { return JSON.parse(files.get(`${o.userId}:${path}`)); } catch { if ('fallback' in o) return o.fallback; throw new Error(`Failed to parse JSON from ${path}`); } },
             setJson: async (path, v, o = {}) => { need(null, o.userId); files.set(`${o.userId}:${path}`, JSON.stringify(v, null, o.indent ?? 2)); },
         },
@@ -78,7 +80,16 @@ export function fake(opts = {}) {
             getMemories: async (id, o) => { need('chats', o?.userId); return { chunks: [{ content: '예전에 빵집에서 있었던 일', score: 0.9 }], formatted: '', count: 1, enabled: true }; },
         },
         chat: {
-            getMessages: async id => { need('chat_mutation'); return clone(messages.get(id) || []); },
+            getMessages: async (id, o) => {
+                need('chat_mutation');
+                state.messageReads = state.messageReads || [];
+                state.messageReads.push(o ? { ...o } : null);
+                const all = messages.get(id) || [];
+                if (!o || !opts.lean) return clone(all);                 // an older host ignores the lean options and returns everything
+                if (o.tail != null) return clone(all.slice(-o.tail));
+                if (o.limit != null) { if (o.limit > 1000) throw new Error('limit over 1000'); return clone(all.slice(o.offset || 0, (o.offset || 0) + o.limit)); }
+                return clone(all);
+            },
         },
         characters: { get: async (id, user) => { need('characters', user); return characters.has(id) ? clone(characters.get(id)) : null; }, list: async o => { need('characters', o?.userId); return page([...characters.values()], o); } },
         personas: {

@@ -1,11 +1,11 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../../src/memory/core/ledger.cjs');
 function render(texts) {
-  const routine = [{ who: '이리나', what: 'wake', at: '2025-11-17T08:00' },
-    ...texts.map((text, i) => ({ who: '이리나', what: 'meal', text, at: `2025-11-17T08:${String(20 + 5 * i).padStart(2, '0')}` }))];
+  const routine = [{ who: '세레나', what: 'wake', at: '2025-11-17T08:00' },
+    ...texts.map((text, i) => ({ who: '세레나', what: 'meal', text, at: `2025-11-17T08:${String(20 + 5 * i).padStart(2, '0')}` }))];
   const before = JSON.stringify(routine);
   const output = L.renderRoutine({ routine }, '2025-11-17T10:05');
   assert.equal(JSON.stringify(routine), before);

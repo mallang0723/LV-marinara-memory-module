@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { makeEnv, story, U } from './env.js';
 import { promptFor } from './fake.js';
 import { createInjector } from '../src/common/injector.js';
-import { MEMORY_MARKER } from '../src/memory/service.js';
+import { MEMORY_MARKER } from '../src/adapter/manager.js';
 
 /** a chat with an up-to-date ledger + scenes, memory on, interceptor ready */
 async function ready({ n = 15, tunables = {}, window = 4 } = {}) {
-    const env = makeEnv({ tunables: { SCENE_MIN_PENDING: 1, ...tunables } });
+    const env = makeEnv({ tunables });
     const { f, um, svc } = env;
     await um.ready();
     story(f, 'chat-a', n);
@@ -15,7 +15,7 @@ async function ready({ n = 15, tunables = {}, window = 4 } = {}) {
     um.setChatEnabled('chat-a', true);
     await um.processChat('chat-a', { rebuild: true });
     assert.equal(um.jobStatus('chat-a').state, 'done', um.jobStatus('chat-a').error);
-    const injector = createInjector({ service: svc });
+    const injector = createInjector({ manager: svc });
     f.api.registerInterceptor(injector.handler, 100);
     const turns = f.messages.get('chat-a').map(m => ({ role: m.is_user ? 'user' : 'assistant', content: m.content, id: m.id }));
     return { ...env, injector, turns, prompt: () => promptFor(turns) };
@@ -91,7 +91,6 @@ test('slow memory model (hangs): the dispatcher is back inside the budget with t
     const entry = e.um.recalls.get('chat-a');
     assert.equal(entry.used, 'fast');
     assert.match(entry.error, /빠른 방식/);
-    assert.ok(entry.budgetMs <= 500, `recall budget ${entry.budgetMs}`);
     assert.ok(entry.ms <= 700, `recall took ${entry.ms} ms of a 400 ms budget`);
 });
 

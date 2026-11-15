@@ -29,7 +29,9 @@ const RECALL_PROMPT = `너는 장기 롤플레이의 기억 관리자야. 곧 �
 
 /** Scenes that may be recalled: outside the window, minus the newest `expand` already shown in full. */
 function candidates(store, firstInside, expand = 2) {
-  const outside = store.scenes.filter((s) => firstInside == null || s.start < firstInside);
+  // OOC-only stretches are not memories to recall (S is loaded lazily: recall is loaded by scenes too).
+  const story = (s) => !s.ooc;
+  const outside = store.scenes.filter((s) => (firstInside == null || s.start < firstInside) && story(s));
   return outside.slice(0, Math.max(0, outside.length - expand));
 }
 
@@ -109,12 +111,17 @@ function latestUser(recent, userMessage) {
  * The scene the newest user message points at by its rare words (e.g. a name or thing said once long ago).
  * Kept even when the model chose others, so a direct question is never left without its scene.
  */
-function directHit(list, text) {
+/** A whole English (or Greek …) word counts as much as the two letter pairs a short Korean word gives, so one limit fits both. */
+const wordWeight = (w) => (w.length > 2 && (/^[a-z']+$/.test(w) || otherAlphabet(w)) ? 2 : 1);
+
+function directHit(list, text, { tr = null, common = null } = {}) {
   if (!list.length || !text) return null;
   const now = words(text);
-  const bags = list.map((s) => words(sceneText(s)));
+  if (common) for (const w of common) now.delete(w);
+  const bags = list.map((s) => words(sceneText(s, tr)));
   const df = new Map();
   for (const bag of bags) for (const w of bag) df.set(w, (df.get(w) || 0) + 1);
+  const said = saidWords(text);
   let best = null;
   list.forEach((scene, i) => {
     let score = 0;
@@ -123,12 +130,32 @@ function directHit(list, text) {
       if (!bags[i].has(w)) continue;
       const weight = Math.log((list.length + 1) / df.get(w));
       if (weight < 0.9) continue;
-      score += weight;
+      score += weight * wordWeight(w);
       hits.push(w);
     }
-    if (score >= 2.2 && (!best || score > best.score)) best = { id: scene.id, score, hits };
+    if (score >= 2.2 && (!best || score > best.score) && enoughWords(said, hits, 2)) best = { id: scene.id, score, hits };
   });
   return best;
+}
+
+/** The message's own words, lowercased, each once. */
+const saidWords = (text) => [...new Set(String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean))];
+const holds = (x, w) => (latinWord(x) ? x.startsWith(w) : otherAlphabet(x) ? plainLetters(x).startsWith(w) : x.includes(w));
+
+/**
+ * Whether the words a message shares with a scene or an old passage say which one it means: two of its words, or one
+ * solid word (an English or Greek word, a long number, a Korean word of three letters or more found along its length,
+ * `pieces` of its pieces: "오로라" both of 오로·로라). A short Korean word alone ("타고", "보면", "팔을") is mostly
+ * a verb form or a word with its ending, and pulled up an unrelated scene or passage nearly every turn.
+ */
+function enoughWords(said, hits, pieces = 1) {
+  const found = said.filter((x) => hits.some((w) => holds(x, w)));
+  if (found.length >= 2) return true;
+  const x = found[0];
+  if (!x) return false;
+  if (latinWord(x) || otherAlphabet(x)) return true;
+  if (/^\d+$/.test(x)) return x.length >= 3;
+  return x.length >= 3 && hits.filter((w) => x.includes(w)).length >= pieces;
 }
 
 /**
@@ -137,20 +164,87 @@ function directHit(list, text) {
  */
 const COMMON = new Set(['있어', '없어', '있다', '없다', '이제', '아직', '그냥', '근데', '진짜', '어제', '오늘', '내일', '그때', '거야', '건데', '했어', '어쩔', '다음', '그거', '이거', '저거', '나도', '너도', '우리', '너희', '아까', '지금', '정말', '그래', '그럼', '이건', '그건', '뭐야', '어떻', '왜그', '언제', '어디', '누가', '무슨', '어젯', '일은', '일이', '일을', '하는', '하고', '해서', '했다', '한다', '같은', '같아', '많이', '조금', '이렇', '그렇', '저렇']);
 
-/** The first two letters of each word (its stem start), minus everyday words: names and things, not endings. */
+const latinWord = (w) => /[a-z]/.test(w) && !/[가-힣㐀-䶿一-鿿]/.test(w);
+const HAN_RUN = /[㐀-䶿一-鿿]{2}/;
+const HAN_RUNS = /[㐀-䶿一-鿿]{2,}/g;
+/**
+ * A word in another spaced alphabet (Greek, Cyrillic, …): its first letters, accents left off, when it is long enough
+ * to mean something. Cut into two-letter pieces like Korean, "τί" and "δε" were in every Greek line and pulled up
+ * unrelated scenes and passages. Short ones (articles, particles) say nothing.
+ */
+const otherAlphabet = (w) => /\p{L}/u.test(w) && !/[a-z가-힣ㄱ-ㅎㅏ-ㅣ㐀-䶿一-鿿぀-ヿ]/.test(w);
+const plainLetters = (w) => w.normalize('NFD').replace(/\p{M}/gu, '').replace(/ς/g, 'σ');
+// Greek's everyday words (ancient and modern: pronouns, "to be", particles, prepositions), as alphabetStem cuts them.
+const GREEK_LITTLE = new Set(('αὐτός αὐτή αὐτό αὐτόν αὐτήν αὐτοῦ αὐτῆς αὐτῷ αὐτοῖς αὐτῶν ἐκεῖνος ἐκείνη ἐκεῖνο ἐκεῖνον ἐκείνην ἐκείνου ἐκείνῳ '
+  + 'οὗτος τοῦτο τούτου τούτῳ τοῦτον ταῦτα ταύτην ταύτης εἰμί ἐστίν ἐστί εἰσίν εἰσί ἦσαν εἶναι ἔσται ἐγώ ἔγωγε ἡμεῖς ὑμεῖς ἡμῖν ὑμῖν '
+  + 'ἡμῶν ὑμῶν ἡμᾶς ὑμᾶς ἐμαυτήν ἐμαυτόν σεαυτόν ἑαυτόν ἀλλά οὐδέ οὐδέν μηδέν μηδέ οὕτως ὥσπερ ὥστε ἐπεί ἐπειδή ὅπως ὅταν μέχρι '
+  + 'περί μετά διά κατά παρά πρός ὑπέρ ὑπό ἀπό ἀμφότεροι ἀμφοτέρων ἐπί οἶμαι οἶδα οἶσθα πάνυ μάλα μᾶλλον μάλιστα τοίνυν τοιοῦτος πότερον ποῖος '
+  + 'πολύ πολλά πολλοί πάντα πάντες πᾶσι πᾶσιν τινά τινός ἄρα ἐνταῦθα ἤδη ἔτι ὅμως οὔπω δήπου τοῖς ταῖς τούς τρόπον '
+  + 'εσύ αυτοί αυτές στον στην στους στις όμως επειδή τώρα εδώ εκεί ποτέ πάντα κάτι τίποτα κάποιος έχω έχει έχουν ήταν θέλω ξέρω '
+  + 'μπορώ πρέπει ακόμα μόνο τόσο λοιπόν').split(' ').map((w) => plainLetters(w.toLowerCase()).slice(0, 6)));
+function alphabetStem(w) {
+  const plain = plainLetters(w);
+  if (plain.length < 4) return null;
+  const stem = plain.slice(0, 6);
+  return GREEK_LITTLE.has(stem) ? null : stem;
+}
+/** A number is a word of its own: "2024" whole, not "20" of every year; one or two digits ("25" of a date) say nothing. */
+function addNumber(out, w) {
+  if (!/^\d+$/.test(w)) return false;
+  if (w.length >= 3) out.add(w);
+  return true;
+}
+
+/**
+ * The first two letters of each Korean word (its stem start), minus everyday words: names and things, not endings.
+ * English words are taken whole (plain ending, little words left out): their first two letters say nothing.
+ */
 function stems(text) {
   const out = new Set();
   for (const raw of String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (latinWord(raw) || addNumber(out, raw)) continue;
+    if (otherAlphabet(raw)) {
+      const stem = alphabetStem(raw);
+      if (stem) out.add(stem);
+      continue;
+    }
+    // Chinese has no spaces: a whole sentence is one "word". Its character pairs stand in for words.
+    if (HAN_RUN.test(raw)) {
+      for (const run of raw.match(HAN_RUNS) || []) for (let i = 0; i + 2 <= run.length; i++) out.add(run.slice(i, i + 2));
+      continue;
+    }
     const stem = raw.slice(0, 2);
     if (stem.length === 2 && !COMMON.has(stem)) out.add(stem);
   }
+  for (const w of L.englishWords(text)) out.add(w);
   return out;
 }
 
-function rawHits(messages, text, { max = 2, maxChars = 1400 } = {}) {
+/**
+ * The everyday words of one chat: those in at least `share` of its messages ("었다", "그런", a name said every turn).
+ * Shared with the message now, they say nothing about which old scene or passage it means.
+ */
+function commonWords(messages, share = 0.05) {
+  // Counted among the messages written in the word's own letters: in a chat of Korean messages and English replies,
+  // a Korean word in a tenth of the Korean messages is everyday, though it is in only a twentieth of all of them.
+  const script = (w) => (/[가-힣]/.test(w) ? 'ko' : /[㐀-䶿一-鿿]/.test(w) ? 'zh' : /^[a-z'\d]+$/.test(w) ? 'en' : 'other');
+  const df = new Map();
+  const total = new Map();
+  for (const m of messages) {
+    const bag = new Set([...words(m.content), ...stems(m.content)]);
+    for (const s of new Set([...bag].map(script))) total.set(s, (total.get(s) || 0) + 1);
+    for (const w of bag) df.set(w, (df.get(w) || 0) + 1);
+  }
+  // A word in two or three messages is never everyday, however few messages are written in its letters.
+  return new Set([...df].filter(([w, n]) => n >= 4 && (total.get(script(w)) || 0) >= 20 && n / total.get(script(w)) >= share).map(([w]) => w));
+}
+
+function rawHits(messages, text, { max = 2, maxChars = 1400, common = null } = {}) {
   if (!messages.length || !text) return [];
   const now = stems(text);
-  const bags = messages.map((m) => stems(m.content));
+  if (common) for (const w of common) now.delete(w);
+  // `m.tr`: the message's saved Korean translation (a chat translated for display), so Korean words find English text.
+  const bags = messages.map((m) => stems(m.tr ? `${m.content}\n${m.tr}` : m.content));
   const df = new Map();
   for (const bag of bags) for (const w of bag) df.set(w, (df.get(w) || 0) + 1);
   const rare = (w) => Math.log((messages.length + 1) / df.get(w));
@@ -160,7 +254,10 @@ function rawHits(messages, text, { max = 2, maxChars = 1400 } = {}) {
   });
   const out = [];
   let used = 0;
-  for (const { m, hits } of scored.filter((x) => x.score >= Math.min(2.5, 0.9 * Math.log(messages.length + 1))).sort((a, b) => b.score - a.score).slice(0, max)) {
+  const said = saidWords(text);
+  // One word alone is enough only when it is in a few old messages at most ("오로라"; not "편하게", "하더라").
+  const enough = (hits) => enoughWords(said, hits) && (hits.length >= 2 || df.get(hits[0]) <= 3);
+  for (const { m, hits } of scored.filter((x) => enough(x.hits) && x.score >= Math.min(2.5, 0.9 * Math.log(messages.length + 1))).sort((a, b) => b.score - a.score).slice(0, max)) {
     const isTranslation = (i) => /^\(.*[가-힣]/.test(S.parseLine(m.sentences[i] || '').text);
     const picked = [];
     m.sentences.forEach((sentence, i) => {
@@ -171,6 +268,16 @@ function rawHits(messages, text, { max = 2, maxChars = 1400 } = {}) {
       if (isTranslation(i + 1)) picked.push(i + 1);
     });
     const order = [...new Set(picked)].sort((a, b) => a - b).slice(0, 6);
+    // The words were only in the translation: its sentences that carry them stand in for the original.
+    if (!order.length && m.tr) {
+      const found = String(m.tr).split(/(?<=[.!?。…"”])\s+|\n+/).map((s) => s.trim()).filter((s) => s && [...stems(s)].some((w) => hits.includes(w))).slice(0, 4);
+      if (!found.length) continue;
+      const block = `(${m.number}번, 번역) ${found.join(' / ')}`.slice(0, 700);
+      if (used + block.length > maxChars) break;
+      out.push({ number: m.number, text: block, hits: hits.slice(0, 3) });
+      used += block.length;
+      continue;
+    }
     const lines = [];
     for (const i of order) {
       if (isTranslation(i) && lines.length && order.includes(i - 1)) {
@@ -198,14 +305,14 @@ function withDirectHit(picks, hit) {
   return out.slice(0, MAX_RECALL);
 }
 
-function applyRecall(result, list, chapters = [], nowText = '') {
+function applyRecall(result, list, chapters = [], nowText = '', { tr = null } = {}) {
   const ids = new Set(list.map((s) => s.id));
   const out = [];
   for (const item of Array.isArray(result?.recall) ? result.recall : []) {
     let id = String(item?.scene ?? item?.id ?? item ?? '').trim().toUpperCase().replace(/^(\d+)$/, 'S$1');
     // A chapter: the scene in it that shares the most rare words with the conversation now.
     const chapter = /^C\d+$/.test(id) && chapters.find((c) => c.id === id);
-    if (chapter) id = bestIn(list.filter((s) => chapter.scenes.includes(s.id)), nowText) || chapter.scenes.find((x) => ids.has(x)) || id;
+    if (chapter) id = bestIn(list.filter((s) => chapter.scenes.includes(s.id)), nowText, tr) || chapter.scenes.find((x) => ids.has(x)) || id;
     if (!ids.has(id) || out.some((x) => x.id === id)) continue;
     out.push({ id, why: typeof item?.why === 'string' ? item.why.slice(0, 120) : null });
     if (out.length >= MAX_RECALL) break;
@@ -213,12 +320,12 @@ function applyRecall(result, list, chapters = [], nowText = '') {
   return out;
 }
 
-function bestIn(scenes, text) {
+function bestIn(scenes, text, tr = null) {
   if (!scenes.length) return null;
   const now = words(text);
   let best = null;
   for (const scene of scenes) {
-    const score = [...words(sceneText(scene))].filter((w) => now.has(w)).length;
+    const score = [...words(sceneText(scene, tr))].filter((w) => now.has(w)).length;
     if (!best || score > best.score) best = { id: scene.id, score };
   }
   return best.id;
@@ -226,36 +333,53 @@ function bestIn(scenes, text) {
 
 /* ---------- fast: words and the ledger ---------- */
 
-/** Two-letter pieces of every word: Korean endings change, the stem's pieces stay. */
+/**
+ * Two-letter pieces of every Korean word (endings change, the stem's pieces stay), and English words whole: English
+ * letter pairs ("th", "er") are in every sentence and would make any two texts look alike.
+ */
 function words(text) {
   const out = new Set();
   for (const raw of String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
-    if (raw.length < 2) continue;
+    if (raw.length < 2 || latinWord(raw) || addNumber(out, raw)) continue;
+    if (otherAlphabet(raw)) {
+      const stem = alphabetStem(raw);
+      if (stem) out.add(stem);
+      continue;
+    }
     for (let i = 0; i + 2 <= raw.length; i++) out.add(raw.slice(i, i + 2));
   }
+  for (const w of L.englishWords(text)) out.add(w);
   return out;
 }
 
-function sceneText(scene) {
-  return [scene.title, scene.summary, ...(scene.later || []).map((x) => x.what), ...scene.events.map((e) => e.text), ...scene.events.flatMap((e) => e.quotes.map((q) => S.quoteText(q)))].join(' ');
+/**
+ * Everything a scene says, for finding it by words. `tr(text)` gives the Korean of a line of memory written in
+ * English (from the translation cache, no model call), so a message written in Korean finds an English scene, and one
+ * written (or translated) in English finds it by its English words.
+ */
+function sceneText(scene, tr = null) {
+  const own = [scene.title, scene.summary, ...(scene.later || []).map((x) => x.what), ...scene.events.map((e) => e.text)];
+  const korean = typeof tr === 'function' ? own.map((t) => (t ? tr(t) : null)).filter(Boolean) : [];
+  return [...own, ...korean, ...scene.events.flatMap((e) => e.quotes.map((q) => S.quoteText(q)))].join(' ');
 }
 
 /** Rarer shared words count more, so names that are in every scene do not decide. */
-function fastRecall(list, ledger, recent, userMessage) {
+function fastRecall(list, ledger, recent, userMessage, { tr = null } = {}) {
   if (!list.length) return [];
   const now = words([...recent.map((m) => m.content), userMessage || ''].join(' '));
-  const bags = list.map((s) => words(sceneText(s)));
+  const bags = list.map((s) => words(sceneText(s, tr)));
   const df = new Map();
   for (const bag of bags) for (const w of bag) df.set(w, (df.get(w) || 0) + 1);
   const scored = list.map((scene, i) => {
     let score = 0;
-    for (const w of bags[i]) if (now.has(w)) score += Math.log((list.length + 1) / df.get(w));
+    for (const w of bags[i]) if (now.has(w)) score += Math.log((list.length + 1) / df.get(w)) * wordWeight(w);
     return { scene, score };
   });
   // An open ledger item whose words come up now pulls in the scene it started in.
   for (const t of ledger?.threads || []) {
     if (t.status !== 'open' || !t.evidence?.[0]) continue;
-    const hit = [...words(t.title)].filter((w) => now.has(w)).length;
+    const title = typeof tr === 'function' && t.title ? `${t.title} ${tr(t.title) || ''}` : t.title;
+    const hit = [...words(title)].filter((w) => now.has(w)).length;
     if (!hit) continue;
     const origin = scored.find((x) => x.scene.start <= t.evidence[0].number && t.evidence[0].number <= x.scene.end);
     if (origin) origin.score += 2 * hit;
@@ -313,14 +437,22 @@ function shownPicks(picks, max) {
   return out;
 }
 
-function renderRecalled(store, picks, { maxChars = 16000, npc = false, trace = null } = {}) {
+/**
+ * after(scene): lines on how what began in that scene went on ("→ 그 뒤: …"), so an old scene is not read as now.
+ * The chapter it falls in is named, so the reply model can place it in the story so far.
+ */
+function renderRecalled(store, picks, { maxChars = 16000, npc = false, trace = null, after = null } = {}) {
   const blocks = [];
   let used = 0;
   for (const pick of picks) {
     const index = store.scenes.findIndex((s) => s.id === pick.id);
     if (index < 0) continue;
-    const body = S.renderExpanded(store.scenes[index], index, store.personas || [], S.castOf(store), { npc });
-    const block = pick.follow ? `(${pick.from}에 이어진 장면)\n${body}` : body;
+    const scene = store.scenes[index];
+    const chapter = (store.chapters || []).find((c) => !c.stale && c.scenes.includes(scene.id));
+    const later = typeof after === 'function' ? after(scene) : [];
+    const body = [S.renderExpanded(scene, index, store.personas || [], S.castOf(store), { npc }), ...later].join('\n');
+    const where = chapter ? `(${chapter.id} 시기)\n` : '';
+    const block = pick.follow ? `(${pick.from}에 이어진 장면)\n${where}${body}` : `${where}${body}`;
     if (used + block.length > maxChars) break;
     blocks.push(block);
     trace?.push(pick);
@@ -333,7 +465,7 @@ function renderRecalled(store, picks, { maxChars = 16000, npc = false, trace = n
  * Close-in-meaning scenes that did not come up in full: just the event that matched, with its lines.
  * Cheap, and enough for a character to remember "oh, that".
  */
-function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000, trace = null } = {}) {
+function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000, trace = null, after = null } = {}) {
   const shown = new Set(picks.map((p) => p.id));
   const blocks = [];
   let used = 0;
@@ -344,7 +476,8 @@ function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000, tr
     const where = [scene.time, scene.place].filter(Boolean).join(' · ');
     const e = x.piece != null ? scene.events[x.piece] : null;
     const lines = [`- ${where ? `${where} — ` : ''}${scene.title}: ${e ? e.text : scene.summary}`];
-    if (e) for (const q of e.quotes) lines.push(`  ${S.quoteLine(q)}`);
+    if (e) for (const q of S.pickQuotes(e.quotes)) lines.push(`  ${S.quoteLine(q)}`);
+    if (typeof after === 'function') lines.push(...after(scene).map((l) => `  ${l}`));
     const block = lines.join('\n');
     if (used + block.length > maxChars) break;
     blocks.push(block);
@@ -354,4 +487,4 @@ function renderNearEvents(store, semantic, picks, { max = 6, maxChars = 5000, tr
   return blocks.length ? `[뜻이 가까운 지난 사건]\n${blocks.join('\n')}` : '';
 }
 
-module.exports = { stems, MAX_PICKS, renderNearEvents, buildToc, rawHits, renderRaw, latestUser, directHit, withDirectHit, MAX_RECALL, RECALL_PROMPT, candidates, buildRecallPrompt, applyRecall, fastRecall, renderRecalled, words, withFollowUps, shownPicks };
+module.exports = { stems, commonWords, MAX_PICKS, renderNearEvents, buildToc, rawHits, renderRaw, latestUser, directHit, withDirectHit, MAX_RECALL, RECALL_PROMPT, candidates, buildRecallPrompt, applyRecall, fastRecall, renderRecalled, words, withFollowUps, shownPicks };

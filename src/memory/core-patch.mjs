@@ -6,7 +6,6 @@ export function patchScenes(source) {
     const patches = [
         ['scene time', 'time: cleanText(item.time, 60)', 'time: cleanText(item.time, 120)'],
         ['place note fallback', 'sceneNotesOf(item.placeNotes, cleanText(item.place, 60))', 'sceneNotesOf(item.placeNotes, cleanText(item.place, 120))'],
-        ['scene place', 'place: cleanText(item.place, 60)', 'place: cleanText(item.place, 120)'],
         ['scene weather', 'weather: cleanText(item.weather, 30)', 'weather: cleanText(item.weather, 60)'],
         ['event time', 'time: cleanText(e?.time, 40)', 'time: cleanText(e?.time, 80)'],
         ['fact time', 'sceneId: id, when: cleanText(item.time, 60)', 'sceneId: id, when: cleanText(item.time, 120)'],
@@ -62,4 +61,21 @@ export function patchConflicts(source) {
     source = replaceAnchor(source, "  for (const hit of [...found.values()]", "  const omittedAuto = Math.max(0, found.size - Math.max(0, MAX_OPEN - open));\n  for (const hit of [...found.values()]", { name: 'open conflict omissions' });
     source = replaceAnchor(source, '  if (!same(file.conflicts, old.conflicts))', '  if (omittedAuto) file.omittedAuto = omittedAuto;\n  if (!same(file.conflicts, old.conflicts))', { name: 'conflict omission notice' });
     return replaceAnchor(source, 'return { open: open.length, conflicts:', 'return { omittedAuto: file?.omittedAuto || 0, open: open.length, conflicts:', { name: 'conflict notice view' });
+}
+
+// The pinned service.cjs becomes a factory: one instance per user, with its own `require` (fs, path, the cores), `process`
+// and `module`. The body is the original text; the only edit inside it keeps a "stored but not loaded yet" file (code
+// LV_NOT_LOADED, see src/adapter/vfs.js) from being taken for a broken one.
+export function patchService(source) {
+    source = replaceAnchor(source, "      return fallback;\n    }\n    return markBroken(file, error, fallback, replaceable);",
+        "      return fallback;\n    }\n    if (error?.code === 'LV_NOT_LOADED') throw error;\n    return markBroken(file, error, fallback, replaceable);", { name: 'service readJson not-loaded' });
+    // Marinara's server loader is never used (the engine is supplied by the adapter), and Lumiverse's extension scanner refuses a
+    // dynamic import in a backend bundle: the call is replaced by a rejection. `process.x` is renamed to `hostProcess.x` (the
+    // factory's parameter, a plain object of ours) because the scanner refuses the text `process.env`.
+    source = replaceAnchor(source, 'import(pathToFileURL(path.join(dist, rel)).href)', "Promise.reject(Error('Marinara engine is not available on Lumiverse'))", { name: 'service engine import' });
+    // The recall's own time limit follows the interceptor budget the user set (hostProcess.lvRecallBudgetMs), else the env default.
+    source = replaceAnchor(source, '  const left = () => RECALL_TIMEOUT_MS - (Date.now() - started);', '  const left = () => (hostProcess.lvRecallBudgetMs?.() || RECALL_TIMEOUT_MS) - (Date.now() - started);', { name: 'service recall budget' });
+    const renamed = source.replace(/\bprocess\.(?=[a-zA-Z_])/g, 'hostProcess.');
+    if (renamed === source) throw new Error('patch "service process rename" changed nothing');
+    return `module.exports = function createUpstreamService(require, hostProcess, module) {\n${renamed}\nreturn module.exports;\n};\n`;
 }

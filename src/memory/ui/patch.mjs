@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { replaceAnchor, replaceRange } from '../../patch-util.mjs';
 
-export const RUNTIME_SHA256 = '47bfacd40f890bae4dd4f0df0abf736abe63a8cedce5a08ed68ac0a5f0f6b2b0';
+export const RUNTIME_SHA256 = '2eaf1e63c77ad831f0c34876a2f746ddb97765da6254b3cbd361f7c19c581c0f';
 
 export function patchMemory({ runtime, uiCss, themeCss, version }) {
     const sha = createHash('sha256').update(runtime).digest('hex');
@@ -52,8 +52,8 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     // 기억 검색: the stored memory is English while the library shows Korean (the translation cache), so searching "테오" found nothing although the Korean view shows 테오.
     // (Upstream 8d5f090 searches only the stored text, same gap.) Now a record also matches on the Korean text the screen shows for it, and a typed name/term also matches its other
     // spellings from the name table (canonical name, 글에 쓸 표기, aliases) and the 호칭 사전 원어(번역) pairs. One result per record; the excerpt comes from the text that matched.
-    s = replaceAnchor(s, "const needsNames = () => ['names', 'life'].includes(tab);", "const needsNames = () => ['names', 'life', 'search'].includes(tab);", { name: 'search needs the name table' });
-    s = replaceRange(s, '  function searchableText(value) {', '  function viewSearch() {', `  function searchableText(value, translated = false) {
+    s = replaceAnchor(s, "const needsNames = () => ['names', 'life', 'person'].includes(tab);", "const needsNames = () => ['names', 'life', 'person', 'search'].includes(tab);", { name: 'search needs the name table' });
+    s = replaceRange(s, '  function searchableText(value) {', '  /** Every quoted line of the room, as a record of its own', `  function searchableText(value, translated = false) {
     if (value == null) return '';
     const leaf = (x) => (translated ? shown(x) : x);
     if (Array.isArray(value)) return value.map((x) => searchableText(x, translated)).filter(Boolean).join(' ');
@@ -93,14 +93,15 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     s = replaceRange(s, '    if (query) for (const [label, kind, records] of groups) for (const record of records) {', '    return `<h1>기억 검색</h1>', `    const variants = searchVariants(searchQuery);
     const find = (text) => { const lower = text.toLocaleLowerCase(); let best = null; for (const v of variants) { const i = lower.indexOf(v); if (i >= 0 && (!best || i < best.at)) best = { at: i, length: v.length }; } return best; };
     if (query) for (const [label, kind, records] of groups) for (const record of records) {
-      let text = searchableText(record, true);
+      if (searchWho !== 'all' && !mentions(record, searchWho)) continue;
+      let text = kind === 'quote' ? shown(record.text) : searchableText(record, true);
       let hit = find(text);
-      if (!hit) { text = searchableText(record); hit = find(text); }
+      if (!hit) { text = kind === 'quote' ? record.text : searchableText(record); hit = find(text); }
       if (!hit) continue;
       const start = Math.max(0, hit.at - 45);
       const end = hit.at + hit.length + 110;
       const excerpt = \`\${start ? '…' : ''}\${text.slice(start, end)}\${text.length > end ? '…' : ''}\`;
-      results.push(\`<a href="#" class="record-link record-row" data-goto-\${kind}="\${esc(record.id)}"><span class="pill neutral">\${label}</span><span class="row-main"><b>\${esc(record.title || record.about || record.id)}</b><small>\${esc(excerpt)}</small></span><span class="chip-arrow">›</span></a>\`);
+      results.push(\`<a href="#" class="record-link record-row" data-goto-\${kind === 'quote' ? 'scene' : kind}="\${esc(record.id)}"><span class="pill neutral">\${label}</span><span class="row-main"><b>\${esc(record.title || record.about || record.id)}</b><small>\${esc(excerpt)}</small></span><span class="chip-arrow">›</span></a>\`);
     }
 `, 'search loop');
     // Marinara wording

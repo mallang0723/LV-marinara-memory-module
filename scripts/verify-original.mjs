@@ -1,32 +1,34 @@
-// Provenance check. The nineteen memory core modules and the three screen files must be byte-identical to the pinned upstream
+// Provenance check. The twenty-one upstream modules (twenty cores plus service.cjs) and the three screen files must be byte-identical to the pinned upstream
 // copies (SHA-256 below). UPSTREAM_MEMORY=/path/to/a/checkout/of/tlsiddl/marinara-memory-module additionally compares with that checkout
 // (this fork's `main` branch is such a checkout).
 // Usage: node scripts/verify-original.mjs
 import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 export const PINS = {
-    'src/memory/core/trackers.cjs': 'f9853048135769423ba88827d098e8768f8c11ab2d4b04d6abf21c400d3abbea',
+    'src/memory/core/trackers.cjs': '6765612649a9dc18544f1be5200d820ff2633f7316601e2eb61c9bf8b367b5da',
     'src/memory/core/selected.cjs': '2b1892128785279e49a310c372a6635b2202f76ad591d8ffaee17ca5f3005747',
-    'src/memory/core/reasons.cjs': '25c2c7aa170414f9916ef175f9dbd9d3ee67cd8d867e8ed4148c4b29f968b585',
+    'src/memory/core/reasons.cjs': 'a9ff699a1ab6944ef1bb58d24e761757f9c17a950937c0e2a8ddaba7e91f4c9e',
     'src/memory/core/conflicts.cjs': '3201188ff2c2204d17edeff092b4a8dba7a6e4d06adf804c39ae48651c7d8e5d',
-    'src/memory/core/backup.cjs': '30ac8ced7aa4660fb1895a6170a0a406cfec44845d6c43ebf1a403a2d80d9aee',
-    'src/memory/core/ledger.cjs': '52eddd1c15365ba3fc925f8bd67f049393bc92acd53bfcab32969a822b508940',
-    'src/memory/core/scenes.cjs': '6b8799d5052e69009f39c00bfe4a9dfd27b74058624c66803c059bdbf043cf7c',
-    'src/memory/core/recall.cjs': 'c544134e3dae15931a153df1b1c5194771bb1735461bc4e7508fdf9ae2c6b9a6',
-    'src/memory/core/vectors.cjs': 'a317a49b8d7dffb3d3efb1aa054a74d495ef5c2a3a5f2f188469a88b3d86e371',
+    'src/memory/core/backup.cjs': '176157b371c76c504b8c1d406e993b94ec7c34e33dedc6acbd41513800767a29',
+    'src/memory/core/ledger.cjs': '856c49875915f9207938572310378ca88d75cdbe5651f70e55f5015b0f990582',
+    'src/memory/core/scenes.cjs': '14d3b9da7b8fa74dca270f9d52950ff11d420dfb62eaf828196b97770f44da40',
+    'src/memory/core/recall.cjs': '01570f40dc105c88de6341f9b30277b44c291b47b61794d59a25d7239a57b889',
+    'src/memory/core/vectors.cjs': 'e8e8cd7cd1430c9679427e912ef6356f8ce561731e7f689d0c8903fac3d238a9',
     'src/memory/core/speakers.cjs': '74ded6367848f9f52ed372f50000175598e82c6bfbe70ed6b893bf6ecf9f3b89',
-    'src/memory/core/translate.cjs': '1fb6a2232d412952e3918882234c76ccdfc7af8f39abd31beb70857e43a1e50e',
-    'src/memory/core/aliases.cjs': 'afaff01e2bbdd9258fe166c56afeb10fa25cc6a0496969f0147e88fd3b5c0ec8',
+    'src/memory/core/translate.cjs': '44b1fc88bff9db05ff01704f9ebf48b8f663ed787406421c7b1e1e759c7c0936',
+    'src/memory/core/aliases.cjs': '02a5781536a12a3f5dbd63400452137a7b62ab95601edcb2d7cb736bacbfc9c7',
     'src/memory/core/keepsakes.cjs': '919e3de8e9af816a5661e15e6eb6e091b88c7a386aad697feee161a3e481e46a',
     'src/memory/core/knowledge.cjs': '42e170be29dfa403fe37233e15a27ea50f888b8514bcfa463875dfc7ca796172',
     'src/memory/core/places.cjs': 'd72e470557d45990c80b5e3c031f6159b76d3793c71bbee8e7107e06ddadf438',
-    'src/memory/core/state.cjs': '9a5a2843b9f91f57232c748d2a27eaa64890d337d32a6f4847b8ab964f2f6025',
+    'src/memory/core/state.cjs': '558ca86c39ce355b5cc8bababf440541269ad23fd56e23d31da69976cceef5db',
     'src/memory/core/names.cjs': '1cc982d12c5ff7be450949da6720a11e3ea84ece8ec3e944a58bdb4f7a5054cf',
-    'src/memory/core/address.cjs': '47e8dea319451bec189068cfdbf5c70cf7697aecc4dbcfa1c7a4a5af30122914',
-    'src/memory/core/features.cjs': '878764c5f716f4344a01306e42c84fc2bb09bc6c4749bb723495303cee201d47',
-    'src/memory/ui/runtime.orig.js': '47bfacd40f890bae4dd4f0df0abf736abe63a8cedce5a08ed68ac0a5f0f6b2b0',
-    'src/memory/ui/ui.orig.css': 'debd8a8a99fbbe935186aa06165ab021708283fc2e88a5924f6920bd0d7120f6',
-    'src/memory/ui/theme.orig.css': 'bb90898cb08dad340eb0c1381fd0482dc9196f127d70586500a85a7983446310',
+    'src/memory/core/address.cjs': 'ba9f520f0093c9849c7af92cd1eb791da57fe03307dcda365422ee193603cc4c',
+    'src/memory/core/features.cjs': '6b70016da998f21721b64003aa402b6edd6fdcd8924aef643a4b55e155519ab6',
+    'src/memory/core/notebook.cjs': '91496f89506cc1756fbc6f7925324447a88aa75718772992a7fc9b53b4cd76a9',
+    'src/memory/core/service.cjs': 'cf49ad323768d35cbc643674b07220f503378fd503526197404a4298e561952d',
+    'src/memory/ui/runtime.orig.js': '2eaf1e63c77ad831f0c34876a2f746ddb97765da6254b3cbd361f7c19c581c0f',
+    'src/memory/ui/ui.orig.css': 'd362c7bbc20673156e00637b06e884fd5270925f72e1fca5f54a5c79aecc236a',
+    'src/memory/ui/theme.orig.css': 'a858619ca380b78719be8a0465bb49add07f26b79a51caf51ebf5a7b246eeb97',
 };
 const sha = f => createHash('sha256').update(readFileSync(f)).digest('hex');
 export function verify(root = '.') {

@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; only import paths adapted for Lumiverse.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 // Quotes stored as pieces of a line by the split before v0.11.48 are made whole again from the message itself, with
 // no model call. Invented names and lines only.

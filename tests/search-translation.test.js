@@ -77,7 +77,7 @@ test('name table: a Korean alias or a 호칭 사전 pair finds the English recor
 });
 
 test('the search tab loads the name table, and the patch anchors fail loudly', () => {
-    assert.match(runtime, /const needsNames = \(\) => \['names', 'life', 'search'\]\.includes\(tab\);/);
+    assert.match(runtime, /const needsNames = \(\) => \['names', 'life', 'person', 'search'\]\.includes\(tab\);/);
     assert.throws(() => replaceRange('a', 'x', 'y', ''), /patch range/);
     assert.throws(() => replaceRange('x y x', 'x', 'y', ''), /patch range/);
 });

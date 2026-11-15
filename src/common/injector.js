@@ -15,20 +15,19 @@
 //    the message being replaced on regenerate/swipe; ctx.signal is aborted when the host gives up.
 //  - types declare ctx.interceptorDeadlineAt (types/api.d.ts) but the staging host source never sets it (grep finds only the
 //    type) -> used when present, otherwise the budget below applies.
-import { MEMORY_MARKER, sanitize } from '../memory/service.js';
+import { MEMORY_MARKER, sanitize, RECALL_BUDGET_MS } from '../adapter/manager.js';
 
 const MEMORY_BLOCK = /\[Memory: what the characters remember from earlier in this story[\s\S]*?\[End of memory\.[^\]]*\]/;
 const ACTIVE_TYPES = new Set(['normal', 'continue', 'regenerate', 'swipe']);
 const REPLAY_TYPES = new Set(['regenerate', 'swipe']);
 
-export function createInjector({ service, log = () => {}, now = () => Date.now() }) {
-    const T = service.T;
+export function createInjector({ manager, log = () => {}, now = () => Date.now() }) {
     const text = m => (typeof m?.content === 'string' ? m.content : Array.isArray(m?.content) ? m.content.map(p => p?.text || '').join('') : '');
 
     /** Total wall-clock budget the handler allows itself (ms). settings().interceptorBudgetMs > tunables > 6000. */
     function budgetOf(um, ctx) {
         const set = Number(um.settings().interceptorBudgetMs);
-        let b = Number.isFinite(set) && set > 0 ? set : Number(T.INTERCEPTOR_BUDGET_MS) > 0 ? Number(T.INTERCEPTOR_BUDGET_MS) : 6000;
+        let b = Number.isFinite(set) && set > 0 ? set : RECALL_BUDGET_MS;
         const deadline = Number(ctx?.interceptorDeadlineAt);
         if (Number.isFinite(deadline) && deadline > 0) b = Math.min(b, Math.max(500, deadline - now() - 1500));
         return b;
@@ -41,7 +40,7 @@ export function createInjector({ service, log = () => {}, now = () => Date.now()
             const userId = ctx?.userId, chatId = ctx?.chatId, type = ctx?.generationType;
             if (typeof userId !== 'string' || !userId || typeof chatId !== 'string' || !chatId) return untouched();
             if (!ACTIVE_TYPES.has(type)) return untouched();     // quiet / impersonate are left alone
-            const um = service.forUser(userId);
+            const um = manager.forUser(userId);
             await um.ready();
             const budget = budgetOf(um, ctx);
             const out = messages.map(m => ({ ...m }));
@@ -52,12 +51,12 @@ export function createInjector({ service, log = () => {}, now = () => Date.now()
             // ---- 1) memory block ----
             const injectOn = um.settings().autoInject !== false && um.settings().moduleMemory !== false;
             try {
-                await um.ensureChat(chatId);
+                await um.preloadRoom(chatId);
                 memoryOn = um.chatEnabled(chatId) && um.settings().moduleMemory !== false;
                 if (memoryOn) {
                     if (ctx.isDryRun) memoryText = um.cachedRendered(chatId) ?? await um.rendered(chatId);            // preview: no model call, nothing written
                     else {
-                        const sync = um.syncBeforeReply(chatId, { regenerateMessageId: REPLAY_TYPES.has(type) ? ctx.excludeMessageId : undefined, budgetMs: Math.max(500, budget - (now() - started) - 300), signal: ctx.signal });
+                        const sync = um.syncBeforeReply(chatId, { regenerateMessageId: REPLAY_TYPES.has(type) ? ctx.excludeMessageId : undefined });
                         memoryText = await raceBudget(sync, budget - (now() - started), ctx.signal);
                     }
                 }

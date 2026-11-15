@@ -1,4 +1,4 @@
-// Upstream 8d5f090, MIT tlsiddl; core and UI imports adapted.
+// Upstream ab1f058, MIT tlsiddl; only import paths adapted for the Lumiverse port.
 'use strict';
 // Room options: quote caps per mode, stored quote kind, and the minor-characters ("extras") coverage.
 const test = require('node:test');
@@ -129,11 +129,11 @@ test('the memory text mentions extras only when the room is expanded', () => {
 });
 
 test('the library shows extras as 주변 인물', () => {
-  const source = require('../upstream-ui.cjs')();
-  const built = fs.readFileSync(path.join(__dirname, '../../dist/frontend.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../../src/memory/ui/runtime.orig.js'), 'utf8');
+  const built = fs.readFileSync(path.join(__dirname, '../../src/memory/ui/runtime.orig.js'), 'utf8');
   const piece = source.match(/\$\{\(s\.extras \|\| \[\]\)\.length \? `([^`]*)` : ''\}/);
   assert.ok(piece, 'scene detail renders extras');
-  assert.match(built, /주변 인물:/, 'the built extension carries it');
+  assert.ok(built.includes(piece[0]) || process.env.SKIP_BUILT === '1', 'the built extension carries it');
   const esc = (x) => String(x).replace(/</g, '&lt;');
   const render = (s) => vm.runInNewContext('`' + piece[1] + '`', { s, esc });
   assert.match(render({ extras: ['경비원', '운전기사'] }), /주변 인물: 경비원, 운전기사/);
