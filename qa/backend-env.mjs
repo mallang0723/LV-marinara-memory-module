@@ -29,7 +29,7 @@ export async function createQaEnv({ messages = 44 } = {}) {
     // every scene also states a fact (the stock fake model only does for the first), so the 알게 된 사실 tab has several cards
     const counts = {};
     f.model = async ({ messages }) => {
-        if (messages[0]?.content?.startsWith('선택한 원문만')) return JSON.stringify({ title: '편지 전달', summary: '하루가 서아에게 편지를 건넸다.' });
+        if (/선택한 원문만|사용자가 선택한 원문/.test(messages[0]?.content || '')) return JSON.stringify({ title: '편지 전달', summary: '하루가 서아에게 편지를 건넸다.' });
         const raw = replyFor(messages, counts);
         let reply; try { reply = JSON.parse(raw); } catch { return raw; }
         for (const scene of reply.scenes || []) if (!scene.facts?.length) scene.facts = [{ about: '서아', text: `서아는 ${scene.end}번 즈음 빵집에 들렀다.`, evidence: [{ n: `${scene.end}.1`, q: '' }] }];
@@ -50,9 +50,12 @@ export async function createQaEnv({ messages = 44 } = {}) {
         await new Promise(r => setTimeout(r, 25));
     }
     // who knows what: the 아는 사람 / 모르는 사람 chips of the facts tab (hand edits, so they are kept as written)
+    // 0.35: a scene's facts need evidence the stand-in model cannot give, so the QA facts are added by hand (the facts route).
+    const firstScene = (await call('GET', 'memory-module/chats/chat-a/scenes')).data.scenes?.[0]?.id;
+    for (const [i, text] of ['서아는 빵집에 자주 들른다.', '하루는 아침마다 빵을 굽는다.', '서아는 달빛호수를 좋아한다.'].entries()) await call('POST', 'memory-module/chats/chat-a/facts', { sceneId: firstScene, about: i === 1 ? '하루' : '서아', text });
     const facts = (await call('GET', 'memory-module/chats/chat-a/scenes')).data.facts || [];
     for (const [i, fact] of facts.entries()) await call('PATCH', `memory-module/chats/chat-a/facts/${fact.id}`, i % 2 === 0 ? { knownBy: ['하루', '서아'] } : { knownBy: ['하루'], unaware: ['서아'] });
-    if (facts.length < 2) throw Error('QA needs two facts for conflicts');
+    if (facts.length < 2) throw Error('QA needs two facts for conflicts (got ' + facts.length + ', scenes ' + ((await call('GET', 'memory-module/chats/chat-a/scenes')).data.scenes || []).length + ')');
     await call('PATCH', `memory-module/chats/chat-a/facts/${facts[0].id}`, { about: '하루', text: '하루는 커피를 즐겨 마신다' });
     await call('PATCH', `memory-module/chats/chat-a/facts/${facts[1].id}`, { about: '하루', text: '하루는 커피를 즐겨 마시지 않는다' });
     for (const key of ['characterState', 'places', 'keepsakes', 'trackers']) await call('POST', 'memory-module/chats/chat-a/feature-mode', { key, mode: 'on' });

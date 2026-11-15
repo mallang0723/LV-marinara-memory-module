@@ -38,9 +38,16 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
         async function invoke(route, ctx) {
             const chatId = ctx.params?.id;
             if (chatId) await preloadRoom(chatId);
+            // Deleting remembered rooms is destructive: the screen must say so explicitly (not a guess of the server).
+            if (/^memory-module\/orphans(\/|$)/.test(ctx.path) && (route.method === 'DELETE' || /delete-all$/.test(ctx.path)) && ctx.body?.confirm !== true) throw Object.assign(new Error('지울 기억을 확인해야 합니다(confirm: true).'), { status: 400 });
             const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: '/api/' + ctx.path }, mmTiming: {} };
             const reply = replyShim();
             const out = await u.run(() => route.handler(req, reply));
+            if (route.method !== 'GET') {
+                // A change must not look saved when it is not: wait for the write and report a failure to the screen.
+                const saved = await u.vfs.flush();
+                if (saved.failed.length) throw Object.assign(new Error(`기억 파일을 저장하지 못했습니다(${saved.failed.join(', ')}): ${saved.errors[0] || ''} 다시 시도해 주세요.`), { status: 500 });
+            }
             if (reply.code >= 400) throw Object.assign(new Error(String(out?.error || reply.payload?.error || '요청을 처리하지 못했습니다.')), { status: reply.code });
             return out;
         }
@@ -69,6 +76,7 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
             async processChat(chatId, opts) { await preloadRoom(chatId); const r = await u.run(() => u.svc.processChat(chatId, opts)); await inst.rendered(chatId).catch(() => {}); return r; },
             async inherit(source, target) { await preloadRoom(target, source); return u.run(() => u.X.inheritBranch(source, target)); },
             flush: () => u.vfs.flush(),
+            saveFailures: () => { const f = u.vfs.failures(); return [...f.keys()].map(k => k.slice(k.indexOf('memory-module/') + 14)); },
             refreshTail: chatId => u.eng.refreshTail(chatId),
             resetEmbeddings: () => { u.eng.resetEmbeddings(); u.run(() => u.X.clearConnectionsCache?.()); },
             async windowInfo() {

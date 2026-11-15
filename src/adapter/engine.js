@@ -23,9 +23,15 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
         const role = m.role === 'system' ? 'system' : m.is_user || m.role === 'user' ? 'user' : 'assistant';
         // Hidden messages are still the story (a message hidden from the prompt was said): hiddenFromAI is never set.
         const out = { id: m.id, role, content, characterId: role === 'assistant' ? `name:${m.name || ''}` : null, rowid: position + 1, activeSwipeIndex: m.swipe_id ?? 0, extra: { ...(role === 'user' ? { personaSnapshot: { name: m.name || 'User' } } : {}) } };
-        out.lv = { extra, metadata: meta };   // the host's own fields, for the translator hook (B3)
+        out.lv = { extra, metadata: meta };   // the host's own fields
+        translatorRow(out, m);
         return out;
     };
+    // ---- hook points for the translator contract "LV-TX v1" (B3, not implemented here) ----
+    // message:  metadata.st_translator.pub = {v:1, h, lang:'ko', text, paras:{<fnv32b36(normKey)>:ko}, edited, at}
+    //           -> to be synthesised into row.extra.translation / translationSource / paraTranslate.map when `h` matches the content
+    // chat:     chat.metadata.st_translator.glossary = {v:1, text, hash, at} -> POST chats/:id/glossary
+    function translatorRow(row, dto) { /* B3 */ }
     const dtoOf = m => ({ id: m.id, role: m.role, is_user: m.is_user, name: m.name, content: m.content, swipe_id: m.swipe_id, extra: m.extra, metadata: m.metadata, index_in_chat: m.index_in_chat });
     async function authorize(chatId) {
         const c = await call(() => api.chats.get(chatId, userId));
@@ -110,7 +116,7 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
         const chatId = payload?.chatId;
         const s = snaps.get(chatId);
         if (!s) return;
-        stats.events++;
+        stats.events++; s.seen = (s.seen || 0) + 1;
         if (!s.rows) { s.gen++; return; }                       // a load is in flight: its result may predate this event
         const m = payload.message;
         if (type === 'MESSAGE_DELETED') {
@@ -131,7 +137,11 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
     /** Re-reads only the last messages (after a reply) and puts them into the snapshot by id. */
     async function refreshTail(chatId, n = TAIL) {
         const s = snaps.get(chatId);
-        if (!s?.rows || !lean) { if (s?.rows) invalidate(chatId); return; }
+        if (!s?.rows) return;
+        // An older host has no tail read: the snapshot is trusted as long as message events keep arriving; a reply that produced
+        // none (events refused or lost) means the snapshot can no longer be trusted, so it is read again once.
+        if (!lean) { if (!s.seen) invalidate(chatId); s.seen = 0; return; }
+        s.seen = 0;
         stats.tailReads++;
         const tail = (await call(() => api.chat.getMessages(chatId, { tail: n, light: true }))) || [];
         if (!tail.length) return;
@@ -182,12 +192,15 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
             },
             async embed(texts, model, signal) {
                 embedConns ??= await embeddingConnections();
-                const pick = embedConns.find(c => c.model === model) || embedConns.find(c => c.is_primary) || embedConns[0];
+                const pick = embedConns.find(c => c.model === model || c.name === model) || embedConns.find(c => c.is_primary) || embedConns[0];
                 const res = await call(() => api.embeddings.embed({ texts, ...(pick ? { connection_id: pick.id } : {}), input_type: 'passage', userId }, { signal }));
                 return res?.embeddings || [];
             },
         };
     }
-    const engine = { chats: chatsApi, characters, connections, createLLMProvider, resolveBaseUrl: c => c?.baseUrl || 'lumiverse://connection', gameStates: null };
+    // Marinara's tracker snapshots do not exist here. An empty answer (not null) keeps upstream's own story clock running: it reads the
+    // date line a message carries itself and carries it on to the next messages (addTrackerClock).
+    const gameStates = { async getCommittedForMessages() { return new Map(); }, async getLatestForMessages() { return null; } };
+    const engine = { chats: chatsApi, characters, connections, createLLMProvider, resolveBaseUrl: c => c?.baseUrl || 'lumiverse://connection', gameStates };
     return { engine, onMessage, invalidate, dropChat, refreshTail, stats, snapshotRows: async id => (await snapshot(id)).rows, resetEmbeddings: () => { embedConns = null; } , getMessageLimit };
 }

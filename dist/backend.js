@@ -20160,8 +20160,10 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
     const role = m.role === "system" ? "system" : m.is_user || m.role === "user" ? "user" : "assistant";
     const out = { id: m.id, role, content, characterId: role === "assistant" ? `name:${m.name || ""}` : null, rowid: position + 1, activeSwipeIndex: m.swipe_id ?? 0, extra: { ...role === "user" ? { personaSnapshot: { name: m.name || "User" } } : {} } };
     out.lv = { extra, metadata: meta };
+    translatorRow(out, m);
     return out;
   };
+  function translatorRow(row, dto) {}
   const dtoOf = (m) => ({ id: m.id, role: m.role, is_user: m.is_user, name: m.name, content: m.content, swipe_id: m.swipe_id, extra: m.extra, metadata: m.metadata, index_in_chat: m.index_in_chat });
   async function authorize(chatId) {
     const c = await call(() => api.chats.get(chatId, userId));
@@ -20272,6 +20274,7 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
     if (!s)
       return;
     stats.events++;
+    s.seen = (s.seen || 0) + 1;
     if (!s.rows) {
       s.gen++;
       return;
@@ -20311,11 +20314,15 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
   }
   async function refreshTail(chatId, n = TAIL) {
     const s = snaps.get(chatId);
-    if (!s?.rows || !lean) {
-      if (s?.rows)
+    if (!s?.rows)
+      return;
+    if (!lean) {
+      if (!s.seen)
         invalidate(chatId);
+      s.seen = 0;
       return;
     }
+    s.seen = 0;
     stats.tailReads++;
     const tail = await call(() => api.chat.getMessages(chatId, { tail: n, light: true })) || [];
     if (!tail.length)
@@ -20378,13 +20385,18 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
       },
       async embed(texts, model, signal) {
         embedConns ??= await embeddingConnections();
-        const pick = embedConns.find((c) => c.model === model) || embedConns.find((c) => c.is_primary) || embedConns[0];
+        const pick = embedConns.find((c) => c.model === model || c.name === model) || embedConns.find((c) => c.is_primary) || embedConns[0];
         const res = await call(() => api.embeddings.embed({ texts, ...pick ? { connection_id: pick.id } : {}, input_type: "passage", userId }, { signal }));
         return res?.embeddings || [];
       }
     };
   }
-  const engine = { chats: chatsApi, characters, connections, createLLMProvider, resolveBaseUrl: (c) => c?.baseUrl || "lumiverse://connection", gameStates: null };
+  const gameStates = { async getCommittedForMessages() {
+    return new Map;
+  }, async getLatestForMessages() {
+    return null;
+  } };
+  const engine = { chats: chatsApi, characters, connections, createLLMProvider, resolveBaseUrl: (c) => c?.baseUrl || "lumiverse://connection", gameStates };
   return { engine, onMessage, invalidate, dropChat, refreshTail, stats, snapshotRows: async (id) => (await snapshot(id)).rows, resetEmbeddings: () => {
     embedConns = null;
   }, getMessageLimit };
@@ -20561,9 +20573,16 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
       const chatId = ctx.params?.id;
       if (chatId)
         await preloadRoom(chatId);
+      if (/^memory-module\/orphans(\/|$)/.test(ctx.path) && (route.method === "DELETE" || /delete-all$/.test(ctx.path)) && ctx.body?.confirm !== true)
+        throw Object.assign(new Error("\uC9C0\uC6B8 \uAE30\uC5B5\uC744 \uD655\uC778\uD574\uC57C \uD569\uB2C8\uB2E4(confirm: true)."), { status: 400 });
       const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: "/api/" + ctx.path }, mmTiming: {} };
       const reply = replyShim();
       const out = await u.run(() => route.handler(req, reply));
+      if (route.method !== "GET") {
+        const saved = await u.vfs.flush();
+        if (saved.failed.length)
+          throw Object.assign(new Error(`\uAE30\uC5B5 \uD30C\uC77C\uC744 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4(${saved.failed.join(", ")}): ${saved.errors[0] || ""} \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.`), { status: 500 });
+      }
       if (reply.code >= 400)
         throw Object.assign(new Error(String(out?.error || reply.payload?.error || "\uC694\uCCAD\uC744 \uCC98\uB9AC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.")), { status: reply.code });
       return out;
@@ -20625,6 +20644,10 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
         return u.run(() => u.X.inheritBranch(source, target));
       },
       flush: () => u.vfs.flush(),
+      saveFailures: () => {
+        const f = u.vfs.failures();
+        return [...f.keys()].map((k) => k.slice(k.indexOf("memory-module/") + 14));
+      },
       refreshTail: (chatId) => u.eng.refreshTail(chatId),
       resetEmbeddings: () => {
         u.eng.resetEmbeddings();
@@ -20784,7 +20807,7 @@ function start(api, options = {}) {
   const timers = manager.timers;
   registerHostRoutes(router, host);
   manager.mount(router);
-  router.add("GET", "ext/info", async ({ userId }) => ({ version: VERSION, permissions: Object.fromEntries(["generation", "chats", "chat_mutation", "characters", "interceptor"].map((p) => [p, api.permissions?.has ? api.permissions.has(p) : true])), userId: !!userId }));
+  router.add("GET", "ext/info", async ({ userId }) => ({ version: VERSION, permissions: Object.fromEntries(["generation", "chats", "chat_mutation", "characters", "interceptor"].map((p) => [p, api.permissions?.has ? api.permissions.has(p) : true])), userId: !!userId, saveFailures: userId && manager.users.has(userId) ? manager.users.get(userId).saveFailures() : [] }));
   router.add("POST", "ext/settings", async ({ userId, body }) => {
     const um = manager.forUser(userId);
     await um.ready();

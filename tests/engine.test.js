@@ -74,3 +74,17 @@ test('the reply model window: Lumiverse message limit first, then the extension 
     const g = eng(f, { getMessageLimit: async () => 12, getWindow: () => 7 });
     assert.equal(JSON.parse((await g.engine.chats.getById('chat-a')).metadata).contextMessageLimit, 12);
 });
+
+test('older host: a reply that produced no message event drops the snapshot (one fresh read); with events it is kept', async () => {
+    const f = fake();
+    const rows = story(f, 'chat-a', 6);
+    const e = eng(f);
+    await e.engine.chats.listMessages('chat-a');
+    e.onMessage('MESSAGE_SENT', { chatId: 'chat-a', message: f.addMessages('chat-a', [{ role: 'assistant', content: 'x' }]).at(-1) });
+    await e.refreshTail('chat-a');
+    await e.engine.chats.listMessages('chat-a');
+    assert.equal(f.state.messageReads.length, 1, 'events arrived: no new read');
+    await e.refreshTail('chat-a');                      // a second reply, no event
+    await e.engine.chats.listMessages('chat-a');
+    assert.equal(f.state.messageReads.length, 2);
+});

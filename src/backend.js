@@ -25,7 +25,7 @@ export function start(api, options = {}) {
 
     registerHostRoutes(router, host);
     manager.mount(router);
-    router.add('GET', 'ext/info', async ({ userId }) => ({ version: VERSION, permissions: Object.fromEntries(['generation', 'chats', 'chat_mutation', 'characters', 'interceptor'].map(p => [p, api.permissions?.has ? api.permissions.has(p) : true])), userId: !!userId }));
+    router.add('GET', 'ext/info', async ({ userId }) => ({ version: VERSION, permissions: Object.fromEntries(['generation', 'chats', 'chat_mutation', 'characters', 'interceptor'].map(p => [p, api.permissions?.has ? api.permissions.has(p) : true])), userId: !!userId, saveFailures: userId && manager.users.has(userId) ? manager.users.get(userId).saveFailures() : [] }));
     router.add('POST', 'ext/settings', async ({ userId, body }) => {
         const um = manager.forUser(userId);
         await um.ready();

@@ -145,7 +145,6 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
   }
   function viewWorld() {`, { name: 'Korean omission notice' });
     s = replaceAnchor(s, '<b>불러올 백업</b>:', '<p class="restore-removes">지울 파일: ${esc(d.removes?.join(", ") || "없음")}</p><b>불러올 백업</b>:', { name: 'show all removed files' });
-    s = replaceAnchor(s, "바꾸기 전에 지금 상태를 안전 사본으로 한 번 남기며", "바꾸기 전에 지금 상태와 직전 안전 사본을 보관하며", { name: 'two restore snapshots' });
     // Re-entering Facts fetches fresh decisions, but an identical response must not replace
     // the rows the reader is scrolling/focusing. Idle polling does not load conflicts.
     s = replaceRange(s, '  async function loadConflicts(id) {', '  async function loadNames(id) {', `  async function loadConflicts(id) {

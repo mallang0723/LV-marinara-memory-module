@@ -3006,7 +3006,7 @@ pre{font-size:12.5px!important;line-height:1.85!important}
       previewHtml = `<div class="note" role="status">
         <p class="restore-removes">지울 파일: ${esc(d.removes?.join(", ") || "없음")}</p><b>불러올 백업</b>: ${esc(s.chatName || "(이름 없음)")} · 방 ID ${esc(s.chatId)} · ${esc(date(s.createdAt))} · 모듈 ${esc(s.moduleVersion || "?")}
         <ul>${LINES.map(([k, label]) => `<li>${label}: 백업 ${esc(d.backup[k])} · 지금 ${esc(d.current[k])}</li>`).join("")}</ul>
-        <p class="hint">불러오면 이 방의 기억 파일이 백업의 내용으로 <b>통째로 바뀝니다</b>(백업에 없는 파일은 지워집니다). 바꾸기 전에 지금 상태와 직전 안전 사본을 보관하며, 아래 '불러오기 되돌리기'로 돌릴 수 있습니다. 이 방의 '기억 사용' 켜짐 여부는 지금 그대로 둡니다.${d.vectors.inBackup ? "" : " 백업에 검색 색인이 없어 <b>지금의 검색 색인은 지우고</b> 다음 정리 때 다시 만듭니다."}${s.jobRunning ? " 이 백업은 정리 작업이 돌아가는 중에 받은 것이라 파일끼리 시점이 조금 다를 수 있습니다." : ""}</p>
+        <p class="hint">불러오면 이 방의 기억 파일이 백업의 내용으로 <b>통째로 바뀝니다</b>(백업에 없는 파일은 지워집니다). 바꾸기 전에 지금 상태를 안전 사본으로 한 번 남기며, 아래 '불러오기 되돌리기'로 돌릴 수 있습니다. 이 방의 '기억 사용' 켜짐 여부는 지금 그대로 둡니다.${d.vectors.inBackup ? "" : " 백업에 검색 색인이 없어 <b>지금의 검색 색인은 지우고</b> 다음 정리 때 다시 만듭니다."}${s.jobRunning ? " 이 백업은 정리 작업이 돌아가는 중에 받은 것이라 파일끼리 시점이 조금 다를 수 있습니다." : ""}</p>
         ${d.crossRoomRequired ? `<div class="note"><label class="check-row"><input type="checkbox" id="restoreCross" ${preview.cross ? "checked" : ""}><span><b>다른 방의 백업을 이 방에 적용</b><small>이 백업은 다른 방(${esc(s.chatId)})에서 받은 것입니다. 메시지 번호와 ID는 그대로 두므로 이 방의 메시지와 맞지 않을 수 있습니다. 확인하시면 체크해 주세요.</small></span></label></div>` : ""}
         <div class="buttons"><button class="primary" data-act="restoreApply" ${busyJob || d.crossRoomRequired && !preview.cross ? "disabled" : ""}>${arm === "restoreApply" ? "한 번 더 누르면 백업을 불러옵니다" : "이 백업 불러오기"}</button><button class="ghost" data-act="restoreCancel">취소</button></div>
       </div>`;

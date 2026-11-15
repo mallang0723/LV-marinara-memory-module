@@ -68,6 +68,14 @@ https://github.com/mallang0723/marinara-memory-module
 
 기존 1.1.x/1.2.0 파일을 그대로 읽으며 업데이트 시 자료를 삭제하거나 다시 정리하지 않습니다. 추가 기능은 기존 장면 정리 요청에 함께 읽거나 저장된 자료로 계산하며, 선택한 글 정리의 모델 호출은 버튼을 누를 때만 합니다. 회상 설정 때문에 인터셉터에 새 모델 호출을 추가하지 않았습니다. SIDE B 및 Marinara 전용 생성 훅은 계속 제외합니다.
 
+## 1.4에서 달라진 것 (원작 0.35.2 통이식)
+
+- 원작 0.12.6 → **0.35.2**(82커밋)을 반영했습니다: 7개 탭 화면(시간순·이야기 줄기·인물별), **인물의 수첩**, OOC 표시·작가 계획, 이야기 줄기, 페르소나 말 표시, 배경 설정·진행 규칙, 영어/한국어/중국어 기억·방별 기억 언어, 번역된 글로 고치기·단어장, 호칭·이름 개선 등. 기능 목록은 원작 [CHANGELOG](https://github.com/tlsiddl/marinara-memory-module/blob/main/CHANGELOG.md)를 따릅니다.
+- **채팅을 통째로 읽지 않습니다.** 방마다 메시지 스냅샷 하나를 두고 메시지 이벤트(`MESSAGE_SENT/EDITED/DELETED/SWIPED`, `SWIPE_EDITED`)로 갱신합니다. 호스트에 `chat-lean-messages-v1`이 있으면 처음 한 번만 200개씩 가벼운 쪽으로 읽고(`light`), 답변 뒤에는 마지막 30개만(`tail`) 다시 읽습니다. 없는 호스트는 처음 한 번만 전체를 읽습니다.
+- 원작이 이미 가진 복원 안전 사본(`restore-undo`)을 씁니다. 이식판 1.3의 "직전+현재 2개 보관"은 원작 방식(방마다 하나)으로 바뀌었습니다.
+- 복원 미리 보기에 지워질 파일 목록, 고아 방 삭제의 `confirm: true` 요구, 저장 실패 보고는 그대로입니다(저장 실패는 화면 오류로 알리고, `ext/info`가 실패한 파일을 나열).
+- 번역 도구(LV-Translator)와의 연동(계약 "LV-TX v1")은 **아직 연결하지 않았습니다**. 어댑터에 자리만 정해 두었습니다(`engine.js`의 `translatorRow`).
+
 ## 권한
 
 | 권한 | 쓰는 곳 |
@@ -92,17 +100,16 @@ https://github.com/mallang0723/marinara-memory-module
 
 ## 저장 위치(모두 `userStorage`, 사용자별)
 
-`memory/settings.json`(연결·회상·방별 켜짐·창 크기·주입 시간) · `memory/chats/<채팅>.json`(장부) · `.scenes.json`(장면·챕터·큰 흐름·사실) · `.vectors.json`(뜻 색인) · `.translations.json`(줄별 번역 캐시, 최대 30,000개) · `.names.json`(기준 이름·별칭·되돌리기) · `.address.json`(호칭·수정 학습) · `.attribution-log.json`(최근 5회 확인 기록) · `.lang.json`(방 언어) · `.scene-error.txt`. 카드·채팅 메타데이터는 저장소로 쓰지 않습니다. 읽을 수 없는 파일은 `….broken-<시각>`으로 복사해 두고 **덮어쓰지 않습니다**. 1.1.x의 기존 방과 파일을 그대로 읽습니다. 원문과 번역이 붙어 있던 대사는 이어서 정리할 때 `text`와 `translation`으로 나누며, 자동으로 기억을 지우는 마이그레이션은 없습니다. 다른 호스트의 기억 파일을 가져오는 기능은 없습니다.
+`memory/settings.json`(연결·회상·방별 켜짐·이식판 전용 스위치·창 크기·주입 시간) · `memory/chats/<채팅>.json`(장부) · `.scenes.json`(장면·챕터·큰 흐름·사실) · `.vectors.json`(뜻 색인) · `.translations.json`(줄별 번역 캐시·단어장) · `.names.json` · `.address.json` · `.notebook.json`(인물의 수첩) · `.state.json`·`.places.json`·`.keepsakes.json`·`.conflicts.json`·`.trackers.json`·`.recall-prefs.json`·`.selected.json`·`.attribution-log.json`·`.lang.json` · `memory/restore-undo/<채팅>/`(복원 전 안전 사본, 방마다 하나). 1.3 이하의 파일 이름·모양과 같아 업데이트로 옮길 것이 없습니다.
 
 ## 원작과 달라진 점
 
-- 원작 서버 패치(`registerHooks`로 Marinara 소스에 한 줄 삽입)·`install.sh`·CLI·`mm`은 가져오지 않았습니다. `service.cjs`는 같은 논리(배치·재시도·반으로 쪼개기·장면/챕터/큰 흐름 순서·회상)로 **다시 썼습니다**(`src/memory/service.js`).
-- 원작 코드는 **고쳐 쓰지 않고** 그대로 둡니다. 기억 코어·지원 모듈 원본 19개(`src/memory/core/`의 `.generated.cjs` 제외)와 화면 원본 3개(`src/memory/ui/*.orig.*`)는 고정 SHA-256으로 검증합니다(`npm run verify:original`). 화면과 실행용 코어는 **앵커가 정확히 한 번 일치하는 패치**로 생성합니다(0번·2번 이상이면 실패). `npm test`와 빌드는 원본 검증 후 `scripts/generate-core.mjs`로 장면·회상 모듈을 생성하며 서비스·라우트·회상이 모두 같은 패치된 장면 모듈을 사용합니다.
+- **통이식**(1.4~): 원작 `service.cjs`(0.35.2, 5,713줄)를 **한 글자도 고치지 않고** 그대로 쓰고, 호스트에 닿는 곳만 얇은 어댑터(`src/adapter/`)로 바꿨습니다. 원작이 동기 `fs`로 읽고 쓰는 데이터 폴더는 사용자별 메모리 파일 트리(`vfs.js`)가 대신하고 `userStorage`에 비동기로 반영합니다. Marinara 저장소 객체는 `engine.js`가 Lumiverse API로 답합니다. 원작 서버 패치·`install.sh`·CLI·`mm`은 가져오지 않았습니다.
+- 원작 코드는 **고쳐 쓰지 않고** 그대로 둡니다. 기억 코어 20개·`service.cjs`(`src/memory/core/`의 `.generated.cjs` 제외)와 화면 원본 3개(`src/memory/ui/*.orig.*`)는 고정 SHA-256으로 검증합니다(`npm run verify:original`). 화면과 실행용 코어·서비스는 **앵커가 정확히 한 번 일치하는 패치**로 생성합니다(0번·2번 이상이면 실패). 서비스 패치는 4개뿐입니다: 사용자별 인스턴스로 감싸기, `process.x`→`hostProcess.x` 이름 바꾸기(호스트 스캐너가 문자열 `process.env`를 거부), Marinara 서버 로더의 동적 `import()` 제거, "아직 불러오지 않은 파일"을 손상으로 오인하지 않기·회상 시간 한도를 주입 예산에 맞추기.
 - **이식판만의 길이 변경**: 영어 기억이 잘리는 문제를 줄이기 위해 장면의 작중 시간·장소는 각각 **60→120자**, 날씨는 **30→60자**, 사건 시간은 **40→80자**로 늘렸습니다. 사실·알게 된 내용·나중에 밝혀진 내용의 `when`도 **120자**로 통일했습니다. 장면 카드도 시간을 앞 두 단어로 줄이지 않습니다. 직접 편집과 한국어 보기에는 이보다 짧은 필드 제한이 없고, 전체 프롬프트 예산은 유지합니다. 이미 잘려 저장된 값은 자동 복구되지 않으므로 직접 고치거나 해당 기억을 다시 정리해야 합니다.
-- **원작 기준 커밋**: `8d5f0901602cbd652997dcf4dbde9b641d29b387`(원작 런타임 0.12.6), 이식판 **1.3.0-lv.1**. 버전별 PORT/SKIP과 **옮기지 않은 것**은 [변경 내역](CHANGELOG.md)에 기록했습니다. 기존 채팅 분기·반복 억제 지침도 유지합니다.
-- **분기 이어받기**: Lumiverse가 채팅을 분기하면 보내는 `CHAT_FORKED` 이벤트(권한 불필요)를 받아, 원본의 장부·장면·사실·챕터·큰 흐름·뜻 색인·방별 설정을 새 방으로 복사합니다. 메시지 id와 원문 번호는 새 방 것으로 다시 연결하고, 과거 메시지에서 분기하면 그 뒤 내용은 제외합니다. 새 방에 기억 파일이 이미 있으면 덮어쓰지 않습니다. 원작은 서버 `onSend` 훅이었고 여기서는 이벤트로 대신합니다. 업데이트 전에 만든 분기는 소급하지 않습니다.
-- 말풍선 `<speaker>` 태그 복구·생성 지침(Marinara 전용)과 게임 상태 트래커 시계는 없습니다(작중 시간은 본문 날짜 줄만 읽습니다). 라우트 `speaker-tags`는 항상 꺼짐으로 답합니다.
-- 수동 메모 파일(`<채팅>.txt`)은 옮기지 않았습니다.
+- **원작 기준 커밋**: `ab1f058b190b1944ec38b153121bf8de14a1e4b4`(원작 런타임 0.35.2), 이식판 **1.4.0-lv.1**. 버전별 PORT/SKIP과 **옮기지 않은 것**은 [변경 내역](CHANGELOG.md)에 기록했습니다.
+- **분기 이어받기**: Lumiverse가 채팅을 분기하면 보내는 `CHAT_FORKED` 이벤트(권한 불필요)를 받아 원작의 `inheritBranch`를 실행합니다(장부·장면·사실·수첩·번역·단어장·OOC 표시 포함, 새 방에 기억 파일이 이미 있으면 덮어쓰지 않음). 원작은 서버 `onSend` 훅이었고 여기서는 이벤트로 대신합니다. 업데이트 전에 만든 분기는 소급하지 않습니다.
+- 말풍선 `<speaker>` 태그 복구·생성 지침(Marinara 전용)은 없습니다. 게임 상태 트래커는 없지만 원작의 "메시지 본문의 날짜 줄" 시계는 그대로 동작합니다(트래커 자리는 빈 대역).
 - 채팅 요약은 `chat.metadata.loom_summary` 한 덩어리입니다.
 - 모델 JSON 모드(`response_format`)는 먼저 시도하고, 거절되면 그 연결은 빼고 다시 묻습니다.
 - 연결·회상·기억 언어 옵션은 **고르는 즉시 저장**됩니다(원작은 저장 버튼).
@@ -112,7 +119,7 @@ https://github.com/mallang0723/marinara-memory-module
 
 ```bash
 BUN_BIN=/path/to/bun npm run build   # 원본 검증 → 코어·화면 패치 → dist/backend.js, dist/frontend.js (bun 1.4.0)
-npm test                            # 원본 검증·코어 생성 → node --test: 단위 + 원본 테스트
+npm test                            # 원본 검증·코어·서비스 생성 → node --test: 어댑터 단위 + 원작 테스트 105개 파일(tests/upstream/)
 npm run verify:original             # UPSTREAM_MEMORY=<원작 체크아웃>을 주면 원작과도 비교(이 포크의 main이 원작)
 npm run qa:browser                  # Firefox + Chromium, 360×460·360×740(터치)·390×844·1280×800, 밝/어두운 호스트 테마
 npm run qa:insecure                 # 비보안 출처(http://qa.test)만
