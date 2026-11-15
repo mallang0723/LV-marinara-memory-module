@@ -20123,8 +20123,8 @@ function createVfs({ storage, userId, debounceMs = 400, log = () => {}, setTimer
         return value;
       }
       const loaded = await loadMisses();
-      if (writes !== w || attempt >= 3) {
-        log(`\uC77D\uB2E4 \uB9CC \uD30C\uC77C ${loaded}\uAC1C\uB97C \uBD88\uB7EC\uC654\uC9C0\uB9CC \uC774\uBBF8 \uC800\uC7A5\uC774 \uC788\uC5B4 \uB2E4\uC2DC \uC2E4\uD589\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`);
+      if (writes !== w || attempt >= 40 || !loaded) {
+        log(`\uC77D\uB2E4 \uB9CC \uD30C\uC77C ${loaded}\uAC1C\uB97C \uBD88\uB7EC\uC654\uC9C0\uB9CC \uC774\uBBF8 \uC800\uC7A5\uC774 \uC788\uAC70\uB098 \uC2DC\uB3C4 \uD55C\uB3C4\uC5D0 \uB2FF\uC544 \uB2E4\uC2DC \uC2E4\uD589\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`);
         if (error)
           throw error;
         return value;
@@ -20379,6 +20379,8 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
           parameters.max_tokens = opts.maxTokens;
         if (opts.temperature != null)
           parameters.temperature = opts.temperature;
+        if (opts.responseFormat)
+          parameters.response_format = opts.responseFormat;
         const res = await call(() => api.generate.quiet({ messages, ...connectionId ? { connection_id: connectionId } : {}, parameters, signal: opts.signal, userId }));
         const content = typeof res === "string" ? res : res?.content;
         return { content: typeof content === "string" ? content : "", usage: res?.usage || null };
@@ -20386,7 +20388,7 @@ function createEngine({ api, userId, log = () => {}, lean = !!api.host?.capabili
       async embed(texts, model, signal) {
         embedConns ??= await embeddingConnections();
         const pick = embedConns.find((c) => c.model === model || c.name === model) || embedConns.find((c) => c.is_primary) || embedConns[0];
-        const res = await call(() => api.embeddings.embed({ texts, ...pick ? { connection_id: pick.id } : {}, input_type: "passage", userId }, { signal }));
+        const res = await call(() => api.embeddings.embed({ texts: texts.map((t) => String(t).slice(0, 8000)), ...pick ? { connection_id: pick.id } : {}, input_type: "passage", userId }, { signal }));
         return res?.embeddings || [];
       }
     };
@@ -20458,7 +20460,7 @@ function collectRoutes(register) {
       }
     };
     for (const method of ["get", "post", "put", "patch", "delete"])
-      app[method] = (p, handler) => routes.push({ method: method.toUpperCase(), path: prefix + p, handler });
+      app[method] = (p, ...rest) => routes.push({ method: method.toUpperCase(), path: prefix + p, handler: rest.at(-1) });
     return app;
   };
   register(make(""));
@@ -20568,16 +20570,19 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
     const rendered = new Map;
     const settings = () => u.X.settings();
     const chatEnabled = (chatId) => settings().chats?.[chatId]?.enabled === true;
-    const preloadRoom = (chatId, ...more) => u.vfs.preload(...[chatId, ...more].filter(Boolean).map((id) => `chats/${id}.`));
+    const preloadRoom = (chatId, ...more) => u.vfs.preload(...[chatId, ...more].filter(Boolean).flatMap((id) => [`chats/${id}.`, `restore-undo/${id}/`]));
     async function invoke(route, ctx) {
       const chatId = ctx.params?.id;
       if (chatId)
         await preloadRoom(chatId);
       if (/^memory-module\/orphans(\/|$)/.test(ctx.path) && (route.method === "DELETE" || /delete-all$/.test(ctx.path)) && ctx.body?.confirm !== true)
         throw Object.assign(new Error("\uC9C0\uC6B8 \uAE30\uC5B5\uC744 \uD655\uC778\uD574\uC57C \uD569\uB2C8\uB2E4(confirm: true)."), { status: 400 });
-      const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: "/api/" + ctx.path }, mmTiming: {} };
-      const reply = replyShim();
-      const out = await u.run(() => route.handler(req, reply));
+      let reply;
+      const out = await u.run(() => {
+        reply = replyShim();
+        const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: "/api/" + ctx.path }, mmTiming: {} };
+        return route.handler(req, reply);
+      });
       if (route.method !== "GET") {
         const saved = await u.vfs.flush();
         if (saved.failed.length)

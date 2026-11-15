@@ -18,7 +18,7 @@ export function collectRoutes(register) {
             register(fn, opts = {}) { const r = fn(make(prefix + (opts.prefix || ''))); return r; },
             addHook(name, fn) { hooks.push({ name, fn }); },
         };
-        for (const method of ['get', 'post', 'put', 'patch', 'delete']) app[method] = (p, handler) => routes.push({ method: method.toUpperCase(), path: prefix + p, handler });
+        for (const method of ['get', 'post', 'put', 'patch', 'delete']) app[method] = (p, ...rest) => routes.push({ method: method.toUpperCase(), path: prefix + p, handler: rest.at(-1) });   // (path, handler) or (path, options, handler)
         return app;
     };
     register(make(''));

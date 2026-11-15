@@ -178,7 +178,7 @@ export function createVfs({ storage, userId, debounceMs = 400, log = () => {}, s
     }
     async function loadMisses() { const m = [...misses]; misses.clear(); await Promise.all(m.map(loadOne)); return m.length; }
     /**
-     * Runs fn (which may read synchronously); a file it needed but had not loaded is loaded and fn runs again, up to 4 times.
+     * Runs fn (which may read synchronously); a file it needed but had not loaded is loaded and fn runs again, while each pass loads something new (at most 40 passes).
      * A run that already changed files is not repeated (the misses are loaded and reported instead).
      */
     async function run(fn) {
@@ -190,7 +190,7 @@ export function createVfs({ storage, userId, debounceMs = 400, log = () => {}, s
             try { value = await fn(); } catch (e) { error = e; }
             if (!misses.size) { if (error) throw error; return value; }
             const loaded = await loadMisses();
-            if (writes !== w || attempt >= 3) { log(`읽다 만 파일 ${loaded}개를 불러왔지만 이미 저장이 있어 다시 실행하지 않았습니다.`); if (error) throw error; return value; }
+            if (writes !== w || attempt >= 40 || !loaded) { log(`읽다 만 파일 ${loaded}개를 불러왔지만 이미 저장이 있거나 시도 한도에 닿아 다시 실행하지 않았습니다.`); if (error) throw error; return value; }
         }
     }
     return { fs, init, preload, run, flush, loadMisses, failures: () => new Map(failures), misses, stats: () => ({ files: files.size, known: known.size, dirty: dirty.size, writes }), pathOf, keyOf, ROOT };

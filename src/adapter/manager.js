@@ -34,15 +34,20 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
         const rendered = new Map();
         const settings = () => u.X.settings();
         const chatEnabled = chatId => settings().chats?.[chatId]?.enabled === true;
-        const preloadRoom = (chatId, ...more) => u.vfs.preload(...[chatId, ...more].filter(Boolean).map(id => `chats/${id}.`));
+        const preloadRoom = (chatId, ...more) => u.vfs.preload(...[chatId, ...more].filter(Boolean).flatMap(id => [`chats/${id}.`, `restore-undo/${id}/`]));
         async function invoke(route, ctx) {
             const chatId = ctx.params?.id;
             if (chatId) await preloadRoom(chatId);
             // Deleting remembered rooms is destructive: the screen must say so explicitly (not a guess of the server).
             if (/^memory-module\/orphans(\/|$)/.test(ctx.path) && (route.method === 'DELETE' || /delete-all$/.test(ctx.path)) && ctx.body?.confirm !== true) throw Object.assign(new Error('지울 기억을 확인해야 합니다(confirm: true).'), { status: 400 });
-            const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: '/api/' + ctx.path }, mmTiming: {} };
-            const reply = replyShim();
-            const out = await u.run(() => route.handler(req, reply));
+            // The request and reply objects are made per attempt: vfs.run may run the handler again after loading a file it missed,
+            // and upstream's guard turns the first attempt's "not loaded" into a 400 that must not outlive a successful retry.
+            let reply;
+            const out = await u.run(() => {
+                reply = replyShim();
+                const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: '/api/' + ctx.path }, mmTiming: {} };
+                return route.handler(req, reply);
+            });
             if (route.method !== 'GET') {
                 // A change must not look saved when it is not: wait for the write and report a failure to the screen.
                 const saved = await u.vfs.flush();

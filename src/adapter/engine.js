@@ -186,6 +186,8 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
                 const parameters = {};
                 if (opts.maxTokens != null) parameters.max_tokens = opts.maxTokens;
                 if (opts.temperature != null) parameters.temperature = opts.temperature;
+                // upstream asks for JSON mode first and, when the host refuses it (an error naming response_format), asks again without
+                if (opts.responseFormat) parameters.response_format = opts.responseFormat;
                 const res = await call(() => api.generate.quiet({ messages, ...(connectionId ? { connection_id: connectionId } : {}), parameters, signal: opts.signal, userId }));
                 const content = typeof res === 'string' ? res : res?.content;
                 return { content: typeof content === 'string' ? content : '', usage: res?.usage || null };
@@ -193,7 +195,7 @@ export function createEngine({ api, userId, log = () => {}, lean = !!api.host?.c
             async embed(texts, model, signal) {
                 embedConns ??= await embeddingConnections();
                 const pick = embedConns.find(c => c.model === model || c.name === model) || embedConns.find(c => c.is_primary) || embedConns[0];
-                const res = await call(() => api.embeddings.embed({ texts, ...(pick ? { connection_id: pick.id } : {}), input_type: 'passage', userId }, { signal }));
+                const res = await call(() => api.embeddings.embed({ texts: texts.map(t => String(t).slice(0, 8000)), ...(pick ? { connection_id: pick.id } : {}), input_type: 'passage', userId }, { signal }));
                 return res?.embeddings || [];
             },
         };
