@@ -1,6 +1,7 @@
 // Test environment: fake Spindle host + the extension's manager (pinned upstream service per user), all in memory.
 import { fake } from './fake.js';
 import { createManager } from '../src/adapter/manager.js';
+import { inRoom } from '../src/common/meter.js';
 
 export const U = 'u1';
 export function makeEnv({ tunables = {}, fakeOpts = {}, debounceMs = 0 } = {}) {
@@ -16,7 +17,7 @@ export function makeEnv({ tunables = {}, fakeOpts = {}, debounceMs = 0 } = {}) {
         loadLedger: id => inst.X.loadLedger(id),
         jobStatus: id => inst.X.jobs.get(id) || { state: 'idle' },
         recalls: inst.X.recalls,
-        processChat: async (id, o) => { await inst.preloadRoom(id); const r = await inst.u.run(() => inst.svc.processChat(id, o)); await inst.u.run(() => inst.X.enqueue(`scenes:${id}`, async () => {})); await inst.rendered(id); return r; },
+        processChat: async (id, o) => { await inst.preloadRoom(id); const r = await inRoom.run({ chatId: id }, () => inst.u.run(() => inst.svc.processChat(id, o))); await inst.u.run(() => inst.X.enqueue(`scenes:${id}`, async () => {})); await inst.rendered(id); return r; },
     });
     /** A request through the same path the screen uses (router -> instance routes). */
     const rpc = (method, path, body) => manager.forUser(U).ready().then(() => manager.forUser(U).handle({ method, path: 'memory-module/' + path.replace(/^\/+/, ''), body }));

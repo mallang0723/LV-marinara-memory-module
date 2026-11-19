@@ -138,9 +138,12 @@ export function fake(opts = {}) {
                 if (state.modelHang) return new Promise((_, reject) => { const err = Object.assign(new Error('Aborted'), { name: 'AbortError' }); if (input.signal?.aborted) reject(err); input.signal?.addEventListener('abort', () => reject(err), { once: true }); });
                 if (state.modelDelayMs) await new Promise((res, rej) => { const t = setTimeout(res, state.modelDelayMs); input.signal?.addEventListener('abort', () => { clearTimeout(t); rej(Object.assign(new Error('Aborted'), { name: 'AbortError' })); }, { once: true }); });
                 const content = f.model ? await f.model({ messages: input.messages, parameters: input.parameters, signal: input.signal }) : replyFor(input.messages, state.modelCounts);
-                return { content, finish_reason: 'stop' };
+                const usage = f.usage ? f.usage(input, content) : undefined;
+                return { content, finish_reason: 'stop', ...(usage ? { usage } : {}) };
             },
         },
+        // the host's free-tier helper (worker-runtime.ts `tokens.countText`): word-ish count by default so it differs from chars / 4; f.tokenizer = null -> no tokens API
+        tokens: opts.noTokens ? undefined : { countText: async (text, o = {}) => { state.tokenCalls = (state.tokenCalls || []).concat([{ len: String(text).length, o: clone(o) }]); if (state.tokensFail) throw new Error(state.tokensFail); const total = String(text).split(/\s+/).filter(Boolean).length; return state.tokensApprox ? { total_tokens: Math.ceil(String(text).length / 4), model: 'unknown', modelSource: 'main', tokenizer_id: null, tokenizer_name: 'approximate', approximate: true } : { total_tokens: total, model: 'm-main', modelSource: o.modelSource || 'main', tokenizer_id: 'fake', tokenizer_name: 'fake-tok', approximate: false }; } },
         embeddings: {
             listConnections: async o => { need('embeddings', o?.userId); return [{ id: 'emb-a', name: '임베딩 A', provider: 'fake', model: 'fake-embed', dimensions: 64, enabled: true, is_primary: true, has_api_key: true }]; },
             embed: async (input, o) => {

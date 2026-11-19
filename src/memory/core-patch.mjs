@@ -81,6 +81,13 @@ export function patchService(source) {
     source = replaceAnchor(source, 'import(pathToFileURL(path.join(dist, rel)).href)', "Promise.reject(Error('Marinara engine is not available on Lumiverse'))", { name: 'service engine import' });
     // The recall's own time limit follows the interceptor budget the user set (hostProcess.lvRecallBudgetMs), else the env default.
     source = replaceAnchor(source, '  const left = () => RECALL_TIMEOUT_MS - (Date.now() - started);', '  const left = () => (hostProcess.lvRecallBudgetMs?.() || RECALL_TIMEOUT_MS) - (Date.now() - started);', { name: 'service recall budget' });
+    // Token meter (src/common/meter.js): each memory-model call says what it is for. 회상 = recall, 점검 = review/tidy, everything else = 정리 (default).
+    source = replaceAnchor(source, 'async function askModel(model, messages, { maxTokens = 4096 } = {}) {', 'async function askModel(model, messages, { maxTokens = 4096, lvKind } = {}) {', { name: 'meter askModel kind' });
+    source = replaceAnchor(source, 'const base = { model: model.model, maxTokens, temperature: 0.2, signal, ...(model.extra || {}) };', 'const base = { model: model.model, maxTokens, temperature: 0.2, signal, ...(lvKind ? { lvKind } : {}), ...(model.extra || {}) };', { name: 'meter base kind' });
+    source = replaceAnchor(source, 'store.chapters || [], entry.semantic || []), { maxTokens: 600 });', "store.chapters || [], entry.semantic || []), { maxTokens: 600, lvKind: 'recall' });", { name: 'meter recall kind' });
+    source = replaceAnchor(source, 'askModel(model, review.messages, { maxTokens: 1024 })', "askModel(model, review.messages, { maxTokens: 1024, lvKind: 'check' })", { name: 'meter review kind', count: 2 });
+    source = replaceAnchor(source, 'askModel(model, L.buildTidyPrompt(view, recent, { after })))', "askModel(model, L.buildTidyPrompt(view, recent, { after }), { lvKind: 'check' }))", { name: 'meter tidy kind' });
+    source = replaceAnchor(source, 'askModel(model, L.buildTidyPrompt({ threads: group }, recent)))', "askModel(model, L.buildTidyPrompt({ threads: group }, recent), { lvKind: 'check' }))", { name: 'meter tidy2 kind' });
     const renamed = source.replace(/\bprocess\.(?=[a-zA-Z_])/g, 'hostProcess.');
     if (renamed === source) throw new Error('patch "service process rename" changed nothing');
     return `module.exports = function createUpstreamService(require, hostProcess, module) {\n${renamed}\nreturn module.exports;\n};\n`;

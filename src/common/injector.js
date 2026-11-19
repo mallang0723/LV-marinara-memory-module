@@ -47,6 +47,7 @@ export function createInjector({ manager, log = () => {}, now = () => Date.now()
             const breakdown = [];
             let memoryText = '';
             let memoryOn = false;
+            let injected = '';   // the exact text this handler put into the prompt (for the token meter)
 
             // ---- 1) memory block ----
             const injectOn = um.settings().autoInject !== false && um.settings().moduleMemory !== false;
@@ -70,14 +71,18 @@ export function createInjector({ manager, log = () => {}, now = () => Date.now()
                     // {{memory_ledger}} in the preset was already resolved with last turn's cache: swap in the fresh text
                     const fresh = memoryText ? sanitize(memoryText) : '';
                     out[existing] = { ...out[existing], content: text(out[existing]).replace(MEMORY_BLOCK, () => fresh).replace(/\n{3,}/g, '\n\n') };
+                    injected = fresh;
                     breakdown.push({ messageIndex: existing, name: '기억' });
                 } else if (injectOn && memoryText) {
                     const at = historyStart(out);
                     out.splice(at, 0, { role: 'system', content: memoryText });
+                    injected = memoryText;
                     breakdown.push({ messageIndex: at, name: '기억' });
                 }
             }
 
+            // token meter: counted by the host's tokenizer after this handler returned, so the prompt and its timing stay as they were
+            if (injected) void um.meter?.recordInjection(chatId, injected, { dryRun: !!ctx.isDryRun });
             if (!breakdown.length && out.length === messages.length && out.every((m, i) => m.content === messages[i].content)) return untouched();
             log(`interceptor ${type} ${chatId}: ${now() - started} ms (${breakdown.map(b => b.name).join(', ') || 'no change'})`);
             return { messages: out, breakdown: breakdown.sort((a, b) => a.messageIndex - b.messageIndex) };

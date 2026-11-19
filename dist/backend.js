@@ -1645,10 +1645,10 @@ ${m.content}` } : m);
       const week = Object.entries(u.days).filter(([k]) => k >= usageDay(new Date(Date.now() - 6 * 86400000))).reduce((a, [, d]) => ({ calls: a.calls + d.calls, input: a.input + d.input, output: a.output + d.output, estimated: a.estimated + d.estimated }), { calls: 0, input: 0, output: 0, estimated: 0 });
       return { today, week, days: u.days };
     }
-    async function askModel(model, messages, { maxTokens = 4096 } = {}) {
+    async function askModel(model, messages, { maxTokens = 4096, lvKind } = {}) {
       messages = withLanguage(messages, model.lang);
       const signal = model.signal ? AbortSignal.any([AbortSignal.timeout(MODEL_TIMEOUT_MS), model.signal]) : AbortSignal.timeout(MODEL_TIMEOUT_MS);
-      const base = { model: model.model, maxTokens, temperature: 0.2, signal, ...model.extra || {} };
+      const base = { model: model.model, maxTokens, temperature: 0.2, signal, ...lvKind ? { lvKind } : {}, ...model.extra || {} };
       let content;
       let reply;
       const inChars = messages.reduce((n, m) => n + String(m?.content ?? "").length, 0);
@@ -1740,7 +1740,7 @@ ${m.content}` } : m);
         const after = kind === "emotion" ? [] : steps;
         for (let i = 0;i < ofKind.length; i += TIDY_CHUNK) {
           const view = { threads: ofKind.slice(i, i + TIDY_CHUNK) };
-          const parsed = L.parseJsonObject(await askModel(model, L.buildTidyPrompt(view, recent, { after })));
+          const parsed = L.parseJsonObject(await askModel(model, L.buildTidyPrompt(view, recent, { after }), { lvKind: "check" }));
           total.calls++;
           if (!parsed)
             continue;
@@ -1755,7 +1755,7 @@ ${m.content}` } : m);
       if (scenes) {
         for (const thread of L.oldItemsToReview(ledger, lastNumber).slice(0, OLD_ITEMS_PER_TIDY)) {
           const review = L.buildOldItemPrompt(ledger, messages, thread, steps);
-          const parsed = L.parseJsonObject(await askModel(model, review.messages, { maxTokens: 1024 }));
+          const parsed = L.parseJsonObject(await askModel(model, review.messages, { maxTokens: 1024, lvKind: "check" }));
           total.calls++;
           total.oldChecked++;
           const outcome = L.applyOldItemReview(ledger, thread, parsed, review.window, steps, lastNumber);
@@ -1775,7 +1775,7 @@ ${m.content}` } : m);
           continue;
         }
         const review = L.buildFeelingPrompt(ledger, messages, feeling);
-        const parsed = L.parseJsonObject(await askModel(model, review.messages, { maxTokens: 1024 }));
+        const parsed = L.parseJsonObject(await askModel(model, review.messages, { maxTokens: 1024, lvKind: "check" }));
         total.calls++;
         if (typeof upTo === "number")
           feeling.reviewedUpTo = upTo;
@@ -1800,7 +1800,7 @@ ${m.content}` } : m);
         const ids = group.map((t) => t.id).join(",");
         if (tried[key] === ids)
           continue;
-        const parsed = L.parseJsonObject(await askModel(model, L.buildTidyPrompt({ threads: group }, recent)));
+        const parsed = L.parseJsonObject(await askModel(model, L.buildTidyPrompt({ threads: group }, recent), { lvKind: "check" }));
         total.calls++;
         total.feelingGroups++;
         if (parsed) {
@@ -5770,7 +5770,7 @@ ${rules}`);
           try {
             const model = await memoryModel();
             model.signal = AbortSignal.timeout(Math.max(1000, left()));
-            const reply = await askModel(model, R.buildRecallPrompt(list, ledger, recent, userMessage, store.chapters || [], entry.semantic || []), { maxTokens: 600 });
+            const reply = await askModel(model, R.buildRecallPrompt(list, ledger, recent, userMessage, store.chapters || [], entry.semantic || []), { maxTokens: 600, lvKind: "recall" });
             const parsed = L.parseJsonObject(reply);
             if (!parsed)
               throw Error("\uAE30\uC5B5 \uBAA8\uB378\uC758 \uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
@@ -20319,6 +20319,160 @@ function readGlossary(chatMetadata) {
 
 // src/adapter/engine.js
 var import_hide_blocks = __toESM(require_hide_blocks(), 1);
+
+// src/common/meter.js
+import { AsyncLocalStorage } from "async_hooks";
+var inRoom = new AsyncLocalStorage;
+var KINDS = ["organize", "recall", "check", "embed"];
+var FILE = "meter/totals.json";
+var COUNT_MS = 3000;
+var approx = (text) => ({ tokens: Math.ceil(String(text || "").length / 4), tokenizer: "approximate", approximate: true });
+var num = (v) => Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null;
+var blank = () => ({ n: 0, input: 0, output: 0, cost: 0, costKnown: 0, estimated: 0 });
+function costOf(usage) {
+  const raw = usage?.provider_raw;
+  for (const v of [usage?.cost, raw?.cost, raw?.usage?.cost, raw?.total_cost]) {
+    const n = num(v);
+    if (n != null)
+      return n;
+  }
+  return null;
+}
+function createMeter({ api, userId, log = () => {}, debounceMs = 2000 }) {
+  let data = null, loading = null, timer = null, dirty = false;
+  const pending = new Set;
+  const storage = api?.userStorage;
+  async function load() {
+    if (data)
+      return data;
+    loading ??= (async () => {
+      let v = null;
+      try {
+        v = storage?.getJson ? await storage.getJson(FILE, { userId, fallback: null }) : null;
+      } catch {
+        v = null;
+      }
+      data = v && typeof v === "object" && v.rooms && typeof v.rooms === "object" ? v : { rooms: {} };
+    })();
+    await loading;
+    return data;
+  }
+  const room = (d, chatId) => d.rooms[chatId] ??= { since: Date.now(), last: null, calls: {} };
+  function save() {
+    dirty = true;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      flush().catch((e) => log(`meter save: ${e?.message || e}`));
+    }, debounceMs);
+    timer.unref?.();
+  }
+  async function flush() {
+    clearTimeout(timer);
+    await Promise.allSettled([...pending]);
+    if (!dirty || !data || !storage?.setJson)
+      return;
+    dirty = false;
+    await storage.setJson(FILE, data, { userId, indent: 0 });
+  }
+  async function count(text) {
+    const s = String(text ?? "");
+    if (!s)
+      return { tokens: 0, tokenizer: "", approximate: false };
+    if (typeof api?.tokens?.countText !== "function")
+      return approx(s);
+    let timer;
+    try {
+      const r = await Promise.race([api.tokens.countText(s, { modelSource: "main", userId }), new Promise((_, rej) => {
+        timer = setTimeout(() => rej(new Error("timeout")), COUNT_MS);
+      })]);
+      const t = num(r?.total_tokens);
+      if (t == null)
+        return approx(s);
+      return { tokens: t, tokenizer: String(r.tokenizer_name || r.model || ""), approximate: r.approximate === true };
+    } catch {
+      return approx(s);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const track = (p) => {
+    pending.add(p);
+    p.finally(() => pending.delete(p));
+    return p;
+  };
+  function recordInjection(chatId, text, { dryRun = false } = {}) {
+    if (!chatId)
+      return Promise.resolve();
+    return track((async () => {
+      try {
+        const c = await count(text);
+        const d = await load();
+        room(d, chatId).last = { chars: String(text).length, tokens: c.tokens, tokenizer: c.tokenizer, approximate: c.approximate, dryRun: !!dryRun, at: Date.now() };
+        save();
+      } catch (e) {
+        log(`meter injection: ${e?.message || e}`);
+      }
+    })());
+  }
+  function recordCall(chatId, kind, { usage = null, promptText = "", answerText = "" } = {}) {
+    if (!chatId || !KINDS.includes(kind))
+      return Promise.resolve();
+    return track((async () => {
+      try {
+        let input = num(usage?.prompt_tokens ?? usage?.input_tokens), output = num(usage?.completion_tokens ?? usage?.output_tokens);
+        let estimated = false;
+        if (input == null || output == null) {
+          estimated = true;
+          if (input == null)
+            input = (await count(promptText)).tokens;
+          if (output == null)
+            output = answerText ? (await count(answerText)).tokens : 0;
+        }
+        const cost = costOf(usage);
+        const d = await load();
+        const row = room(d, chatId).calls[kind] ??= blank();
+        row.n++;
+        row.input += input;
+        row.output += output;
+        if (cost != null) {
+          row.cost += cost;
+          row.costKnown++;
+        }
+        if (estimated)
+          row.estimated++;
+        save();
+      } catch (e) {
+        log(`meter call: ${e?.message || e}`);
+      }
+    })());
+  }
+  async function get(chatId) {
+    const d = await load();
+    const r = d.rooms[chatId] || { since: null, last: null, calls: {} };
+    const total = blank();
+    const calls = {};
+    for (const k of KINDS) {
+      const c = { ...blank(), ...r.calls[k] || {} };
+      calls[k] = c;
+      for (const f of Object.keys(total))
+        total[f] += c[f];
+    }
+    return { last: r.last, calls, total, since: r.since };
+  }
+  async function reset(chatId) {
+    const d = await load();
+    if (d.rooms[chatId]) {
+      d.rooms[chatId].calls = {};
+      d.rooms[chatId].since = Date.now();
+      save();
+    }
+    await flush();
+    return get(chatId);
+  }
+  return { count, recordInjection, recordCall, get, reset, flush, idle: () => Promise.allSettled([...pending]) };
+}
+
+// src/adapter/engine.js
 var PAGE2 = 200;
 var TAIL = 30;
 var iso2 = (t) => {
@@ -20327,7 +20481,7 @@ var iso2 = (t) => {
     return null;
   return new Date(n < 1000000000000 ? n * 1000 : n).toISOString();
 };
-function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.["chat-lean-messages-v1"], getMessageLimit = async () => null, getWindow = () => null, getHideBlocks = () => null }) {
+function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.["chat-lean-messages-v1"], getMessageLimit = async () => null, getWindow = () => null, getHideBlocks = () => null, meter = null }) {
   const call = async (fn) => {
     try {
       return await fn();
@@ -20591,12 +20745,24 @@ function createEngine({ api, userId, log = () => {}, translator = null, lean = !
           parameters.response_format = opts.responseFormat;
         const res = await call(() => api.generate.quiet({ messages, ...connectionId ? { connection_id: connectionId } : {}, parameters, signal: opts.signal, userId }));
         const content = typeof res === "string" ? res : res?.content;
+        if (meter) {
+          const chatId = inRoom.getStore()?.chatId;
+          if (chatId)
+            meter.recordCall(chatId, opts.lvKind || "organize", { usage: res?.usage || null, promptText: messages.map((m) => typeof m?.content === "string" ? m.content : "").join(`
+`), answerText: typeof content === "string" ? content : "" });
+        }
         return { content: typeof content === "string" ? content : "", usage: res?.usage || null };
       },
       async embed(texts, model, signal) {
         embedConns ??= await embeddingConnections();
         const pick = embedConns.find((c) => c.model === model || c.name === model) || embedConns.find((c) => c.is_primary) || embedConns[0];
         const res = await call(() => api.embeddings.embed({ texts: texts.map((t) => String(t).slice(0, 8000)), ...pick ? { connection_id: pick.id } : {}, input_type: "passage", userId }, { signal }));
+        if (meter) {
+          const chatId = inRoom.getStore()?.chatId;
+          if (chatId)
+            meter.recordCall(chatId, "embed", { usage: null, promptText: texts.map((t) => String(t).slice(0, 8000)).join(`
+`) });
+        }
         return res?.embeddings || [];
       }
     };
@@ -20613,8 +20779,8 @@ function createEngine({ api, userId, log = () => {}, translator = null, lean = !
 }
 
 // src/adapter/dispatch.js
-import { AsyncLocalStorage } from "async_hooks";
-var running = new AsyncLocalStorage;
+import { AsyncLocalStorage as AsyncLocalStorage2 } from "async_hooks";
+var running = new AsyncLocalStorage2;
 var hooks = { loader: new Map, address: new Map, state: new Map };
 var installed = new Set;
 function dispatcher(kind) {
@@ -20675,10 +20841,10 @@ function collectRoutes(register) {
   register(make(""));
   return { routes, hooks };
 }
-function createUserService({ api, userId, log = () => {}, env = {}, version = "0", vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit, translator }) {
+function createUserService({ api, userId, log = () => {}, env = {}, version = "0", vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit, translator, meter = null }) {
   let svc = null;
   const vfs = realFs ? null : injectedVfs || createVfs({ storage: api.userStorage, userId, log, ...debounceMs != null ? { debounceMs } : {} });
-  const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getHideBlocks: (chatId) => {
+  const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, meter, getHideBlocks: (chatId) => {
     try {
       const all = svc?._test.settings();
       return import_cores.default["./features.cjs"].resolve(all, chatId, "hideBlocks").enabled ? import_hide_blocks2.default.tagsOf(all.chats?.[chatId]?.hideBlocks) : null;
@@ -20779,7 +20945,9 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
   function build(userId) {
     const env = { ...tunables.env || {} };
     env.MEMORY_MODULE_RECALL_TIMEOUT_MS ??= String(tunables.recallBudgetMs ?? RECALL_BUDGET_MS);
-    const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId), translator });
+    const meter = createMeter({ api, userId, log });
+    const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId), translator, meter });
+    const inChat = (chatId, fn) => chatId ? inRoom.run({ chatId }, fn) : fn();
     const router = createRouter();
     for (const r of u.routes) {
       const pattern = r.path.replace(/^\/api\//, "");
@@ -20797,11 +20965,11 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
       if (/^memory-module\/orphans(\/|$)/.test(ctx.path) && (route.method === "DELETE" || /delete-all$/.test(ctx.path)) && ctx.body?.confirm !== true)
         throw Object.assign(new Error("\uC9C0\uC6B8 \uAE30\uC5B5\uC744 \uD655\uC778\uD574\uC57C \uD569\uB2C8\uB2E4(confirm: true)."), { status: 400 });
       let reply;
-      const out = await u.run(() => {
+      const out = await inChat(chatId, () => u.run(() => {
         reply = replyShim();
         const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: "/api/" + ctx.path }, mmTiming: {} };
         return route.handler(req, reply);
-      });
+      }));
       if (route.method !== "GET") {
         const saved = await u.vfs.flush();
         if (saved.failed.length)
@@ -20817,6 +20985,7 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
       router,
       X: u.X,
       svc: u.svc,
+      meter,
       ready: () => u.vfs.init(),
       settings,
       chatEnabled,
@@ -20848,7 +21017,7 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
       },
       async syncBeforeReply(chatId, body) {
         await preloadRoom(chatId);
-        await u.run(() => u.X.syncBeforeReply(chatId, body || {}));
+        await inChat(chatId, () => u.run(() => u.X.syncBeforeReply(chatId, body || {})));
         return inst.rendered(chatId);
       },
       async rendered(chatId) {
@@ -20869,7 +21038,7 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
       },
       async processChat(chatId, opts) {
         await preloadRoom(chatId);
-        const r = await u.run(() => u.svc.processChat(chatId, opts));
+        const r = await inChat(chatId, () => u.run(() => u.svc.processChat(chatId, opts)));
         await inst.rendered(chatId).catch(() => {});
         return r;
       },
@@ -20926,6 +21095,7 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
     for (const inst of users.values()) {
       try {
         await inst.flush();
+        await inst.meter.flush();
       } catch {}
       inst.u.dispose();
     }
@@ -20965,6 +21135,7 @@ function createInjector({ manager, log = () => {}, now = () => Date.now() }) {
       const breakdown = [];
       let memoryText = "";
       let memoryOn = false;
+      let injected = "";
       const injectOn = um.settings().autoInject !== false && um.settings().moduleMemory !== false;
       try {
         await um.preloadRoom(chatId);
@@ -20988,13 +21159,17 @@ function createInjector({ manager, log = () => {}, now = () => Date.now() }) {
           out[existing] = { ...out[existing], content: text(out[existing]).replace(MEMORY_BLOCK, () => fresh).replace(/\n{3,}/g, `
 
 `) };
+          injected = fresh;
           breakdown.push({ messageIndex: existing, name: "\uAE30\uC5B5" });
         } else if (injectOn && memoryText) {
           const at = historyStart(out);
           out.splice(at, 0, { role: "system", content: memoryText });
+          injected = memoryText;
           breakdown.push({ messageIndex: at, name: "\uAE30\uC5B5" });
         }
       }
+      if (injected)
+        um.meter?.recordInjection(chatId, injected, { dryRun: !!ctx.isDryRun });
       if (!breakdown.length && out.length === messages.length && out.every((m, i) => m.content === messages[i].content))
         return untouched();
       log(`interceptor ${type} ${chatId}: ${now() - started} ms (${breakdown.map((b) => b.name).join(", ") || "no change"})`);
@@ -21086,7 +21261,7 @@ function createReference({ api, manager, host, log = () => {}, allowed = ALLOWED
 }
 
 // src/version.js
-var VERSION = "1.4.2-lv.2";
+var VERSION = "1.4.2-lv.3";
 
 // src/backend.js
 var MACRO_NAME = "memory_ledger";
@@ -21119,6 +21294,17 @@ function start(api, options = {}) {
     const next = await um.saveLvSettings(body);
     await um.flush();
     return { settings: next };
+  });
+  router.add("GET", "ext/meter/:id", async ({ userId, params }) => {
+    const um = manager.forUser(userId);
+    await um.ready();
+    await um.meter.idle();
+    return um.meter.get(params.id);
+  });
+  router.add("POST", "ext/meter/:id/reset", async ({ userId, params }) => {
+    const um = manager.forUser(userId);
+    await um.ready();
+    return um.meter.reset(params.id);
   });
   router.add("POST", "ext/hide-blocks", async ({ userId, body }) => {
     const um = manager.forUser(userId);

@@ -202,6 +202,38 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
         void act(() => api('POST', '/api/ext/hide-blocks', { chatId: room, extra: pick('extra'), keep: pick('keep') }), '이 방의 빼고 읽기 태그를 저장했습니다. 다음 정리부터 적용됩니다.');
       }
       if (e.target.dataset?.featureRoom) {`, { name: 'hide blocks tag save' });
+    // 토큰 계량 (src/common/meter.js): 「주입 확인」 탭에 이 방의 마지막 주입(글자·토큰)과 기억 모델 호출 합계(호출·입력·출력·비용)를 보이고, 합계를 비울 수 있다.
+    // 숫자만 서버(확장 저장소)에서 읽어 온다. 방이 바뀌면 다시 읽고, 「새로고침」으로도 읽는다.
+    s = replaceAnchor(s, '    loadServerStatus();\n    return `<div class="eyebrow">INJECTION', '    loadServerStatus();\n    loadMeter();\n    return `<div class="eyebrow">INJECTION', { name: 'meter load on inject view' });
+    s = replaceAnchor(s, '${injectBars()}${costCard()}${recallCard()}', '${injectBars()}${meterCard()}${costCard()}${recallCard()}', { name: 'meter card in inject view' });
+    s = replaceAnchor(s, '  function costCard() {', `  let meterData = null, meterRoom = '', meterBusy = false;
+  function loadMeter(force = false) {
+    if (!room || meterBusy || (!force && meterRoom === room)) return;
+    meterBusy = true;
+    const asked = room;
+    api('GET', '/api/ext/meter/' + encodeURIComponent(asked)).then((d) => { meterData = d; meterRoom = asked; meterBusy = false; render(); }).catch(() => { meterRoom = asked; meterData = null; meterBusy = false; });
+  }
+  function meterCard() {
+    if (meterRoom !== room || !meterData) return '<div class="paper"><h2>토큰 계량</h2><p class="hint">불러오는 중…</p></div>';
+    const m = meterData, l = m.last, names = { organize: '정리', recall: '회상', check: '점검', embed: '임베딩' };
+    const cost = (c) => (c.costKnown ? ' · 비용 $' + Number(c.cost).toFixed(4) + (c.costKnown < c.n ? ' (일부만)' : '') : '');
+    const row = (label, c) => '<div class="cost-row"><span>' + label + '</span><b>호출 ' + c.n + '번</b><small>입력 ' + kTok(c.input) + ' · 출력 ' + kTok(c.output) + ' 토큰' + cost(c) + (c.estimated ? ' (' + c.estimated + '번은 어림)' : '') + '</small></div>';
+    const last = l
+      ? '<div class="cost-row"><span>마지막 주입' + (l.dryRun ? ' (미리보기)' : '') + '</span><b>' + l.chars.toLocaleString() + '자 · ' + l.tokens.toLocaleString() + ' 토큰</b><small>' + (l.approximate ? '어림(글자 수 ÷ 4)' : esc(l.tokenizer || '호스트 토크나이저')) + ' · ' + esc(new Date(l.at).toLocaleString()) + '</small></div>'
+      : '<p class="hint">아직 이 방에서 기억을 넣은 답변이 없습니다.</p>';
+    const rows = Object.keys(names).filter((k) => m.calls[k]?.n).map((k) => row(names[k], m.calls[k])).join('');
+    return '<div class="paper"><h2>토큰 계량</h2><p class="hint">호스트 토큰 표의 「기억」 항목은 기억이 든 메시지 전체로 잡혀 크게 보일 수 있습니다. 아래는 실제로 넣은 기억 글만 센 값입니다. 숫자만 저장하며 글은 남기지 않습니다.</p>' + last
+      + (m.total.n ? '<h3>이 방의 기억 모델 호출 합계</h3>' + rows + row('합계', m.total) : '<p class="hint">이 방에서 기억 모델을 부른 기록이 없습니다.</p>')
+      + '<div class="buttons"><button class="ghost" data-act="meterRefresh">새로고침</button><button class="ghost" data-act="meterReset"' + (m.total.n ? '' : ' disabled') + '>합계 비우기</button></div></div>';
+  }
+  function costCard() {`, { name: 'meter card' });
+    s = replaceAnchor(s, "      case 'factPickClear':", `      case 'meterRefresh':
+        loadMeter(true);
+        return;
+      case 'meterReset':
+        if (!confirm('이 방의 기억 모델 호출 합계를 비웁니다. 계속할까요?')) return;
+        return act(async () => { meterData = await api('POST', '/api/ext/meter/' + chat + '/reset', {}); meterRoom = room; }, '이 방의 토큰 합계를 비웠습니다.');
+      case 'factPickClear':`, { name: 'meter handlers' });
     // return a handle instead of installing at evaluation time
     s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
     return s;

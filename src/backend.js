@@ -38,6 +38,9 @@ export function start(api, options = {}) {
         await um.flush();
         return { settings: next };
     });
+    // Token meter of one room (numbers only): the last injection and the memory-model call totals; reset clears the totals.
+    router.add('GET', 'ext/meter/:id', async ({ userId, params }) => { const um = manager.forUser(userId); await um.ready(); await um.meter.idle(); return um.meter.get(params.id); });
+    router.add('POST', 'ext/meter/:id/reset', async ({ userId, params }) => { const um = manager.forUser(userId); await um.ready(); return um.meter.reset(params.id); });
     router.add('POST', 'ext/hide-blocks', async ({ userId, body }) => {
         const um = manager.forUser(userId);
         await um.ready();

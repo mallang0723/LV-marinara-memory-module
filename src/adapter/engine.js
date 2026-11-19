@@ -5,13 +5,14 @@
 import { wrapHostError } from '../common/store.js';
 import { readPub, readGlossary } from './translator.js';
 import hideBlocks from './hide-blocks.cjs';
+import { inRoom } from '../common/meter.js';
 
 const PAGE = 200;
 const TAIL = 30;
 const iso = t => { const n = Number(t); if (!Number.isFinite(n) || n <= 0) return null; return new Date(n < 1e12 ? n * 1000 : n).toISOString(); };
 const clone = v => (v == null ? v : structuredClone(v));
 
-export function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.['chat-lean-messages-v1'], getMessageLimit = async () => null, getWindow = () => null, getHideBlocks = () => null }) {
+export function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.['chat-lean-messages-v1'], getMessageLimit = async () => null, getWindow = () => null, getHideBlocks = () => null, meter = null }) {
     const call = async fn => { try { return await fn(); } catch (e) { throw wrapHostError(e); } };
     const stats = { fullReads: 0, pageReads: 0, tailReads: 0, events: 0 };
 
@@ -213,12 +214,15 @@ export function createEngine({ api, userId, log = () => {}, translator = null, l
                 if (opts.responseFormat) parameters.response_format = opts.responseFormat;
                 const res = await call(() => api.generate.quiet({ messages, ...(connectionId ? { connection_id: connectionId } : {}), parameters, signal: opts.signal, userId }));
                 const content = typeof res === 'string' ? res : res?.content;
+                // numbers only: the host's usage when it came back, else the prompt and answer are counted (kept nowhere)
+                if (meter) { const chatId = inRoom.getStore()?.chatId; if (chatId) void meter.recordCall(chatId, opts.lvKind || 'organize', { usage: res?.usage || null, promptText: messages.map(m => (typeof m?.content === 'string' ? m.content : '')).join('\n'), answerText: typeof content === 'string' ? content : '' }); }
                 return { content: typeof content === 'string' ? content : '', usage: res?.usage || null };
             },
             async embed(texts, model, signal) {
                 embedConns ??= await embeddingConnections();
                 const pick = embedConns.find(c => c.model === model || c.name === model) || embedConns.find(c => c.is_primary) || embedConns[0];
                 const res = await call(() => api.embeddings.embed({ texts: texts.map(t => String(t).slice(0, 8000)), ...(pick ? { connection_id: pick.id } : {}), input_type: 'passage', userId }, { signal }));
+                if (meter) { const chatId = inRoom.getStore()?.chatId; if (chatId) void meter.recordCall(chatId, 'embed', { usage: null, promptText: texts.map(t => String(t).slice(0, 8000)).join('\n') }); }
                 return res?.embeddings || [];
             },
         };

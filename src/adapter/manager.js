@@ -7,6 +7,7 @@ import { running } from './dispatch.js';
 import { createHostAdapter } from '../common/host-adapter.js';
 import { createTranslatorLink } from './translator.js';
 import hideBlocks from './hide-blocks.cjs';
+import { createMeter, inRoom } from '../common/meter.js';
 
 const TRANSLATOR_GLOSSARY_SOURCE = '번역 프리셋·단어장';
 
@@ -29,7 +30,10 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
     function build(userId) {
         const env = { ...(tunables.env || {}) };
         env.MEMORY_MODULE_RECALL_TIMEOUT_MS ??= String(tunables.recallBudgetMs ?? RECALL_BUDGET_MS);
-        const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId), translator });
+        const meter = createMeter({ api, userId, log });
+        const u = createUserService({ api, userId, log, env, version, debounceMs, getMessageLimit: () => host.contextMessageLimit(userId), translator, meter });
+        /** Model calls made inside fn are counted for this room (src/common/meter.js). */
+        const inChat = (chatId, fn) => (chatId ? inRoom.run({ chatId }, fn) : fn());
         const router = createRouter();
         for (const r of u.routes) {
             const pattern = r.path.replace(/^\/api\//, '');
@@ -48,11 +52,11 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
             // The request and reply objects are made per attempt: vfs.run may run the handler again after loading a file it missed,
             // and upstream's guard turns the first attempt's "not loaded" into a 400 that must not outlive a successful retry.
             let reply;
-            const out = await u.run(() => {
+            const out = await inChat(chatId, () => u.run(() => {
                 reply = replyShim();
                 const req = { params: ctx.params || {}, body: ctx.body || {}, query: ctx.query || {}, method: route.method, raw: { url: '/api/' + ctx.path }, mmTiming: {} };
                 return route.handler(req, reply);
-            });
+            }));
             if (route.method !== 'GET') {
                 // A change must not look saved when it is not: wait for the write and report a failure to the screen.
                 const saved = await u.vfs.flush();
@@ -62,7 +66,7 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
             return out;
         }
         const inst = {
-            userId, u, router, X: u.X, svc: u.svc,
+            userId, u, router, X: u.X, svc: u.svc, meter,
             ready: () => u.vfs.init(),
             settings, chatEnabled, preloadRoom,
             handle: frame => router.handle(frame, userId),
@@ -77,7 +81,7 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
             /** The memory text for the next reply (called by the interceptor after the sync). */
             async syncBeforeReply(chatId, body) {
                 await preloadRoom(chatId);
-                await u.run(() => u.X.syncBeforeReply(chatId, body || {}));
+                await inChat(chatId, () => u.run(() => u.X.syncBeforeReply(chatId, body || {})));
                 return inst.rendered(chatId);
             },
             async rendered(chatId) {
@@ -88,7 +92,7 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
             },
             /** Sync, from files already in memory (the macro must answer at once). A room not loaded yet gives the last known text. */
             cachedRendered: chatId => { try { const t = running.run(u.owner, () => u.svc.renderLedger(chatId)); if (typeof t === 'string') { rendered.set(chatId, t); return t; } } catch { /* not loaded: last known */ } return rendered.get(chatId); },
-            async processChat(chatId, opts) { await preloadRoom(chatId); const r = await u.run(() => u.svc.processChat(chatId, opts)); await inst.rendered(chatId).catch(() => {}); return r; },
+            async processChat(chatId, opts) { await preloadRoom(chatId); const r = await inChat(chatId, () => u.run(() => u.svc.processChat(chatId, opts))); await inst.rendered(chatId).catch(() => {}); return r; },
             async inherit(source, target) { await preloadRoom(target, source); return u.run(() => u.X.inheritBranch(source, target)); },
             flush: () => u.vfs.flush(),
             saveFailures: () => { const f = u.vfs.failures(); return [...f.keys()].map(k => k.slice(k.indexOf('memory-module/') + 14)); },
@@ -129,7 +133,7 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
     }
     async function dispose() {
         for (const t of timers) clearTimeout(t);
-        for (const inst of users.values()) { try { await inst.flush(); } catch { /* reported by flush callers */ } inst.u.dispose(); }
+        for (const inst of users.values()) { try { await inst.flush(); await inst.meter.flush(); } catch { /* reported by flush callers */ } inst.u.dispose(); }
         host.dispose?.();
         translator.dispose();
     }

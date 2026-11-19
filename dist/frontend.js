@@ -644,7 +644,7 @@ function attachSummarizationFrontend(ctx, { fetch: fetchSetting = globalThis.fet
 
 // src/memory/ui/runtime.generated.js
 function mountMemory(marinara, LV) {
-  const VERSION = "1.4.2-lv.2";
+  const VERSION = "1.4.2-lv.3";
   const UI_CSS = `:host{all:initial;color:#34374b;font:14px/1.65 "Pretendard","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--im-accent:#7777c8;--im-ink:#34374b;--im-muted:#8e91a6;--im-line:#e9e9f2;--im-paper:#fff;--im-canvas:#f5f5fb;--im-soft:#eeeefa}
 *{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer;color:inherit;border:1px solid var(--im-line);background:var(--im-paper);padding:9px 14px;border-radius:11px;transition:background .15s,transform .15s,box-shadow .15s}button:hover{background:var(--im-soft)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #aaa7e5;outline-offset:3px}.icon{width:19px;height:19px;flex:none;display:inline-block;vertical-align:middle}#launch{position:fixed;right:20px;bottom:126px;z-index:2147483600;display:flex;align-items:center;gap:8px;color:#fff;background:#7777c8;border:0;border-radius:24px;padding:11px 19px;box-shadow:0 7px 20px #7777c84d}#backdrop{position:fixed;inset:0;background:#20233654;z-index:2147483601}#panel{position:fixed;z-index:2147483602;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1320px,96vw);height:min(900px,91vh);display:grid;grid-template-columns:192px minmax(0,1fr) 224px;background:var(--im-paper);border-radius:26px;box-shadow:0 25px 100px #25254435;overflow:hidden}#panel[hidden],[hidden]{display:none!important}
 .sidebar{display:flex;flex-direction:column;padding:30px 18px 20px;border-right:1px solid var(--im-line);min-width:0}.brand{display:flex;align-items:center;gap:10px;padding:0 12px 30px;color:var(--im-accent);font-size:18px;font-weight:750;letter-spacing:-.8px}.brand .icon{width:27px;height:27px}.brand small{display:block;white-space:nowrap;font:7px/1.8 ui-monospace,monospace;letter-spacing:1.3px;color:#a8a6bd}.nav-label{font-size:9px;letter-spacing:1.8px;color:#b2b1c2;padding:13px 14px 9px}nav{display:flex;flex-direction:column;gap:6px}nav button{display:flex;gap:11px;align-items:center;border:0;background:transparent;text-align:left;font-size:12px;padding:11px 13px;border-radius:10px;color:#9291aa}nav button.selected{background:#eeeeFA;color:#6d69b4;font-weight:700}nav button .icon{width:17px;height:17px}.side-bottom{margin-top:auto;padding-top:26px;display:grid;gap:10px}.side-bottom button{font-size:11px;border:0;display:flex;align-items:center;gap:8px;background:#f7f7fb}.side-bottom small{font-size:9px;color:#b0aec0;padding-left:10px}
@@ -2878,9 +2878,10 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (!info)
       return emptyRoom();
     loadServerStatus();
+    loadMeter();
     return `<div class="eyebrow">INJECTION · 약 ${tokens(info.rendered)} 토큰</div><h1>주입 확인</h1>
       <p class="intro">지금 프리셋의 {{기억}} 자리에 들어가는 내용 그대로입니다. 회상한 장면은 답변마다 바뀝니다.</p>
-      ${injectBars()}${costCard()}${recallCard()}${recallTestCard()}${recallReasonsPaper(recallReportRoom === room ? recallReportData : null, info.recallPrefs, recallReportRoom !== room || !recallReportData && !recallReportError ? "loading" : recallReportError)}
+      ${injectBars()}${meterCard()}${costCard()}${recallCard()}${recallTestCard()}${recallReasonsPaper(recallReportRoom === room ? recallReportData : null, info.recallPrefs, recallReportRoom !== room || !recallReportData && !recallReportError ? "loading" : recallReportError)}
       ${info.rendered ? `<pre>${esc(info.rendered)}</pre>` : `<div class="empty">${info.enabled ? "아직 들어가는 기억이 없습니다." : "이 방에서 기억 사용이 꺼져 있어 {{기억}} 자리에 아무것도 들어가지 않습니다. 저장된 기억은 그대로 남아 있습니다."}</div>`}`;
   }
   function markButtons(id, prefs) {
@@ -3596,6 +3597,33 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     </div>`;
   }
   const kTok = (n) => n >= 1e4 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n || 0);
+  let meterData = null, meterRoom = "", meterBusy = false;
+  function loadMeter(force = false) {
+    if (!room || meterBusy || !force && meterRoom === room)
+      return;
+    meterBusy = true;
+    const asked = room;
+    api("GET", "/api/ext/meter/" + encodeURIComponent(asked)).then((d) => {
+      meterData = d;
+      meterRoom = asked;
+      meterBusy = false;
+      render();
+    }).catch(() => {
+      meterRoom = asked;
+      meterData = null;
+      meterBusy = false;
+    });
+  }
+  function meterCard() {
+    if (meterRoom !== room || !meterData)
+      return '<div class="paper"><h2>토큰 계량</h2><p class="hint">불러오는 중…</p></div>';
+    const m = meterData, l = m.last, names = { organize: "정리", recall: "회상", check: "점검", embed: "임베딩" };
+    const cost = (c) => c.costKnown ? " · 비용 $" + Number(c.cost).toFixed(4) + (c.costKnown < c.n ? " (일부만)" : "") : "";
+    const row = (label, c) => '<div class="cost-row"><span>' + label + "</span><b>호출 " + c.n + "번</b><small>입력 " + kTok(c.input) + " · 출력 " + kTok(c.output) + " 토큰" + cost(c) + (c.estimated ? " (" + c.estimated + "번은 어림)" : "") + "</small></div>";
+    const last = l ? '<div class="cost-row"><span>마지막 주입' + (l.dryRun ? " (미리보기)" : "") + "</span><b>" + l.chars.toLocaleString() + "자 · " + l.tokens.toLocaleString() + " 토큰</b><small>" + (l.approximate ? "어림(글자 수 ÷ 4)" : esc(l.tokenizer || "호스트 토크나이저")) + " · " + esc(new Date(l.at).toLocaleString()) + "</small></div>" : '<p class="hint">아직 이 방에서 기억을 넣은 답변이 없습니다.</p>';
+    const rows = Object.keys(names).filter((k) => m.calls[k]?.n).map((k) => row(names[k], m.calls[k])).join("");
+    return '<div class="paper"><h2>토큰 계량</h2><p class="hint">호스트 토큰 표의 「기억」 항목은 기억이 든 메시지 전체로 잡혀 크게 보일 수 있습니다. 아래는 실제로 넣은 기억 글만 센 값입니다. 숫자만 저장하며 글은 남기지 않습니다.</p>' + last + (m.total.n ? "<h3>이 방의 기억 모델 호출 합계</h3>" + rows + row("합계", m.total) : '<p class="hint">이 방에서 기억 모델을 부른 기록이 없습니다.</p>') + '<div class="buttons"><button class="ghost" data-act="meterRefresh">새로고침</button><button class="ghost" data-act="meterReset"' + (m.total.n ? "" : " disabled") + ">합계 비우기</button></div></div>";
+  }
   function costCard() {
     const u = serverStatus?.usage;
     if (!u)
@@ -3706,6 +3734,16 @@ pre{font-size:12.5px!important;line-height:1.85!important}
     if (actName !== "fresh" && !actName.startsWith("deleteFact") && actName !== "closeThread" && actName !== "factBulkDelete" && actName !== "rebuildChapters" && actName !== "deleteRoutine" && !["trackerUndoApplied", "nameApply", "mergeApply", "aliasApply", "nameUndo", "backupDownload", "restoreApply", "restoreUndo", "addressDelete", "stateReset", "placeDelete", "keepDelete", "noteDelete", "noteRebuildAll", "trackerDelete", "trackerDropStart"].includes(actName))
       armed = "";
     switch (actName) {
+      case "meterRefresh":
+        loadMeter(true);
+        return;
+      case "meterReset":
+        if (!confirm("이 방의 기억 모델 호출 합계를 비웁니다. 계속할까요?"))
+          return;
+        return act(async () => {
+          meterData = await api("POST", "/api/ext/meter/" + chat + "/reset", {});
+          meterRoom = room;
+        }, "이 방의 토큰 합계를 비웠습니다.");
       case "factPickClear":
         pickedFacts.clear();
         return render();
