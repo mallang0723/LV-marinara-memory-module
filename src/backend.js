@@ -38,6 +38,13 @@ export function start(api, options = {}) {
         await um.flush();
         return { settings: next };
     });
+    router.add('POST', 'ext/hide-blocks', async ({ userId, body }) => {
+        const um = manager.forUser(userId);
+        await um.ready();
+        const tags = await um.saveHideBlocks(body?.chatId, body);
+        await um.flush();
+        return { tags };
+    });
     // The translator's glossary of a chat (the screen asks when it opens a room). Always answers: absent or incompatible = nothing applied.
     router.add('POST', 'ext/translator/sync', async ({ userId, body }) => {
         const chatId = typeof body?.chatId === 'string' ? body.chatId : '';

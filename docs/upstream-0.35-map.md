@@ -153,3 +153,11 @@ hooks: { beforeReply(chatId, body), afterReply(chatId), branched(src,dst,ids), d
 4. Marinara 전용 프롬프트 위치("출력 형식 자리") ↔ Lumiverse 대응 위치 미정(영역 I).
 5. `responseFormat: json_object` 전달 가능 여부, `ALS` 전파, `userStorage.move` 원자성 — ⚠️ 모두 시험으로 확인.
 6. 번역 도구 권한 증가(`chats`)와 호스트 능력 의존 — 번역 도구 문서 §6.
+
+## 이식 체크리스트: 「하단 블록 빼고 읽기」(1.4.2-lv.2)
+
+원작 재이식 때 아래가 살아 있는지 확인한다(근거 표: `docs/hide-blocks-hash-audit.md`).
+
+- 어댑터: `src/adapter/hide-blocks.cjs`(`stripHiddenBlocks`, 스위치 등록 `install`), `engine.js`의 `shapeRow`(옵션 켜짐 때 `content`=걸러진 글, `rawContent`=원문, 번역기 `readPub`은 원문), `upstream.js`(스위치 등록 + 방별 getter), `manager.js`/`backend.js`(`ext/hide-blocks` 태그 저장), `patch.mjs`(추가 기능 행의 태그 두 칸 + 저장 핸들러 앵커 2개).
+- `core-patch.mjs` `patchService` 앵커 2개: ① `out.push({... content: String(row.content) ...})` 줄에 `rawContent` 전달, ② `L.prepareMessages(out, …)` 직후 `m.h = L.hashText(m.rawContent)`. (원작 `ledger.cjs`는 건드리지 않는다: 서비스가 행을 새로 만들어 넘기므로 계획서의 ledger 앵커로는 원문이 닿지 않는다.)
+- 원작 `features.cjs` 레지스트리에 `hideBlocks`를 런타임에 덧붙이므로, 원작 `tests/upstream/*`(레지스트리 키 목록 검사)는 `upstream-service.cjs`만 거치고 `upstream.js`를 거치지 않아 영향이 없다. 원작이 FEATURES 구조를 바꾸면 `install`을 확인한다.

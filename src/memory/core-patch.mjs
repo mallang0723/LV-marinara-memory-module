@@ -69,6 +69,12 @@ export function patchConflicts(source) {
 export function patchService(source) {
     source = replaceAnchor(source, "      return fallback;\n    }\n    return markBroken(file, error, fallback, replaceable);",
         "      return fallback;\n    }\n    if (error?.code === 'LV_NOT_LOADED') throw error;\n    return markBroken(file, error, fallback, replaceable);", { name: 'service readJson not-loaded' });
+    // "하단 블록 빼고 읽기" (src/adapter/hide-blocks.cjs): with the option on, the adapter hands over the story without the wi-exclude blocks
+    // as `content` and the stored text as `rawContent`. The message fingerprint (h) must stay the one of the stored text, so a room
+    // can switch the option without every folded message looking edited. Off: rawContent never exists and nothing below runs.
+    // (ledger.cjs's own hashText(row.content) is not patched: the service rebuilds the rows, so the fingerprint is set here, after prepareMessages.)
+    source = replaceAnchor(source, "content: String(row.content), swipe: row.activeSwipeIndex, ...(tr ? { tr } : {}) });", "content: String(row.content), swipe: row.activeSwipeIndex, ...(tr ? { tr } : {}), ...(typeof row.rawContent === 'string' ? { rawContent: row.rawContent } : {}) });", { name: 'service keep raw content' });
+    source = replaceAnchor(source, "  const prepared = L.prepareMessages(out, { speechMarks: settings().chats?.[chatId]?.speechMarks || null });\n", "  const prepared = L.prepareMessages(out, { speechMarks: settings().chats?.[chatId]?.speechMarks || null });\n  for (const m of prepared) if (typeof m.rawContent === 'string') { m.h = L.hashText(m.rawContent); delete m.rawContent; }\n", { name: 'service fingerprint of stored text' });
     // Marinara's server loader is never used (the engine is supplied by the adapter), and Lumiverse's extension scanner refuses a
     // dynamic import in a backend bundle: the call is replaced by a rejection. `process.x` is renamed to `hostProcess.x` (the
     // factory's parameter, a plain object of ours) because the scanner refuses the text `process.env`.

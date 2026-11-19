@@ -6,6 +6,7 @@ import { createUserService } from './upstream.js';
 import { running } from './dispatch.js';
 import { createHostAdapter } from '../common/host-adapter.js';
 import { createTranslatorLink } from './translator.js';
+import hideBlocks from './hide-blocks.cjs';
 
 const TRANSLATOR_GLOSSARY_SOURCE = '번역 프리셋·단어장';
 
@@ -68,6 +69,11 @@ export function createManager({ api, log = () => {}, tunables = {}, version = '0
             /** Settings of the extension itself (Lumiverse-only keys) next to the upstream ones, in the same file. */
             lvSettings: () => { const s = settings(); return { moduleMemory: s.moduleMemory !== false, autoInject: s.autoInject !== false, interceptorBudgetMs: s.interceptorBudgetMs || RECALL_BUDGET_MS, window: s.window || 30 }; },
             saveLvSettings(body) { return u.run(() => { const next = { ...settings() }; for (const k of LV_KEYS) if (k in (body || {})) next[k] = body[k]; u.X.saveSettings(next); return Object.fromEntries(LV_KEYS.filter(k => next[k] !== undefined).map(k => [k, next[k]])); }); },
+            /** The room's two tag lists of \"하단 블록 빼고 읽기\" (settings.chats[id].hideBlocks). */
+            saveHideBlocks(chatId, body) {
+                if (typeof chatId !== 'string' || !/^[\w-]{1,128}$/.test(chatId)) throw Object.assign(new Error('chatId required'), { status: 400 });
+                return u.run(() => { const all = settings(); const own = { ...(all.chats?.[chatId] || {}), hideBlocks: { extra: hideBlocks.cleanList(body?.extra), keep: hideBlocks.cleanList(body?.keep) } }; u.X.saveSettings({ ...all, chats: { ...(all.chats || {}), [chatId]: own } }); return own.hideBlocks; });
+            },
             /** The memory text for the next reply (called by the interceptor after the sync). */
             async syncBeforeReply(chatId, body) {
                 await preloadRoom(chatId);

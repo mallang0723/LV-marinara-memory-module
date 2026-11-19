@@ -4,9 +4,13 @@
 import path from 'node:path';
 import makeService from '../memory/core/service.generated.cjs';
 import cores from './cores.cjs';
+import hideBlocks from './hide-blocks.cjs';
 import { createVfs, ROOT } from './vfs.js';
 import { createEngine } from './engine.js';
 import { aliasesFor, scenesFor, release, running } from './dispatch.js';
+
+// Lumiverse-only switch "하단 블록 빼고 읽기" joins the live feature registry (the pinned features.cjs is not edited; the upstream test harness never loads this file).
+hideBlocks.install(cores['./features.cjs']);
 
 export const DATA_ROOT = '/lv';   // DATA_DIR of the instance; the service appends /memory-module (= vfs ROOT)
 
@@ -28,7 +32,7 @@ export function collectRoutes(register) {
 export function createUserService({ api, userId, log = () => {}, env = {}, version = '0', vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit, translator }) {
     let svc = null;
     const vfs = realFs ? null : injectedVfs || createVfs({ storage: api.userStorage, userId, log, ...(debounceMs != null ? { debounceMs } : {}) });
-    const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getWindow: () => { try { return Number(svc?._test.settings().window) || null; } catch { return null; } } });
+    const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getHideBlocks: chatId => { try { const all = svc?._test.settings(); return cores['./features.cjs'].resolve(all, chatId, 'hideBlocks').enabled ? hideBlocks.tagsOf(all.chats?.[chatId]?.hideBlocks) : null; } catch { return null; } }, getWindow: () => { try { return Number(svc?._test.settings().window) || null; } catch { return null; } } });
     const exits = [];
     const fakeProcess = { env: { DATA_DIR: DATA_ROOT, ...env }, pid: 0, argv: ['lumiverse-extension'], stderr: { write: s => log(String(s).trimEnd()) }, lvRecallBudgetMs: () => { try { return Number(svc?._test.settings().interceptorBudgetMs) || 0; } catch { return 0; } }, on: (ev, fn) => { if (ev === 'exit') exits.push(fn); } };
     const urlShim = { pathToFileURL: p => new URL('file://' + p) };

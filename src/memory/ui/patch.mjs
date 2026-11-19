@@ -189,6 +189,19 @@ export function patchMemory({ runtime, uiCss, themeCss, version }) {
     return '<p>' + esc(x.summary) + '</p>';
   }
   function selectedMemoriesHtml() {`, { name: 'compare selected summary with sources' });
+    // 하단 블록 빼고 읽기 (Lumiverse-only feature row): its two tag lists live in the row, saved through the extension's own route.
+    s = replaceAnchor(s, "</select></label>\n      </details>`).join('')}\n    </details>`;", `</select></label>
+        \${f.tags ? \`<label>추가로 뺄 태그 (쉼표로 구분, 예: ad-stat, stat)<input type="text" data-hide-tags="extra" value="\${esc((f.tags.extra || []).join(', '))}" placeholder="wi-exclude 없이 쓰는 상태창 태그"></label>
+        <label>남길 태그 (wi-exclude가 있어도 읽음)<input type="text" data-hide-tags="keep" value="\${esc((f.tags.keep || []).join(', '))}" placeholder="meanwhile, diary, diaries"></label>
+        <p class="hint">이 두 칸은 이 방에만 적용되며 다음 정리부터 반영됩니다. style 태그는 항상 뺍니다.</p>\` : ''}
+      </details>\`).join('')}
+    </details>\`;`, { name: 'hide blocks tag fields' });
+    s = replaceAnchor(s, "      if (e.target.dataset?.featureRoom) {", `      if (e.target.dataset?.hideTags) {
+        const box = e.target.closest('.feature-row');
+        const pick = (k) => box.querySelector(\`input[data-hide-tags="\${k}"]\`).value;
+        void act(() => api('POST', '/api/ext/hide-blocks', { chatId: room, extra: pick('extra'), keep: pick('keep') }), '이 방의 빼고 읽기 태그를 저장했습니다. 다음 정리부터 적용됩니다.');
+      }
+      if (e.target.dataset?.featureRoom) {`, { name: 'hide blocks tag save' });
     // return a handle instead of installing at evaluation time
     s = replaceAnchor(s, '  install();\n  host.onCleanup?.(cleanup);\n})();', '  install();\n  host.onCleanup?.(cleanup);\n  return { toggle: () => LV.toggle(), open: () => { if (!open) LV.toggle(); }, close: closeLibrary, isOpen: () => open, dispose: cleanup, setRoom: id => { room = id; } };\n}', { name: 'iife close' });
     return s;

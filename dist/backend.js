@@ -1328,12 +1328,17 @@ ${m.content}` } : m);
           continue;
         const speaker = row.role === "user" ? extra.personaSnapshot?.name || "User" : row.role === "narrator" ? "Narrator" : await characterName(e, row.characterId) || "Character";
         const tr = row.role !== "user" && typeof extra.translation === "string" && extra.translation.trim() && (!extra.translationSource || extra.translationSource === row.content) ? extra.translation.trim() : null;
-        out.push({ id: row.id, number: row.rowid ?? index + 1, speaker, role: row.role, content: String(row.content), swipe: row.activeSwipeIndex, ...tr ? { tr } : {} });
+        out.push({ id: row.id, number: row.rowid ?? index + 1, speaker, role: row.role, content: String(row.content), swipe: row.activeSwipeIndex, ...tr ? { tr } : {}, ...typeof row.rawContent === "string" ? { rawContent: row.rawContent } : {} });
       }
       await addTrackerClock(e, chatId, out);
       for (const m of out)
         delete m.swipe;
       const prepared = L.prepareMessages(out, { speechMarks: settings().chats?.[chatId]?.speechMarks || null });
+      for (const m of prepared)
+        if (typeof m.rawContent === "string") {
+          m.h = L.hashText(m.rawContent);
+          delete m.rawContent;
+        }
       L.markOoc(prepared, settings().chats?.[chatId]?.ooc || {});
       noteLanguage(chatId, prepared);
       return prepared;
@@ -19536,6 +19541,84 @@ var require_cores = __commonJS(function(exports, module) {
   module.exports = table;
 });
 
+// src/adapter/hide-blocks.cjs
+var require_hide_blocks = __commonJS(function(exports, module) {
+  var DEFAULT_KEEP = ["meanwhile", "diary", "diaries"];
+  var KEY = "hideBlocks";
+  var LABEL = "\uD558\uB2E8 \uBE14\uB85D \uBE7C\uACE0 \uC77D\uAE30";
+  var DESCRIPTION = "\uC0C1\uD0DC\uCC3D\xB7\uD2B8\uB798\uCEE4\uCC98\uB7FC `wi-exclude`\uAC00 \uBD99\uC740 \uBE14\uB85D\uC744 \uBE7C\uACE0 \uC774\uC57C\uAE30\uB9CC \uC77D\uC2B5\uB2C8\uB2E4. \uB9C9\uAC04\xB7\uC77C\uAE30\uB294 \uB0A8\uAE41\uB2C8\uB2E4. \uC774\uBBF8 \uC815\uB9AC\uB41C \uAE30\uC5B5\uC740 \uB2E4\uC2DC \uB9CC\uB4E4\uC9C0 \uC54A\uC73C\uBA70, \uCF20 \uB4A4 \uC0C8\uB85C \uC815\uB9AC\uD558\uB294 \uBD80\uBD84\uBD80\uD130 \uC801\uC6A9\uB429\uB2C8\uB2E4.";
+  var cleanList = (v) => (Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : []).map((x) => String(x).trim().toLowerCase().replace(/^<|>$/g, "")).filter((x) => /^[a-z][\w.-]*$/.test(x)).filter((x, i, a) => a.indexOf(x) === i).slice(0, 40);
+  function tagsOf(raw) {
+    return { extra: cleanList(raw?.extra), keep: raw && Array.isArray(raw.keep) ? cleanList(raw.keep) : DEFAULT_KEEP.slice() };
+  }
+  var OPEN = /<([A-Za-z][\w.-]*)(:[^\s<>/]+)?((?:\s[^<>]*)?)>/g;
+  var atBlockStart = (text, i) => {
+    let j = i - 1;
+    while (j >= 0 && (text[j] === " " || text[j] === "\t"))
+      j--;
+    return j < 0 || text[j] === `
+` || text[j] === "\r" || j === i - 1 && text[j] === ">";
+  };
+  var escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function closeOf(text, full, from) {
+    const re = new RegExp(`<(/?)${escRe(full)}(?=[\\s>/])[^<>]*>|</${escRe(full)}\\s*>`, "gi");
+    re.lastIndex = from;
+    let depth = 1, m;
+    while (m = re.exec(text)) {
+      if (m[0].startsWith("</")) {
+        if (--depth === 0)
+          return re.lastIndex;
+      } else if (!m[0].endsWith("/>"))
+        depth++;
+    }
+    return -1;
+  }
+  function stripHiddenBlocks(text, opts = {}) {
+    if (typeof text !== "string" || !text.includes("<"))
+      return text;
+    const { extra, keep } = tagsOf(opts);
+    let out = "", pos = 0, changed = false;
+    OPEN.lastIndex = 0;
+    let m;
+    while (m = OPEN.exec(text)) {
+      const base = m[1].toLowerCase();
+      const wi = /(?:^|\s)wi-exclude(?=[\s=/]|$)/i.test(m[3] || "");
+      const hit = wi && !keep.includes(base) || extra.includes(base) || base === "style";
+      if (!hit || m[0].endsWith("/>") || !atBlockStart(text, m.index))
+        continue;
+      const end = closeOf(text, m[1] + (m[2] || ""), OPEN.lastIndex);
+      if (end < 0)
+        continue;
+      out += text.slice(pos, m.index);
+      pos = end;
+      OPEN.lastIndex = end;
+      changed = true;
+    }
+    if (!changed)
+      return text;
+    return (out + text.slice(pos)).replace(/(?:[ \t]*\r?\n){3,}/g, `
+
+`).trim();
+  }
+  function readableContent(raw, opts) {
+    const stripped = stripHiddenBlocks(raw, opts);
+    if (stripped === raw || !stripped.trim())
+      return { content: raw };
+    return { content: stripped, rawContent: raw };
+  }
+  function install(F) {
+    if (!F.FEATURES[KEY])
+      F.FEATURES[KEY] = { label: LABEL, description: DESCRIPTION, default: false, ready: true };
+    if (!F.__lvHideBlocks) {
+      const view = F.view;
+      F.view = (all, chatId, registry) => view(all, chatId, registry).map((f) => f.key === KEY ? { ...f, tags: tagsOf(all?.chats?.[chatId]?.hideBlocks) } : f);
+      F.__lvHideBlocks = true;
+    }
+    return F;
+  }
+  module.exports = { KEY, DEFAULT_KEEP, tagsOf, cleanList, stripHiddenBlocks, readableContent, install };
+});
+
 // src/common/store.js
 function wrapHostError(error) {
   const text = String(error?.message || error || "");
@@ -19803,6 +19886,7 @@ function createRouter() {
 // src/adapter/upstream.js
 var import_service_generated = __toESM(require_service_generated(), 1);
 var import_cores = __toESM(require_cores(), 1);
+var import_hide_blocks2 = __toESM(require_hide_blocks(), 1);
 import path from "path";
 
 // src/adapter/vfs.js
@@ -20234,6 +20318,7 @@ function readGlossary(chatMetadata) {
 }
 
 // src/adapter/engine.js
+var import_hide_blocks = __toESM(require_hide_blocks(), 1);
 var PAGE2 = 200;
 var TAIL = 30;
 var iso2 = (t) => {
@@ -20242,7 +20327,7 @@ var iso2 = (t) => {
     return null;
   return new Date(n < 1000000000000 ? n * 1000 : n).toISOString();
 };
-function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.["chat-lean-messages-v1"], getMessageLimit = async () => null, getWindow = () => null }) {
+function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.["chat-lean-messages-v1"], getMessageLimit = async () => null, getWindow = () => null, getHideBlocks = () => null }) {
   const call = async (fn) => {
     try {
       return await fn();
@@ -20252,20 +20337,24 @@ function createEngine({ api, userId, log = () => {}, translator = null, lean = !
   };
   const stats = { fullReads: 0, pageReads: 0, tailReads: 0, events: 0 };
   const snaps = new Map;
-  const shapeRow = (m, position) => {
+  const shapeRow = (m, position, hide = null) => {
     const extra = m.extra && typeof m.extra === "object" ? m.extra : {};
     const meta = m.metadata && typeof m.metadata === "object" ? m.metadata : null;
-    const content = typeof m.content === "string" ? m.content : "";
+    const rawText = typeof m.content === "string" ? m.content : "";
+    const shown = hide && rawText ? import_hide_blocks.default.readableContent(rawText, hide) : null;
+    const content = shown ? shown.content : rawText;
     const role = m.role === "system" ? "system" : m.is_user || m.role === "user" ? "user" : "assistant";
     const out = { id: m.id, role, content, characterId: role === "assistant" ? `name:${m.name || ""}` : null, rowid: position + 1, activeSwipeIndex: m.swipe_id ?? 0, extra: { ...role === "user" ? { personaSnapshot: { name: m.name || "User" } } : {} } };
     out.lv = { extra, metadata: meta };
+    if (shown?.rawContent !== undefined)
+      out.rawContent = shown.rawContent;
     translatorRow(out, m);
     return out;
   };
   function translatorRow(row, dto) {
     if (translator?.state() !== "ok")
       return;
-    const pub = readPub(row.content, dto.metadata);
+    const pub = readPub(row.rawContent ?? row.content, dto.metadata);
     if (!pub)
       return;
     row.extra.translation = pub.text;
@@ -20333,7 +20422,8 @@ function createEngine({ api, userId, log = () => {}, translator = null, lean = !
       if (translator)
         await translator.refresh();
       const s = await snapshot(chatId);
-      return s.rows.map(shapeRow);
+      const hide = getHideBlocks(chatId);
+      return s.rows.map((m, i) => shapeRow(m, i, hide));
     },
     async getById(id) {
       const hit = chatCache.get(id);
@@ -20564,6 +20654,7 @@ var release = (owner) => {
 };
 
 // src/adapter/upstream.js
+import_hide_blocks2.default.install(import_cores.default["./features.cjs"]);
 var DATA_ROOT = "/lv";
 function collectRoutes(register) {
   const routes = [], hooks = [];
@@ -20587,7 +20678,14 @@ function collectRoutes(register) {
 function createUserService({ api, userId, log = () => {}, env = {}, version = "0", vfs: injectedVfs, fs: realFs, engine: injectedEngine, debounceMs, getMessageLimit, translator }) {
   let svc = null;
   const vfs = realFs ? null : injectedVfs || createVfs({ storage: api.userStorage, userId, log, ...debounceMs != null ? { debounceMs } : {} });
-  const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getWindow: () => {
+  const eng = injectedEngine || createEngine({ api, userId, log, getMessageLimit, translator, getHideBlocks: (chatId) => {
+    try {
+      const all = svc?._test.settings();
+      return import_cores.default["./features.cjs"].resolve(all, chatId, "hideBlocks").enabled ? import_hide_blocks2.default.tagsOf(all.chats?.[chatId]?.hideBlocks) : null;
+    } catch {
+      return null;
+    }
+  }, getWindow: () => {
     try {
       return Number(svc?._test.settings().window) || null;
     } catch {
@@ -20650,6 +20748,7 @@ function createUserService({ api, userId, log = () => {}, env = {}, version = "0
 }
 
 // src/adapter/manager.js
+var import_hide_blocks3 = __toESM(require_hide_blocks(), 1);
 var TRANSLATOR_GLOSSARY_SOURCE = "\uBC88\uC5ED \uD504\uB9AC\uC14B\xB7\uB2E8\uC5B4\uC7A5";
 var MEMORY_MARKER = "[Memory: what the characters remember from earlier in this story";
 var RECALL_BUDGET_MS = 6000;
@@ -20735,6 +20834,16 @@ function createManager({ api, log = () => {}, tunables = {}, version = "0", host
               next[k] = body[k];
           u.X.saveSettings(next);
           return Object.fromEntries(LV_KEYS.filter((k) => next[k] !== undefined).map((k) => [k, next[k]]));
+        });
+      },
+      saveHideBlocks(chatId, body) {
+        if (typeof chatId !== "string" || !/^[\w-]{1,128}$/.test(chatId))
+          throw Object.assign(new Error("chatId required"), { status: 400 });
+        return u.run(() => {
+          const all = settings();
+          const own = { ...all.chats?.[chatId] || {}, hideBlocks: { extra: import_hide_blocks3.default.cleanList(body?.extra), keep: import_hide_blocks3.default.cleanList(body?.keep) } };
+          u.X.saveSettings({ ...all, chats: { ...all.chats || {}, [chatId]: own } });
+          return own.hideBlocks;
         });
       },
       async syncBeforeReply(chatId, body) {
@@ -20977,7 +21086,7 @@ function createReference({ api, manager, host, log = () => {}, allowed = ALLOWED
 }
 
 // src/version.js
-var VERSION = "1.4.2-lv.1";
+var VERSION = "1.4.2-lv.2";
 
 // src/backend.js
 var MACRO_NAME = "memory_ledger";
@@ -21010,6 +21119,13 @@ function start(api, options = {}) {
     const next = await um.saveLvSettings(body);
     await um.flush();
     return { settings: next };
+  });
+  router.add("POST", "ext/hide-blocks", async ({ userId, body }) => {
+    const um = manager.forUser(userId);
+    await um.ready();
+    const tags = await um.saveHideBlocks(body?.chatId, body);
+    await um.flush();
+    return { tags };
   });
   router.add("POST", "ext/translator/sync", async ({ userId, body }) => {
     const chatId = typeof body?.chatId === "string" ? body.chatId : "";

@@ -4,27 +4,32 @@
 // there is never a full read per call or per tick. `refreshTail` re-reads only the last few messages.
 import { wrapHostError } from '../common/store.js';
 import { readPub, readGlossary } from './translator.js';
+import hideBlocks from './hide-blocks.cjs';
 
 const PAGE = 200;
 const TAIL = 30;
 const iso = t => { const n = Number(t); if (!Number.isFinite(n) || n <= 0) return null; return new Date(n < 1e12 ? n * 1000 : n).toISOString(); };
 const clone = v => (v == null ? v : structuredClone(v));
 
-export function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.['chat-lean-messages-v1'], getMessageLimit = async () => null, getWindow = () => null }) {
+export function createEngine({ api, userId, log = () => {}, translator = null, lean = !!api.host?.capabilities?.['chat-lean-messages-v1'], getMessageLimit = async () => null, getWindow = () => null, getHideBlocks = () => null }) {
     const call = async fn => { try { return await fn(); } catch (e) { throw wrapHostError(e); } };
     const stats = { fullReads: 0, pageReads: 0, tailReads: 0, events: 0 };
 
     // ---- messages ----
     /** chatId -> {rows: dto[] in chat order, loading: Promise|null} */
     const snaps = new Map();
-    const shapeRow = (m, position) => {
+    const shapeRow = (m, position, hide = null) => {
         const extra = m.extra && typeof m.extra === 'object' ? m.extra : {};
         const meta = m.metadata && typeof m.metadata === 'object' ? m.metadata : null;
-        const content = typeof m.content === 'string' ? m.content : '';
+        const rawText = typeof m.content === 'string' ? m.content : '';
+        // Option on (per room): the library reads the story without the wi-exclude blocks; the stored text stays in rawContent (its fingerprint and the translator's hash are of that).
+        const shown = hide && rawText ? hideBlocks.readableContent(rawText, hide) : null;
+        const content = shown ? shown.content : rawText;
         const role = m.role === 'system' ? 'system' : m.is_user || m.role === 'user' ? 'user' : 'assistant';
         // Hidden messages are still the story (a message hidden from the prompt was said): hiddenFromAI is never set.
         const out = { id: m.id, role, content, characterId: role === 'assistant' ? `name:${m.name || ''}` : null, rowid: position + 1, activeSwipeIndex: m.swipe_id ?? 0, extra: { ...(role === 'user' ? { personaSnapshot: { name: m.name || 'User' } } : {}) } };
         out.lv = { extra, metadata: meta };   // the host's own fields
+        if (shown?.rawContent !== undefined) out.rawContent = shown.rawContent;
         translatorRow(out, m);
         return out;
     };
@@ -35,7 +40,7 @@ export function createEngine({ api, userId, log = () => {}, translator = null, l
     // hash matches the message text as it is now.
     function translatorRow(row, dto) {
         if (translator?.state() !== 'ok') return;
-        const pub = readPub(row.content, dto.metadata);
+        const pub = readPub(row.rawContent ?? row.content, dto.metadata);
         if (!pub) return;
         row.extra.translation = pub.text;
         row.extra.translationSource = row.content;
@@ -88,7 +93,8 @@ export function createEngine({ api, userId, log = () => {}, translator = null, l
         async listMessages(chatId) {
             if (translator) await translator.refresh();   // cached for 20 s; a failed read is "none"
             const s = await snapshot(chatId);
-            return s.rows.map(shapeRow);
+            const hide = getHideBlocks(chatId);
+            return s.rows.map((m, i) => shapeRow(m, i, hide));
         },
         async getById(id) {
             const hit = chatCache.get(id);
