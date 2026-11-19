@@ -6,6 +6,7 @@ import { createRouter } from './common/router.js';
 import { createInjector } from './common/injector.js';
 import { registerHostRoutes } from './common/host-routes.js';
 import { createManager, MEMORY_MARKER } from './adapter/manager.js';
+import { createReference } from './adapter/reference.js';
 import { VERSION } from './version.js';
 
 export const MACRO_NAME = 'memory_ledger';   // the macro lexer only knows [a-zA-Z0-9_-] names (src/macros/MacroLexer.ts:136), so no {{기억}}
@@ -22,6 +23,9 @@ export function start(api, options = {}) {
     manager.translator.publish();   // LV-TX v1 handshake: { requires: [] }, silently skipped on a host without rpcPool
     const router = createRouter();
     const disposers = [];
+    const reference = createReference({ api, manager, host, log });
+    reference.publish();   // `anon_memory_lv.rendered`: the ledger text for the anonymous community (see adapter/reference.js)
+    disposers.push(() => reference.dispose());
     const timers = manager.timers;
 
     registerHostRoutes(router, host);

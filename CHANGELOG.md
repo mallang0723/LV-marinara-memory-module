@@ -1,5 +1,9 @@
 # 변경 내역
 
+## 1.4.2-lv.1
+
+익명 커뮤니티 1.0.2-lv.1의 「기억 서재 참고」를 위해 **다른 확장에 정리된 기억 본문을 내주는 길**을 더했습니다(`src/adapter/reference.js`, 원작 파일은 그대로). 원작에선 익명 커뮤니티가 `GET /api/memory-module/chats/:id`의 `enabled`·`rendered`를 읽었는데, 루미버스는 확장끼리 이런 요청을 주고받는 길이 rpcPool뿐이고 거기엔 인자도 사용자도 없습니다. 그래서 요청 쪽이 `anon_community_lv.mem-req`에 `{v, nonce, userId, chatId}`를 올리고 `anon_memory_lv.rendered`를 읽으면, 이쪽이 그 값을 읽어 채팅이 그 사용자의 것인지 확인한 뒤 `{state, enabled, rendered}`를 돌려줍니다. 허용 목록은 `anon_community_lv` 하나, 양쪽 모두 `chats`·`chat_mutation` 권한이 있어야 합니다. 마스터 스위치가 꺼져 있으면 `state:'absent'`, 그 방이 꺼져 있으면 `'disabled'`.
+
 ## 1.4.1-lv.1
 
 원작 `165d488`(0.35.2 이후 1커밋)을 반영했습니다: 짧은 컨텍스트 제한에 밀려난 메시지가 정리 대기 묶음 때문에 남지 않도록 수정(`scenes.cjs`·`service.cjs`, 원본 그대로).

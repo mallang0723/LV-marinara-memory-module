@@ -13,7 +13,7 @@ export function fake(opts = {}) {
     const interceptors = [], macros = new Map(), commands = { list: [], onInvoked: null };
     const handlers = new Map();
     // rpcPool like the host's (src/spindle/shared-rpc-pool.service.ts): sync publishes under `<identifier>.<channel>`; read of a missing endpoint throws
-    const rpc = { synced: new Map(), policies: new Map(), peers: new Map(), reads: [] };
+    const rpc = { synced: new Map(), policies: new Map(), peers: new Map(), reads: [], handlers: new Map() };
     const frontendHandlers = new Set();
     let seq = 0;
     const nextId = p => `${p}-${++seq}`;
@@ -68,7 +68,8 @@ export function fake(opts = {}) {
         rpcPool: opts.noRpcPool ? undefined : {
             sync(endpoint, value, policy) { rpc.synced.set(endpoint, clone(value)); rpc.policies.set(endpoint, clone(policy)); return `anon_memory_lv.${endpoint}`; },
             read: async endpoint => { rpc.reads.push(endpoint); if (!rpc.peers.has(endpoint)) throw new Error(`Shared RPC endpoint "${endpoint}" not found`); return clone(rpc.peers.get(endpoint)); },
-            unregister(endpoint) { rpc.synced.delete(endpoint); rpc.policies.delete(endpoint); },
+            handle(endpoint, fn, policy) { rpc.handlers.set(endpoint, { fn, policy: clone(policy) }); return `anon_memory_lv.${endpoint}`; },
+            unregister(endpoint) { rpc.synced.delete(endpoint); rpc.policies.delete(endpoint); rpc.handlers.delete(endpoint); },
         },
         registerInterceptor(handler, priority) {
             if (state.denied.includes('interceptor')) return () => {};

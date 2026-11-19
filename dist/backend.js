@@ -20920,8 +20920,64 @@ function registerHostRoutes(router, host) {
   router.add("GET", "connections", ({ userId }) => host.connections(userId));
 }
 
+// src/adapter/reference.js
+var ENDPOINT = "rendered";
+var REQUEST_CHANNEL = "mem-req";
+var ALLOWED = ["anon_community_lv"];
+var REQUIRES = ["chats", "chat_mutation"];
+var REFERENCE_VERSION = 1;
+var isObject2 = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+function createReference({ api, manager, host, log = () => {}, allowed = ALLOWED }) {
+  const pool = api?.rpcPool;
+  let registered = false;
+  async function answer(ctx) {
+    const requester = ctx?.requesterExtensionId;
+    if (typeof requester !== "string" || !allowed.includes(requester))
+      throw new Error("not allowed");
+    const req = await pool.read(`${requester}.${REQUEST_CHANNEL}`);
+    if (!isObject2(req) || req.v !== REFERENCE_VERSION || typeof req.userId !== "string" || !req.userId || typeof req.chatId !== "string" || !req.chatId || typeof req.nonce !== "string")
+      throw new Error("bad request");
+    const base = { v: REFERENCE_VERSION, nonce: req.nonce, userId: req.userId, chatId: req.chatId };
+    await host.rawChat(req.userId, req.chatId);
+    const um = manager.forUser(req.userId);
+    await um.ready();
+    if (um.settings().moduleMemory === false)
+      return { ...base, state: "absent", enabled: false, rendered: "" };
+    await um.preloadRoom(req.chatId);
+    if (!um.chatEnabled(req.chatId))
+      return { ...base, state: "disabled", enabled: false, rendered: "" };
+    return { ...base, state: "ok", enabled: true, rendered: String(await um.rendered(req.chatId) || "") };
+  }
+  function publish() {
+    if (registered || !pool?.handle)
+      return registered;
+    try {
+      pool.handle(ENDPOINT, async (ctx) => {
+        try {
+          return await answer(ctx);
+        } catch (e) {
+          log(`rendered endpoint: ${e?.message || e}`);
+          throw e;
+        }
+      }, { requires: [...REQUIRES] });
+      registered = true;
+    } catch (e) {
+      log(`rendered endpoint: ${e?.message || e}`);
+    }
+    return registered;
+  }
+  function dispose() {
+    try {
+      if (registered)
+        pool?.unregister?.(ENDPOINT);
+    } catch {}
+    registered = false;
+  }
+  return { publish, dispose, answer };
+}
+
 // src/version.js
-var VERSION = "1.4.1-lv.1";
+var VERSION = "1.4.2-lv.1";
 
 // src/backend.js
 var MACRO_NAME = "memory_ledger";
@@ -20941,6 +20997,9 @@ function start(api, options = {}) {
   manager.translator.publish();
   const router = createRouter();
   const disposers = [];
+  const reference = createReference({ api, manager, host, log });
+  reference.publish();
+  disposers.push(() => reference.dispose());
   const timers = manager.timers;
   registerHostRoutes(router, host);
   manager.mount(router);
