@@ -5,7 +5,7 @@ Original: 기억 서재 (memory library) / marinara-memory-module by tlsiddl, MI
 
   원 공유글   : https://gall.dcinside.com/mini/board/view/?id=aichatfrontend&no=305
   Repository : https://github.com/tlsiddl/marinara-memory-module
-  Commit     : ab1f058b190b1944ec38b153121bf8de14a1e4b4  (runtime 0.35.2)
+  Commit     : 165d4880781ef06d24a1abdffd7785e4f607d0e8  (runtime 0.35.2 + unreleased fix)
   License    : MIT, Copyright (c) 2026 tlsiddl  (LICENSE)
 
 이 이식은 원작자의 허락을 받아, 원 공유글을 링크하는 조건으로 공개합니다.
