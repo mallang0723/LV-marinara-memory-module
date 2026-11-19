@@ -78,7 +78,6 @@ var require_service_generated = __commonJS(function(exports, module) {
     const CONTEXT_MESSAGES = 2;
     const MODEL_TIMEOUT_MS = 5 * 60000;
     const DEFAULT_WINDOW = Number(hostProcess.env.MEMORY_MODULE_DEFAULT_WINDOW) || 30;
-    const SCENE_MIN_PENDING = 8;
     const RECALL_TIMEOUT_MS = Number(hostProcess.env.MEMORY_MODULE_RECALL_TIMEOUT_MS) || 20000;
     const RECALL_MIN_MODEL_MS = 3000;
     const RECALL_MODES = ["model", "fast", "off"];
@@ -2613,8 +2612,9 @@ ${reply.slice(-800)}
             }
             let model = null;
             const getModel = async () => model ||= { ...await memoryModel(), signal: job.abort.signal, lang: await promptLanguageOf(chatId) };
-            if (S.nextSlice(store, messages, window, { minPending: rebuild ? 1 : SCENE_MIN_PENDING })) {
-              job.calls += await foldScenes(chatId, store, messages, window, await getModel(), job, { minPending: rebuild ? 1 : SCENE_MIN_PENDING });
+            const minPending = rebuild ? 1 : S.sceneMinPending(window);
+            if (S.nextSlice(store, messages, window, { minPending })) {
+              job.calls += await foldScenes(chatId, store, messages, window, await getModel(), job, { minPending });
             }
             if (reason !== "edit") {
               const reordered = S.orderSceneEvents(store, messages);
@@ -11272,7 +11272,10 @@ var require_scenes_generated = __commonJS(function(exports, module) {
   function emptyStore() {
     return { version: SCENES_VERSION, nextScene: 1, nextFact: 1, nextChapter: 1, nextArc: 1, scenes: [], facts: [], chapters: [], arcs: [], covered: [], window: null, updatedAt: null };
   }
-  function nextSlice(store, messages, window, { maxChars = 20000, maxMessages = Infinity, lookahead = 6, lead = 8, minVisible = 8, minPending = 1 } = {}) {
+  function sceneMinPending(window) {
+    return Math.max(1, Math.min(8, window - 7));
+  }
+  function nextSlice(store, messages, window, { maxChars = 20000, maxMessages = Infinity, lookahead = 6, lead = 8, minVisible = Math.min(8, Math.max(0, window)), minPending = 1 } = {}) {
     const foldLine = Math.max(0, messages.length - Math.max(window - lead, minVisible));
     const from = store.covered.length;
     if (foldLine - from < Math.max(1, minPending))
@@ -15522,6 +15525,7 @@ ${lines.join(`
     parseLine,
     SCENES_VERSION,
     emptyStore,
+    sceneMinPending,
     nextSlice,
     firstInsideWindow,
     buildScenePrompt,
@@ -20917,7 +20921,7 @@ function registerHostRoutes(router, host) {
 }
 
 // src/version.js
-var VERSION = "1.4.0-lv.1";
+var VERSION = "1.4.1-lv.1";
 
 // src/backend.js
 var MACRO_NAME = "memory_ledger";
